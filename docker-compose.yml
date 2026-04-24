@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  # Dịch vụ Database
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=YourStrongPassword123!
+    ports:
+      - "1433:1433"
+
+  # Dịch vụ Cache (cho giá real-time)
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+
+  # Dịch vụ Backend (Sẽ build từ thư mục backend)
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
