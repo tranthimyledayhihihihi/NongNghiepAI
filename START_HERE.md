@@ -24,7 +24,7 @@ Bạn đã có SQL script hoàn chỉnh. Chạy nó trong SQL Server Management 
 - ✅ Database `NongNghiepAI`
 - ✅ 7 tables (Users, CropTypes, HarvestSchedule, MarketPrices, PriceHistory, QualityRecords, AlertSubscriptions)
 - ✅ 3 crop types mẫu (Lúa, Cà phê, Sầu riêng)
-- ✅ 1 user mẫu (Trần Thị Mỹ)
+- ✅ 1 user mẫu (Trần Thị Mỹ - tranthimy2205@gmail.com)
 - ✅ 1 stored procedure (sp_GetPriceHistory)
 
 ### Bước 2: Test Connection

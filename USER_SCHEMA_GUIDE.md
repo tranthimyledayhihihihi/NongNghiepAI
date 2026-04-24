@@ -93,7 +93,7 @@ Bạn đã có file SQL hoàn chỉnh. Chạy nó trong SQL Server Management St
 - ✅ Database `NongNghiepAI` được tạo
 - ✅ 7 tables được tạo
 - ✅ 3 crop types mẫu (Lúa, Cà phê, Sầu riêng)
-- ✅ 1 user mẫu (Trần Thị Mỹ)
+- ✅ 1 user mẫu (Trần Thị Mỹ - tranthimy2205@gmail.com)
 - ✅ 1 stored procedure (sp_GetPriceHistory)
 
 ### Bước 2: Test Connection
@@ -279,7 +279,7 @@ Sau khi chạy SQL script của bạn:
 - Sầu riêng (120 ngày)
 
 ### Users (1 record)
-- Trần Thị Mỹ (leader@agriai.com)
+- Trần Thị Mỹ (tranthimy2205@gmail.com)
 
 ## 📊 Queries Hữu Ích
 
@@ -358,7 +358,7 @@ WHERE a.IsActive = 1;
 
 ## 🎯 Workflow Example
 
-### 1. Nông dân đăng ký
+### Bước 1: Nông dân đăng ký
 ```sql
 INSERT INTO Users (FullName, Email, PhoneNumber, ZaloID)
 VALUES (N'Nguyễn Văn A', 'nguyenvana@gmail.com', '0987654321', 'zalo_123');

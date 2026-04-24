@@ -124,8 +124,8 @@ IF NOT EXISTS (SELECT 1 FROM CropTypes WHERE CropName = N'Sầu riêng')
     INSERT INTO CropTypes (CropName, GrowthDurationDays) VALUES (N'Sầu riêng', 120);
 
 -- Thêm một người dùng mẫu
-IF NOT EXISTS (SELECT 1 FROM Users WHERE Email = 'leader@agriai.com')
-    INSERT INTO Users (FullName, Email, PhoneNumber) VALUES (N'Trần Thị Mỹ', 'leader@agriai.com', '0123456789');
+IF NOT EXISTS (SELECT 1 FROM Users WHERE Email = 'tranthimy2205@gmail.com')
+    INSERT INTO Users (FullName, Email, PhoneNumber) VALUES (N'Trần Thị Mỹ', 'tranthimy2205@gmail.com', '0123456789');
 GO
 
 -- 4. TẠO STORED PROCEDURE MẪU [cite: 13]
