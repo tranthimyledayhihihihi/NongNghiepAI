@@ -43,6 +43,19 @@ Nhấn `CTRL + C` trong terminal
 ## 📝 Lưu ý
 
 1. Đảm bảo SQL Server đang chạy
-2. Database `NongNghiepAI` đã được tạo (chạy file `NongNghiepAI_Full.sql`)
+2. Database `NongNghiepAI` đã được tạo với **10 bảng** (chạy file `NongNghiepAI_Full.sql`)
 3. File `.env` đã cấu hình đúng connection string
 4. Đã cài đặt dependencies: `pip install -r requirements.txt`
+
+## 🗄️ 10 Bảng trong Database
+
+1. **Users** - Người dùng (nông dân, admin)
+2. **CropTypes** - Loại nông sản
+3. **WeatherData** - Dữ liệu thời tiết
+4. **HarvestSchedule** - Lịch trình thu hoạch
+5. **MarketPrices** - Giá thị trường hiện tại
+6. **PriceHistory** - Lịch sử biến động giá
+7. **PriceForecastResults** - Kết quả dự báo giá từ AI
+8. **QualityRecords** - Kết quả kiểm tra chất lượng
+9. **AlertSubscriptions** - Đăng ký cảnh báo giá
+10. **AIConversations** - Lịch sử hội thoại với AI

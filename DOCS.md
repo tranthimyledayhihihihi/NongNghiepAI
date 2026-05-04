@@ -7,8 +7,7 @@
 - **[README.md](README.md)** - Tổng quan dự án và cài đặt
 
 ### 🗄️ Database
-- **[USER_SCHEMA_GUIDE.md](USER_SCHEMA_GUIDE.md)** - Hướng dẫn chi tiết về database schema
-- **[nongnghiepAI.sql](nongnghiepAI.sql)** - SQL script tạo database
+- **[NongNghiepAI_Full.sql](NongNghiepAI_Full.sql)** - ⭐ Complete SQL Server schema (10 tables + seed data)
 
 ### 🔌 API
 - **[API_DOCUMENTATION.md](API_DOCUMENTATION.md)** - Chi tiết các API endpoints
@@ -29,7 +28,7 @@
 ### Setup Database
 ```bash
 # Chạy SQL script trong SSMS
-# File: nongnghiepAI.sql
+# File: NongNghiepAI_Full.sql (10 tables)
 ```
 
 ### Start Backend
@@ -72,12 +71,9 @@ agri-ai/
 │   ├── src/            # Source code
 │   └── public/         # Static files
 │
-├── data/               # Database files
-│   ├── tables/        # Table definitions
-│   ├── seeds/         # Seed data
-│   └── stored_procedures/  # SQL procedures
+├── scripts/            # Utility scripts
 │
-└── docs/              # Documentation (this folder)
+└── NongNghiepAI_Full.sql  # Complete SQL Server schema (10 tables)
 ```
 
 ---

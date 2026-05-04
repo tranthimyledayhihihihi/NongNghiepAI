@@ -12,8 +12,8 @@ Hệ thống AI toàn diện hỗ trợ nông dân Việt Nam trong việc dự 
 ### ✅ ĐÃ HOÀN THÀNH
 
 #### 1. 🗄️ Database & Backend Infrastructure
-- ✅ SQL Server database setup (7 tables)
-- ✅ SQLAlchemy models (User, CropType, HarvestSchedule, MarketPrice, PriceHistory, QualityRecord, AlertSubscription)
+- ✅ SQL Server database setup (10 tables)
+- ✅ SQLAlchemy models (User, CropType, WeatherData, HarvestSchedule, MarketPrice, PriceHistory, PriceForecastResult, QualityRecord, AlertSubscription, AIConversation)
 - ✅ FastAPI backend structure
 - ✅ API endpoints (Quality, Pricing, Harvest, Market, Alert, Forecast)
 - ✅ Database connection với SQL Server
@@ -106,6 +106,7 @@ Hệ thống AI toàn diện hỗ trợ nông dân Việt Nam trong việc dự 
 - ⏳ **YOLOv8 Model Training** - Cần train model với dữ liệu nông sản Việt Nam
   - Chưa có dataset ảnh nông sản
   - Chưa train model
+  
   - Chưa có weights file
 - ⏳ **Price Forecasting Model** - Cần train với dữ liệu giá thực tế
   - Chưa có dữ liệu lịch sử giá đầy đủ
