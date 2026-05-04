@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy import Column, Integer, String, DateTime, Boolean
 from sqlalchemy.sql import func
 from ..core.database import Base
 
@@ -10,7 +10,13 @@ class User(Base):
     Email = Column("Email", String(100), unique=True)
     PhoneNumber = Column("PhoneNumber", String(20))
     ZaloID = Column("ZaloID", String(100))
+    PasswordHash = Column("PasswordHash", String(255), nullable=False)
+    Role = Column("Role", String(20), default='farmer')
+    Region = Column("Region", String(100))
+    IsActive = Column("IsActive", Boolean, default=True)
+    IsVerified = Column("IsVerified", Boolean, default=False)
     CreatedAt = Column("CreatedAt", DateTime, server_default=func.getdate())
+    UpdatedAt = Column("UpdatedAt", DateTime, server_default=func.getdate())
     
     # Aliases for backward compatibility
     @property

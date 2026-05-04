@@ -6,9 +6,16 @@ class CropType(Base):
     __tablename__ = "CropTypes"
     
     CropID = Column("CropID", Integer, primary_key=True, index=True)
-    CropName = Column("CropName", String(100), nullable=False)
+    CropName = Column("CropName", String(100), nullable=False, unique=True)
+    CropNameEN = Column("CropNameEN", String(100))
+    Category = Column("Category", String(50), nullable=False)
     GrowthDurationDays = Column("GrowthDurationDays", Integer)
+    HarvestSeason = Column("HarvestSeason", String(100))
+    TypicalPriceMin = Column("TypicalPriceMin", Numeric(18, 2))
+    TypicalPriceMax = Column("TypicalPriceMax", Numeric(18, 2))
     Description = Column("Description", Text)
+    ImageURL = Column("ImageURL", String(500))
+    CreatedAt = Column("CreatedAt", DateTime, server_default=func.getdate())
     
     # Aliases for backward compatibility
     @property
@@ -35,13 +42,21 @@ class HarvestSchedule(Base):
     __tablename__ = "HarvestSchedule"
     
     ScheduleID = Column("ScheduleID", Integer, primary_key=True, index=True)
-    UserID = Column("UserID", Integer, ForeignKey("Users.UserID"))
-    CropID = Column("CropID", Integer, ForeignKey("CropTypes.CropID"))
+    UserID = Column("UserID", Integer, ForeignKey("Users.UserID"), nullable=False)
+    CropID = Column("CropID", Integer, ForeignKey("CropTypes.CropID"), nullable=False)
     PlantingDate = Column("PlantingDate", Date, nullable=False)
     AreaSize = Column("AreaSize", Float)
-    Region = Column("Region", String(100))
+    Region = Column("Region", String(100), nullable=False)
     ExpectedHarvestDate = Column("ExpectedHarvestDate", Date)
-    Status = Column("Status", String(50), default='Growing')
+    ActualHarvestDate = Column("ActualHarvestDate", Date)
+    EstimatedYieldKg = Column("EstimatedYieldKg", Float)
+    ActualYieldKg = Column("ActualYieldKg", Float)
+    FertilizerUsed = Column("FertilizerUsed", String(200))
+    PesticideUsed = Column("PesticideUsed", String(200))
+    Status = Column("Status", String(50), default='Đang trồng')
+    Notes = Column("Notes", Text)
+    CreatedAt = Column("CreatedAt", DateTime, server_default=func.getdate())
+    UpdatedAt = Column("UpdatedAt", DateTime, server_default=func.getdate())
     
     # Aliases for backward compatibility
     @property
@@ -85,10 +100,15 @@ class QualityRecord(Base):
     
     RecordID = Column("RecordID", Integer, primary_key=True, index=True)
     ScheduleID = Column("ScheduleID", Integer, ForeignKey("HarvestSchedule.ScheduleID"))
-    ImagePath = Column("ImagePath", String(500))
+    UserID = Column("UserID", Integer, ForeignKey("Users.UserID"), nullable=False)
+    CropID = Column("CropID", Integer, ForeignKey("CropTypes.CropID"), nullable=False)
+    ImagePath = Column("ImagePath", String(500), nullable=False)
     AIGrade = Column("AIGrade", String(20))  # Loại 1, 2, 3
     ConfidenceScore = Column("ConfidenceScore", Float)
-    DetectedDiseases = Column("DetectedDiseases", Text)
+    DetectedIssues = Column("DetectedIssues", Text)  # JSON format
+    SuggestedPriceMin = Column("SuggestedPriceMin", Numeric(18, 2))
+    SuggestedPriceMax = Column("SuggestedPriceMax", Numeric(18, 2))
+    Recommendation = Column("Recommendation", Text)
     CheckDate = Column("CheckDate", DateTime, server_default=func.getdate())
     
     # Aliases for backward compatibility

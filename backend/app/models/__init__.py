@@ -1,8 +1,10 @@
 # Models package
 from .user import User
 from .crop import CropType, HarvestSchedule, QualityRecord
-from .price import MarketPrice, PriceHistory
+from .price import MarketPrice, PriceHistory, PriceForecastResult
 from .alert import AlertSubscription
+from .weather import WeatherData
+from .conversation import AIConversation
 
 __all__ = [
     "User",
@@ -11,5 +13,8 @@ __all__ = [
     "QualityRecord",
     "MarketPrice",
     "PriceHistory",
-    "AlertSubscription"
+    "PriceForecastResult",
+    "AlertSubscription",
+    "WeatherData",
+    "AIConversation"
 ]

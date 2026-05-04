@@ -5,7 +5,7 @@ import os
 class Settings(BaseSettings):
     # Database - SQL Server
     # SQL Server Authentication with sa user
-    DATABASE_URL: str = "mssql+pyodbc://sa:123@DESKTOP-7T57RI\\SQLEXPRESS02/NongNghiepAI?driver=ODBC+Driver+17+for+SQL+Server"
+    DATABASE_URL: str = "mssql+pyodbc://sa:123@localhost\\\\SQLEXPRESS02/NongNghiepAI?driver=ODBC+Driver+17+for+SQL+Server"
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
