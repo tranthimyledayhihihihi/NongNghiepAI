@@ -1,18 +1,10 @@
-<<<<<<< HEAD
-"""
-Quality Service - merged Tien (repository + pricing) + Quang (AI detector + DB records)
-- API endpoint dùng: check_quality(db, *, image_path, crop_name, region)
-- Thử AI detector trước, fallback về mock_grade
-"""
-=======
->>>>>>> 66f30715951267b33a40918eff337ea69faad67f
 import json
 from datetime import datetime
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.repositories.common import to_api_grade
+from app.repositories.common import to_api_grade, to_db_grade
 from app.repositories.quality_repository import (
     create_quality_check,
     get_quality_check_by_id,
@@ -23,24 +15,19 @@ from app.services.pricing_service import pricing_service
 
 
 class QualityService:
-    """Service kiểm tra chất lượng nông sản qua ảnh."""
-
     @staticmethod
     def _get_detector():
-        """Lazy import AI detector (Quang), thử các fallback."""
         try:
             from ai_models.quality_check.detector import quality_detector
+
             return quality_detector
         except ImportError:
             try:
                 from ai_models.yolo_inference import quality_detector
+
                 return quality_detector
             except ImportError:
                 return None
-
-    # ------------------------------------------------------------------ #
-    # API interface
-    # ------------------------------------------------------------------ #
 
     def check_quality(
         self,
@@ -51,14 +38,6 @@ class QualityService:
         region: str,
         user_id: Optional[int] = None,
     ) -> dict:
-        """
-        Kiểm tra chất lượng nông sản:
-        1. Gọi AI detector (nếu có) hoặc mock_grade
-        2. Lấy pricing từ pricing_service
-        3. Lưu kết quả qua repository
-        4. Trả về kết quả đầy đủ
-        """
-        # 1. Phân tích ảnh
         detector = self._get_detector()
         if detector:
             try:
@@ -76,7 +55,6 @@ class QualityService:
             disease_detected = bool(defects)
             damage_level = self._damage_level(grade)
 
-        # 2. Tính giá đề xuất qua pricing_service
         pricing = pricing_service.suggest_price(
             db,
             PricingSuggestRequest(
@@ -87,7 +65,6 @@ class QualityService:
             ),
         )
 
-        # 3. Lưu vào DB qua repository
         record = create_quality_check(
             db,
             crop_name=crop_name,
@@ -100,7 +77,6 @@ class QualityService:
             confidence=confidence,
         )
 
-        # 4. Bổ sung lưu vào QualityRecord (Quang) nếu có crop + user
         self._save_quality_record_direct(
             db=db,
             crop_name=crop_name,
@@ -132,10 +108,18 @@ class QualityService:
             "checked_at": getattr(record, "checked_at", None) or datetime.now(),
         }
 
-<<<<<<< HEAD
-    # ------------------------------------------------------------------ #
-    # Helpers
-    # ------------------------------------------------------------------ #
+    def get_history(self, db: Session, user_id: int, limit: int = 50) -> list[dict]:
+        return [
+            self._record_to_dict(record, crop)
+            for record, crop in get_quality_checks_by_user(db, user_id, limit)
+        ]
+
+    def get_detail(self, db: Session, record_id: int) -> dict | None:
+        result = get_quality_check_by_id(db, record_id)
+        if result is None:
+            return None
+        record, crop = result
+        return self._record_to_dict(record, crop)
 
     @staticmethod
     def _save_quality_record_direct(
@@ -149,12 +133,13 @@ class QualityService:
         min_price: float,
         max_price: float,
         recommendations: list,
-    ):
-        """Lưu vào bảng QualityRecords trực tiếp (Quang) - best-effort."""
+    ) -> None:
         if not user_id:
             return
         try:
-            from app.models.crop import CropType, QualityRecord
+            from app.models.crop import CropType
+            from app.models.quality import QualityRecord
+
             crop = db.query(CropType).filter(CropType.CropName == crop_name).first()
             if not crop:
                 return
@@ -162,7 +147,7 @@ class QualityService:
                 UserID=user_id,
                 CropID=crop.CropID,
                 ImagePath=image_path,
-                AIGrade=grade,
+                AIGrade=to_db_grade(grade),
                 ConfidenceScore=confidence,
                 DetectedIssues=json.dumps(defects, ensure_ascii=False),
                 SuggestedPriceMin=min_price,
@@ -171,27 +156,11 @@ class QualityService:
             )
             db.add(record)
             db.commit()
-        except Exception as exc:
+        except Exception:
             db.rollback()
-            print(f"Warning: cannot save QualityRecord: {exc}")
-=======
-    def get_history(self, db: Session, user_id: int, limit: int = 50) -> list[dict]:
-        return [
-            self._record_to_dict(record, crop)
-            for record, crop in get_quality_checks_by_user(db, user_id, limit)
-        ]
-
-    def get_detail(self, db: Session, record_id: int) -> dict | None:
-        result = get_quality_check_by_id(db, record_id)
-        if result is None:
-            return None
-        record, crop = result
-        return self._record_to_dict(record, crop)
->>>>>>> 66f30715951267b33a40918eff337ea69faad67f
 
     @staticmethod
     def _mock_grade(image_path: str) -> tuple[str, float, list[str]]:
-        """Phân loại dựa trên tên file (fallback khi không có AI)."""
         lowered = image_path.lower()
         if "bad" in lowered or "grade3" in lowered or "grade_3" in lowered:
             return "grade_3", 0.68, ["surface_damage"]
@@ -201,9 +170,14 @@ class QualityService:
 
     @staticmethod
     def _damage_level(grade: str) -> str:
-        return {"grade_1": "low", "Loại 1": "low",
-                "grade_2": "medium", "Loại 2": "medium",
-                "grade_3": "high", "Loại 3": "high"}.get(grade, "low")
+        return {
+            "grade_1": "low",
+            "Loại 1": "low",
+            "grade_2": "medium",
+            "Loại 2": "medium",
+            "grade_3": "high",
+            "Loại 3": "high",
+        }.get(grade, "low")
 
     @staticmethod
     def _recommendations(grade: str) -> list[str]:

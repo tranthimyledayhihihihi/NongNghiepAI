@@ -1,8 +1,3 @@
-"""
-Alert Service - merged Tien (API interface + repositories) + Quang (business logic)
-- API endpoints dùng: create_price_alert, list_price_alerts, deactivate_price_alert
-- Task/scheduler dùng: check_and_trigger_alerts
-"""
 import logging
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -25,11 +20,6 @@ logger = logging.getLogger(__name__)
 
 
 class AlertService:
-
-    # ------------------------------------------------------------------ #
-    # API interface (dùng bởi alert.py endpoints)
-    # ------------------------------------------------------------------ #
-
     def create_price_alert(self, db: Session, request: AlertCreateRequest) -> dict:
         alert = create_alert(
             db,
@@ -46,11 +36,19 @@ class AlertService:
     def list_price_alerts(self, db: Session) -> list[dict]:
         return [
             self._to_response(
-                db, alert,
+                db,
+                alert,
                 "Canh bao dang hoat dong." if alert.is_active else "Canh bao da tat.",
             )
             for alert in get_alerts(db)
         ]
+
+    def get_price_alert(self, db: Session, alert_id: int) -> dict | None:
+        alert = get_alert_by_id(db, alert_id)
+        if not alert:
+            return None
+        message = "Canh bao dang hoat dong." if alert.is_active else "Canh bao da tat."
+        return self._to_response(db, alert, message)
 
     def deactivate_price_alert(self, db: Session, alert_id: int) -> dict | None:
         alert = deactivate_alert(db, alert_id)
@@ -58,21 +56,11 @@ class AlertService:
             return None
         return {"alert_id": alert.id, "message": "Da tat canh bao gia."}
 
-<<<<<<< HEAD
-    # ------------------------------------------------------------------ #
-    # Business logic - kiểm tra và kích hoạt cảnh báo (Quang)
-    # ------------------------------------------------------------------ #
-
     def check_and_trigger_alerts(self, db: Session) -> List[Dict]:
-        """Chạy toàn bộ alert đang active, kiểm tra điều kiện giá, gửi thông báo nếu thỏa."""
         try:
-            from app.models.alert import AlertSubscription
+            from app.models.alert import PriceAlert
 
-            active_alerts = (
-                db.query(AlertSubscription)
-                .filter(AlertSubscription.IsActive == True)  # noqa: E712
-                .all()
-            )
+            active_alerts = db.query(PriceAlert).filter(PriceAlert.IsActive.is_(True)).all()
             triggered = []
             for alert in active_alerts:
                 result = self._evaluate_alert(db, alert)
@@ -80,13 +68,11 @@ class AlertService:
                     triggered.append(result)
             return triggered
         except Exception as exc:
-            logger.error(f"check_and_trigger_alerts error: {exc}")
+            logger.error("check_and_trigger_alerts error: %s", exc)
             return []
 
     def _evaluate_alert(self, db: Session, alert) -> Optional[Dict]:
-        """Kiểm tra một alert: so sánh giá mới nhất với target_price."""
         try:
-            from app.models.alert import AlertSubscription
             from app.models.crop import CropType
             from app.models.price import MarketPrice
 
@@ -96,33 +82,34 @@ class AlertService:
                     MarketPrice.CropID == alert.CropID,
                     MarketPrice.Region == alert.Region,
                 )
-                .order_by(desc(MarketPrice.PriceDate))
+                .order_by(desc(MarketPrice.PriceDate), desc(MarketPrice.UpdatedAt))
                 .first()
             )
             if not latest:
                 return None
 
             current_price = float(latest.PricePerKg)
-            target = float(alert.TargetPrice)
-            condition = (alert.AlertType or "Trên").strip()
-
+            target_price = float(alert.TargetPrice)
+            condition = to_api_alert_condition(alert.AlertType)
             triggered = (
-                (condition in ("Trên", "above", ">") and current_price >= target)
-                or (condition in ("Dưới", "below", "<") and current_price <= target)
+                (condition == "above" and current_price >= target_price)
+                or (condition == "below" and current_price <= target_price)
             )
             if not triggered:
                 return None
 
             crop = db.query(CropType).filter(CropType.CropID == alert.CropID).first()
-            crop_name = crop.CropName if crop else "N/A"
+            crop_name = crop.CropName if crop else get_alert_crop_name(db, alert) or "N/A"
 
             self._send_alert_notification(
+                db=db,
                 alert=alert,
                 crop_name=crop_name,
                 current_price=current_price,
             )
 
             alert.LastTriggered = datetime.now()
+            db.add(alert)
             db.commit()
 
             return {
@@ -130,48 +117,37 @@ class AlertService:
                 "crop_name": crop_name,
                 "region": alert.Region,
                 "current_price": current_price,
-                "target_price": target,
+                "target_price": target_price,
                 "condition": condition,
                 "triggered": True,
             }
         except Exception as exc:
-            logger.error(f"_evaluate_alert error: {exc}")
+            db.rollback()
+            logger.error("_evaluate_alert error: %s", exc)
             return None
 
     @staticmethod
-    def _send_alert_notification(alert, crop_name: str, current_price: float):
-        """Gửi thông báo qua notification_service (email/zalo)."""
+    def _send_alert_notification(db: Session, alert, crop_name: str, current_price: float) -> None:
         try:
             from app.services.notification_service import notification_service
+
             subject, plain, html = notification_service.build_price_alert_message(
                 crop_name=crop_name,
                 region=alert.Region,
                 current_price=current_price,
                 target_price=float(alert.TargetPrice),
-                condition=alert.AlertType or "Trên",
+                condition=to_api_alert_condition(alert.AlertType),
             )
-            receiver = f"user_{alert.UserID}@agriai.vn"
+            receiver = get_alert_receiver(db, alert) or f"user_{alert.UserID}@agriai.vn"
             notification_service.send(
-                channel=alert.NotifyMethod or "email",
+                channel=(alert.NotifyMethod or "email").lower(),
                 receiver=receiver,
                 subject=subject,
                 message=plain,
                 html_message=html,
             )
         except Exception as exc:
-            logger.error(f"_send_alert_notification error: {exc}")
-
-    # ------------------------------------------------------------------ #
-    # Helpers
-    # ------------------------------------------------------------------ #
-=======
-    def get_price_alert(self, db: Session, alert_id: int) -> dict | None:
-        alert = get_alert_by_id(db, alert_id)
-        if not alert:
-            return None
-        message = "Canh bao dang hoat dong." if alert.is_active else "Canh bao da tat."
-        return self._to_response(db, alert, message)
->>>>>>> 66f30715951267b33a40918eff337ea69faad67f
+            logger.error("_send_alert_notification error: %s", exc)
 
     @staticmethod
     def _to_response(db: Session, alert, message: str) -> dict:

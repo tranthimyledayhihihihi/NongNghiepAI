@@ -44,7 +44,7 @@ class PriceForecastService:
         if model:
             try:
                 raw = model.predict(crop_name=crop_name, region=region, days=forecast_days)
-                predicted_prices = raw.get("forecast_data", [])
+                predicted_prices = self._normalize_forecast_data(raw.get("forecast_data", []))
                 trend = raw.get("trend", self._calc_trend([p["predicted_price"] for p in predicted_prices]))
                 return {
                     "crop_name": crop_name,
@@ -63,7 +63,7 @@ class PriceForecastService:
         price_history = self._load_price_history(db, crop_name, region, days=60)
         if price_history:
             raw = self._fallback_forecast(price_history, forecast_days)
-            predicted_prices = raw.get("forecast_data", [])
+            predicted_prices = self._normalize_forecast_data(raw.get("forecast_data", []))
             trend = raw.get("trend", "stable")
             return {
                 "crop_name": crop_name,
@@ -85,8 +85,8 @@ class PriceForecastService:
             predicted_prices.append({
                 "date": (date.today() + timedelta(days=offset)).isoformat(),
                 "predicted_price": predicted,
-                "confidence_lower": round(predicted * 0.92, 2),
-                "confidence_upper": round(predicted * 1.08, 2),
+                "min_price": round(predicted * 0.92, 2),
+                "max_price": round(predicted * 1.08, 2),
             })
 
         trend = self._calc_trend([p["predicted_price"] for p in predicted_prices])
@@ -104,6 +104,21 @@ class PriceForecastService:
     # ------------------------------------------------------------------ #
     # Helpers
     # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _normalize_forecast_data(forecast_data: List[Dict]) -> List[Dict]:
+        normalized = []
+        for item in forecast_data:
+            predicted = float(item["predicted_price"])
+            normalized.append(
+                {
+                    "date": item["date"],
+                    "predicted_price": predicted,
+                    "min_price": float(item.get("min_price", item.get("confidence_lower", predicted * 0.92))),
+                    "max_price": float(item.get("max_price", item.get("confidence_upper", predicted * 1.08))),
+                }
+            )
+        return normalized
 
     def _load_price_history(self, db: Session, crop_name: str, region: str, days: int = 60) -> List[Dict]:
         """Lấy lịch sử giá từ DB (Quang)."""

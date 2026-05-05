@@ -1,8 +1,3 @@
-"""
-Harvest Service - merged Tien (repository + schema) + Quang (AI predictor + DB queries)
-- API endpoints dùng: forecast_harvest(db, request), predict_harvest_date(db, crop_name, date, region)
-- Scheduler/internal dùng: create_harvest_schedule, _get_latest_weather
-"""
 from datetime import date, datetime, timedelta
 from typing import Dict, Optional
 from unicodedata import category, normalize
@@ -29,33 +24,21 @@ class HarvestService:
 
     @staticmethod
     def _get_predictor():
-        """Lazy import AI predictor, tránh circular import."""
         try:
             from ai_models.harvest_forecast.predictor import harvest_predictor
+
             return harvest_predictor
         except ImportError:
             return None
 
-    # ------------------------------------------------------------------ #
-    # API interface
-    # ------------------------------------------------------------------ #
-
     def forecast_harvest(self, db: Session, request: HarvestForecastRequest) -> dict:
-        """
-        Dự báo thu hoạch:
-        - Thử gọi AI predictor (Quang's model)
-        - Fallback về rule-based growth days nếu không có model
-        - Lưu kết quả qua repository
-        """
         crop_name = request.crop_name
         region = request.region
         planting_date = request.planting_date
 
-        # Lấy thời tiết và thông tin cây trồng để truyền cho predictor
         weather_data = self._get_latest_weather(db, region)
-        growth_duration = self._get_crop_growth_days(db, crop_name)
+        growth_duration = self._resolve_growth_days(db, crop_name)
 
-        # Thử AI predictor
         predictor = self._get_predictor()
         if predictor:
             try:
@@ -78,7 +61,6 @@ class HarvestService:
                 predictor = None
 
         if not predictor:
-            # Rule-based fallback
             growth_days = self._growth_days_for(crop_name)
             expected_date = planting_date + timedelta(days=growth_days)
             warning = self._warning_for(expected_date)
@@ -117,7 +99,6 @@ class HarvestService:
         planting_date: datetime,
         region: str,
     ) -> dict:
-        """Backward-compatible alias dùng bởi /api/harvest/predict."""
         request = HarvestForecastRequest(
             crop_name=crop_name,
             region=region,
@@ -131,11 +112,6 @@ class HarvestService:
             "recommendations": [result["recommendation"]],
         }
 
-<<<<<<< HEAD
-    # ------------------------------------------------------------------ #
-    # Lưu kế hoạch thu hoạch (Quang)
-    # ------------------------------------------------------------------ #
-
     def create_harvest_schedule(
         self,
         db: Session,
@@ -148,9 +124,9 @@ class HarvestService:
         estimated_yield_kg: Optional[float] = None,
         notes: Optional[str] = None,
     ):
-        """Lưu kế hoạch thu hoạch vào bảng HarvestSchedule."""
         try:
-            from app.models.crop import HarvestSchedule
+            from app.models.harvest import HarvestSchedule
+
             schedule = HarvestSchedule(
                 UserID=user_id,
                 CropID=crop_id,
@@ -160,19 +136,15 @@ class HarvestService:
                 AreaSize=area_size,
                 EstimatedYieldKg=estimated_yield_kg,
                 Notes=notes,
-                Status="Đang trồng",
             )
             db.add(schedule)
             db.commit()
             db.refresh(schedule)
             return schedule
         except Exception:
+            db.rollback()
             return None
 
-    # ------------------------------------------------------------------ #
-    # Helpers
-    # ------------------------------------------------------------------ #
-=======
     def get_history(self, db: Session, user_id: int, limit: int = 50) -> list[dict]:
         records = get_harvest_forecast_history(db, user_id, limit)
         return [
@@ -217,16 +189,21 @@ class HarvestService:
             }
             for schedule, crop in records
         ]
->>>>>>> 66f30715951267b33a40918eff337ea69faad67f
 
     def _growth_days_for(self, crop_name: str) -> int:
         key = self._normalize_key(crop_name)
         return self.default_growth_days.get(key, 70)
 
+    def _resolve_growth_days(self, db: Session, crop_name: str) -> int:
+        key = self._normalize_key(crop_name)
+        if key in self.default_growth_days:
+            return self.default_growth_days[key]
+        return self._get_crop_growth_days(db, crop_name) or self._growth_days_for(crop_name)
+
     def _get_crop_growth_days(self, db: Session, crop_name: str) -> Optional[int]:
-        """Lấy GrowthDurationDays từ DB, fallback về rule-based."""
         try:
             from app.models.crop import CropType
+
             crop = db.query(CropType).filter(CropType.CropName == crop_name).first()
             return crop.GrowthDurationDays if crop and crop.GrowthDurationDays else None
         except Exception:
@@ -234,9 +211,9 @@ class HarvestService:
 
     @staticmethod
     def _get_latest_weather(db: Session, region: str) -> Optional[Dict]:
-        """Lấy bản ghi thời tiết gần nhất cho region."""
         try:
             from app.models.weather import WeatherData
+
             weather = (
                 db.query(WeatherData)
                 .filter(WeatherData.Region == region)
