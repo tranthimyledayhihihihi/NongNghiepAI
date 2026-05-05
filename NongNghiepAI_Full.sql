@@ -248,6 +248,81 @@ CREATE TABLE AIConversations (
 GO
 
 PRINT N'✓ Đã tạo bảng AIConversations';
+
+-- --------------------------------------------------------------
+-- BẢNG 11: Kết quả dự báo thu hoạch từ AI
+-- --------------------------------------------------------------
+CREATE TABLE HarvestForecastResults (
+    ForecastID              INT PRIMARY KEY IDENTITY(1,1),
+    ScheduleID              INT NOT NULL FOREIGN KEY REFERENCES HarvestSchedule(ScheduleID),
+    ExpectedHarvestDate     DATE NOT NULL,
+    ConfidenceScore         FLOAT,
+    WeatherWarning          NVARCHAR(MAX),
+    LaborRecommendation     NVARCHAR(MAX),
+    TransportRecommendation NVARCHAR(MAX),
+    ModelVersion            NVARCHAR(50),
+    GeneratedAt             DATETIME DEFAULT GETDATE()
+);
+GO
+
+PRINT N'✓ Đã tạo bảng HarvestForecastResults';
+
+-- --------------------------------------------------------------
+-- BẢNG 12: Lịch sử yêu cầu định giá
+-- --------------------------------------------------------------
+CREATE TABLE PricingRequests (
+    RequestID           INT PRIMARY KEY IDENTITY(1,1),
+    UserID              INT NULL FOREIGN KEY REFERENCES Users(UserID),
+    CropID              INT NOT NULL FOREIGN KEY REFERENCES CropTypes(CropID),
+    Region              NVARCHAR(100) NOT NULL,
+    QuantityKg          FLOAT NOT NULL,
+    QualityGrade        NVARCHAR(20) CHECK (QualityGrade IN (N'Loại 1', N'Loại 2', N'Loại 3')),
+    SuggestedPrice      DECIMAL(18,2),
+    MinPrice            DECIMAL(18,2),
+    MaxPrice            DECIMAL(18,2),
+    CreatedAt           DATETIME DEFAULT GETDATE()
+);
+GO
+
+PRINT N'✓ Đã tạo bảng PricingRequests';
+
+-- --------------------------------------------------------------
+-- BẢNG 13: Kết quả tư vấn kênh bán hàng
+-- --------------------------------------------------------------
+CREATE TABLE MarketSuggestions (
+    SuggestionID        INT PRIMARY KEY IDENTITY(1,1),
+    UserID              INT NOT NULL FOREIGN KEY REFERENCES Users(UserID),
+    CropID              INT NOT NULL FOREIGN KEY REFERENCES CropTypes(CropID),
+    Region              NVARCHAR(100) NOT NULL,
+    QuantityKg          FLOAT NOT NULL,
+    QualityGrade        NVARCHAR(20) CHECK (QualityGrade IN (N'Loại 1', N'Loại 2', N'Loại 3')),
+    RecommendedChannel  NVARCHAR(50) CHECK (RecommendedChannel IN (N'Thương lái', N'Chợ đầu mối', N'Xuất khẩu')),
+    EstimatedProfit     DECIMAL(18,2),
+    Reason              NVARCHAR(MAX),
+    Warning             NVARCHAR(MAX),
+    CreatedAt           DATETIME DEFAULT GETDATE()
+);
+GO
+
+PRINT N'✓ Đã tạo bảng MarketSuggestions';
+
+-- --------------------------------------------------------------
+-- BẢNG 14: Lịch sử gửi thông báo cảnh báo
+-- --------------------------------------------------------------
+CREATE TABLE AlertNotifications (
+    NotificationID      INT PRIMARY KEY IDENTITY(1,1),
+    AlertID             INT NOT NULL FOREIGN KEY REFERENCES AlertSubscriptions(AlertID),
+    CurrentPrice        DECIMAL(18,2),
+    Message             NVARCHAR(MAX),
+    NotifyMethod        NVARCHAR(20),
+    SendStatus          NVARCHAR(20) DEFAULT N'Pending'
+                        CHECK (SendStatus IN (N'Pending', N'Sent', N'Failed')),
+    SentAt              DATETIME DEFAULT GETDATE()
+);
+GO
+
+PRINT N'✓ Đã tạo bảng AlertNotifications';
+
 GO
 
 -- ============================================================
@@ -260,6 +335,17 @@ CREATE INDEX IDX_HarvestSchedule_User        ON HarvestSchedule (UserID, Status)
 CREATE INDEX IDX_QualityRecords_User         ON QualityRecords  (UserID, CheckDate DESC);
 CREATE INDEX IDX_AlertSubscriptions_Active   ON AlertSubscriptions (IsActive, CropID);
 CREATE INDEX IDX_AIConversations_User        ON AIConversations (UserID, CreatedAt DESC);
+CREATE INDEX IDX_HarvestForecast_Schedule 
+ON HarvestForecastResults(ScheduleID, GeneratedAt DESC);
+
+CREATE INDEX IDX_PricingRequests_User 
+ON PricingRequests(UserID, CreatedAt DESC);
+
+CREATE INDEX IDX_MarketSuggestions_User 
+ON MarketSuggestions(UserID, CreatedAt DESC);
+
+CREATE INDEX IDX_AlertNotifications_Alert 
+ON AlertNotifications(AlertID, SentAt DESC);
 GO
 
 PRINT N'✓ Đã tạo các Index';

@@ -1,72 +1,87 @@
-from datetime import datetime, timedelta
-from typing import Dict, Optional
+from datetime import date, datetime, timedelta
+from unicodedata import category, normalize
+
 from sqlalchemy.orm import Session
-from ..models.crop import CropType, HarvestSchedule
+
+from app.repositories.harvest_repository import create_harvest_forecast
+from app.schemas.harvest_schema import HarvestForecastRequest
+
 
 class HarvestService:
-    """Service for harvest operations"""
-    
-    @staticmethod
+    default_growth_days = {
+        "ca chua": 75,
+        "dua chuot": 60,
+        "rau muong": 30,
+        "cai xanh": 45,
+        "ot": 90,
+        "lua": 105,
+    }
+
+    def forecast_harvest(self, db: Session, request: HarvestForecastRequest) -> dict:
+        growth_days = self._growth_days_for(request.crop_name)
+        expected_date = request.planting_date + timedelta(days=growth_days)
+        warning = self._warning_for(expected_date)
+        recommendation = (
+            f"Du kien thu hoach sau {growth_days} ngay. "
+            "Nen kiem tra do chin va theo doi thoi tiet truoc thu hoach 5-7 ngay."
+        )
+
+        record = create_harvest_forecast(
+            db,
+            crop_name=request.crop_name,
+            region=request.region,
+            planting_date=request.planting_date,
+            expected_harvest_date=expected_date,
+            confidence=0.78,
+            warning=warning,
+            recommendation=recommendation,
+        )
+
+        return {
+            "crop_name": request.crop_name,
+            "region": request.region,
+            "planting_date": request.planting_date,
+            "expected_harvest_date": expected_date,
+            "confidence": 0.78,
+            "warning": warning,
+            "recommendation": recommendation,
+            "created_at": getattr(record, "created_at", None),
+        }
+
     def predict_harvest_date(
+        self,
         db: Session,
         crop_name: str,
         planting_date: datetime,
-        region: str
-    ) -> Optional[Dict]:
-        """Predict harvest date based on crop type and planting date"""
-        
-        # Get crop info
-        crop = db.query(CropType).filter(
-            CropType.name == crop_name
-        ).first()
-        
-        if not crop or not crop.avg_growth_days:
-            return None
-        
-        # Calculate predicted harvest date
-        predicted_date = planting_date + timedelta(days=crop.avg_growth_days)
-        
-        # TODO: Integrate weather data and Prophet model in Phase 2
-        
-        return {
-            "crop_name": crop_name,
-            "region": region,
-            "planting_date": planting_date.isoformat(),
-            "predicted_harvest_date": predicted_date.isoformat(),
-            "growth_days": crop.avg_growth_days,
-            "confidence": 0.85,
-            "recommendations": [
-                f"Dự kiến thu hoạch sau {crop.avg_growth_days} ngày",
-                "Theo dõi thời tiết để điều chỉnh kế hoạch",
-                "Chuẩn bị nhân lực trước 1 tuần"
-            ]
-        }
-    
-    @staticmethod
-    def create_harvest_schedule(
-        db: Session,
-        crop_type_id: int,
         region: str,
-        planting_date: datetime,
-        predicted_harvest_date: datetime,
-        quantity_kg: Optional[float] = None,
-        notes: Optional[str] = None
-    ) -> HarvestSchedule:
-        """Create a new harvest schedule"""
-        
-        schedule = HarvestSchedule(
-            crop_type_id=crop_type_id,
+    ) -> dict:
+        request = HarvestForecastRequest(
+            crop_name=crop_name,
             region=region,
-            planting_date=planting_date,
-            predicted_harvest_date=predicted_harvest_date,
-            quantity_kg=quantity_kg,
-            notes=notes
+            planting_date=planting_date.date(),
         )
-        
-        db.add(schedule)
-        db.commit()
-        db.refresh(schedule)
-        
-        return schedule
+        result = self.forecast_harvest(db, request)
+        return {
+            **result,
+            "predicted_harvest_date": result["expected_harvest_date"],
+            "growth_days": self._growth_days_for(crop_name),
+            "recommendations": [result["recommendation"]],
+        }
+
+    def _growth_days_for(self, crop_name: str) -> int:
+        key = self._normalize_key(crop_name)
+        return self.default_growth_days.get(key, 70)
+
+    @staticmethod
+    def _normalize_key(value: str) -> str:
+        normalized = normalize("NFD", value.strip().lower())
+        return "".join(char for char in normalized if category(char) != "Mn")
+
+    @staticmethod
+    def _warning_for(expected_date: date) -> str | None:
+        if expected_date.month in {9, 10, 11}:
+            return "Mua mua bao, can theo doi thoi tiet va chuan bi thu hoach som neu can."
+        return None
+
 
 harvest_service = HarvestService()
