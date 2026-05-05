@@ -32,3 +32,15 @@ async def predict_harvest(
 @router.get("/schedule")
 async def get_harvest_schedule():
     return {"schedules": []}
+
+
+@router.get("/history/{user_id}")
+async def get_harvest_history(user_id: int, limit: int = 50, db: Session = Depends(get_db)):
+    history = harvest_service.get_history(db, user_id, limit)
+    return {"user_id": user_id, "total": len(history), "history": history}
+
+
+@router.get("/schedules/{user_id}")
+async def get_harvest_schedules(user_id: int, limit: int = 50, db: Session = Depends(get_db)):
+    schedules = harvest_service.get_schedules(db, user_id, limit)
+    return {"user_id": user_id, "total": len(schedules), "schedules": schedules}

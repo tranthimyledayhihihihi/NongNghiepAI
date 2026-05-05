@@ -4,6 +4,7 @@ from sqlalchemy import desc
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.models.crop import Crop
 from app.models.quality import QualityCheck
 from app.repositories.common import ensure_crop, ensure_user, to_db_grade
 
@@ -61,3 +62,31 @@ def get_quality_checks(
     except SQLAlchemyError:
         db.rollback()
         return []
+
+
+def get_quality_checks_by_user(db: Session, user_id: int, limit: int = 50) -> list[tuple[QualityCheck, Crop]]:
+    try:
+        return (
+            db.query(QualityCheck, Crop)
+            .join(Crop, Crop.CropID == QualityCheck.CropID)
+            .filter(QualityCheck.UserID == user_id)
+            .order_by(desc(QualityCheck.CheckDate))
+            .limit(limit)
+            .all()
+        )
+    except SQLAlchemyError:
+        db.rollback()
+        return []
+
+
+def get_quality_check_by_id(db: Session, record_id: int) -> tuple[QualityCheck, Crop] | None:
+    try:
+        return (
+            db.query(QualityCheck, Crop)
+            .join(Crop, Crop.CropID == QualityCheck.CropID)
+            .filter(QualityCheck.RecordID == record_id)
+            .first()
+        )
+    except SQLAlchemyError:
+        db.rollback()
+        return None

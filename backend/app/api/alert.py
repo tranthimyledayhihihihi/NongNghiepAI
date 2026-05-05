@@ -23,6 +23,14 @@ async def list_price_alerts(db: Session = Depends(get_db)):
     return {"alerts": alert_service.list_price_alerts(db)}
 
 
+@router.get("/{alert_id}", response_model=AlertResponse)
+async def get_price_alert(alert_id: int, db: Session = Depends(get_db)):
+    result = alert_service.get_price_alert(db, alert_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="alert not found")
+    return result
+
+
 @router.delete("/{alert_id}", response_model=AlertDeactivateResponse)
 async def deactivate_price_alert(alert_id: int, db: Session = Depends(get_db)):
     result = alert_service.deactivate_price_alert(db, alert_id)

@@ -25,6 +25,16 @@ async def get_current_price(request: PriceRequest, db: Session = Depends(get_db)
     )
 
 
+@router.get("/current", response_model=PriceResponse)
+async def get_current_price_query(
+    crop_name: str,
+    region: str,
+    quality_grade: str = "grade_1",
+    db: Session = Depends(get_db),
+):
+    return pricing_service.get_current_price(db, crop_name, region, quality_grade)
+
+
 @router.post("/suggest", response_model=PricingSuggestResponse)
 async def suggest_price(request: PricingSuggestRequest, db: Session = Depends(get_db)):
     return pricing_service.suggest_price(db, request)

@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 
-from app.repositories.market_repository import create_market_suggestion
+from app.repositories.common import CHANNEL_API_TO_DB, to_api_grade
+from app.repositories.market_repository import create_market_suggestion, get_market_suggestions_by_user
 from app.schemas.market_schema import MarketSuggestRequest
 from app.schemas.price_schema import PricingSuggestRequest
 from app.services.pricing_service import pricing_service
@@ -41,6 +42,25 @@ class MarketService:
             "warning": warning,
         }
 
+    def get_history(self, db: Session, user_id: int, limit: int = 50) -> list[dict]:
+        return [
+            {
+                "suggestion_id": suggestion.id,
+                "user_id": suggestion.user_id,
+                "crop_id": crop.id,
+                "crop_name": crop.name,
+                "region": suggestion.region,
+                "quantity": suggestion.quantity_kg,
+                "quality_grade": to_api_grade(suggestion.quality_grade),
+                "recommended_channel": self._channel_to_api(suggestion.recommended_channel),
+                "estimated_profit": float(suggestion.estimated_profit or 0),
+                "reason": suggestion.reason,
+                "warning": suggestion.warning,
+                "created_at": suggestion.created_at,
+            }
+            for suggestion, crop in get_market_suggestions_by_user(db, user_id, limit)
+        ]
+
     @staticmethod
     def _channels(quantity: float, quality_grade: str, suggested_price: float) -> list[dict]:
         if quality_grade == "grade_1" and quantity >= 500:
@@ -71,6 +91,17 @@ class MarketService:
             }
             for channel, factor, reason in ordered
         ]
+
+    @staticmethod
+    def _channel_to_api(value: str | None) -> str:
+        if not value:
+            return "retail"
+        db_to_api = {
+            CHANNEL_API_TO_DB["retail"]: "retail",
+            CHANNEL_API_TO_DB["wholesale"]: "wholesale",
+            CHANNEL_API_TO_DB["export"]: "export",
+        }
+        return db_to_api.get(value, value)
 
 
 market_service = MarketService()
