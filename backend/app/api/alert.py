@@ -1,21 +1,31 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
 
-router = APIRouter(prefix="/api/alerts", tags=["alerts"])
+from app.core.database import get_db
+from app.schemas.alert_schema import (
+    AlertCreateRequest,
+    AlertDeactivateResponse,
+    AlertListResponse,
+    AlertResponse,
+)
+from app.services.alert_service import alert_service
 
-# Alert endpoints will be implemented in Phase 2
+router = APIRouter(prefix="/api/alert", tags=["alert"])
 
-@router.get("/")
-async def get_alerts():
-    """Get user alerts - Phase 2"""
-    return {
-        "message": "Alert feature coming in Phase 2",
-        "alerts": []
-    }
 
-@router.post("/subscribe")
-async def subscribe_alert():
-    """Subscribe to price alerts - Phase 2"""
-    return {
-        "message": "Alert subscription feature coming in Phase 2",
-        "status": "pending"
-    }
+@router.post("/create", response_model=AlertResponse)
+async def create_price_alert(request: AlertCreateRequest, db: Session = Depends(get_db)):
+    return alert_service.create_price_alert(db, request)
+
+
+@router.get("/list", response_model=AlertListResponse)
+async def list_price_alerts(db: Session = Depends(get_db)):
+    return {"alerts": alert_service.list_price_alerts(db)}
+
+
+@router.delete("/{alert_id}", response_model=AlertDeactivateResponse)
+async def deactivate_price_alert(alert_id: int, db: Session = Depends(get_db)):
+    result = alert_service.deactivate_price_alert(db, alert_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="alert not found")
+    return result

@@ -1,18 +1,28 @@
+from datetime import datetime
+
 from pydantic import BaseModel, Field
-from typing import Optional, List
+
 
 class QualityCheckResponse(BaseModel):
-    quality_grade: str = Field(..., description="Phân loại: grade_1, grade_2, grade_3")
-    confidence: float = Field(..., description="Độ tin cậy (0-1)")
-    defects: List[str] = Field(default_factory=list, description="Các khuyết tật phát hiện")
-    suggested_price_range: dict = Field(..., description="Khoảng giá đề xuất")
-    recommendations: List[str] = Field(default_factory=list, description="Khuyến nghị")
+    crop_name: str
+    region: str
+    image_path: str | None = None
+    quality_grade: str = Field(..., description="grade_1, grade_2, grade_3")
+    disease_detected: bool = False
+    damage_level: str = "low"
+    suggested_price: float
+    confidence: float = Field(..., ge=0, le=1)
+    defects: list[str] = Field(default_factory=list)
+    suggested_price_range: dict[str, float] = Field(default_factory=dict)
+    recommendations: list[str] = Field(default_factory=list)
+    checked_at: datetime | None = None
+
 
 class QualityAnalysis(BaseModel):
     crop_type: str
     quality_grade: str
     defect_count: int
-    defect_types: List[str]
-    size_category: Optional[str] = None
-    color_score: Optional[float] = None
-    freshness_score: Optional[float] = None
+    defect_types: list[str]
+    size_category: str | None = None
+    color_score: float | None = None
+    freshness_score: float | None = None

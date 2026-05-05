@@ -1,71 +1,69 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
-from app.schemas.quality_schema import QualityCheckResponse
-# Sửa thành
-from ai_models.yolo_inference import quality_detector
 import shutil
-from pathlib import Path
 import uuid
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy.orm import Session
+
+from app.core.config import settings
+from app.core.database import get_db
+from app.schemas.quality_schema import QualityCheckResponse
+from app.services.quality_service import quality_service
 
 router = APIRouter(prefix="/api/quality", tags=["quality"])
 
-# Create upload directory
-UPLOAD_DIR = Path("uploads/quality_check")
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 @router.post("/check", response_model=QualityCheckResponse)
-async def check_quality(file: UploadFile = File(...)):
-    """
-    Kiểm tra chất lượng nông sản qua ảnh
-    
-    - Upload ảnh nông sản
-    - AI phân tích và phân loại chất lượng
-    - Trả về kết quả và giá đề xuất
-    """
-    if not file.content_type.startswith('image/'):
-        raise HTTPException(status_code=400, detail="File phải là ảnh")
-    
-    try:
-        # Save uploaded file
-        file_id = str(uuid.uuid4())
-        file_extension = Path(file.filename).suffix
-        file_path = UPLOAD_DIR / f"{file_id}{file_extension}"
-        
-        with file_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        
-        # Analyze image
-        result = quality_detector.analyze_image(str(file_path))
-        
-        # Clean up
-        file_path.unlink()
-        
-        return QualityCheckResponse(**result)
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Lỗi xử lý ảnh: {str(e)}")
+async def check_quality(
+    image: UploadFile | None = File(None),
+    file: UploadFile | None = File(None),
+    crop_name: str = Form("unknown"),
+    region: str = Form("unknown"),
+    db: Session = Depends(get_db),
+):
+    upload = image or file
+    if upload is None:
+        raise HTTPException(status_code=400, detail="image file is required")
+    if upload.content_type and not upload.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="file must be an image")
+
+    upload_dir = Path(settings.UPLOAD_DIR) / "quality_check"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    extension = Path(upload.filename or "").suffix or ".jpg"
+    file_path = upload_dir / f"{uuid.uuid4()}{extension}"
+
+    with file_path.open("wb") as buffer:
+        shutil.copyfileobj(upload.file, buffer)
+
+    return quality_service.check_quality(
+        db,
+        image_path=str(file_path),
+        crop_name=crop_name,
+        region=region,
+    )
+
 
 @router.get("/grades")
 async def get_quality_grades():
-    """Lấy danh sách các phân loại chất lượng"""
     return {
         "grades": [
             {
                 "grade": "grade_1",
-                "name": "Loại 1",
-                "description": "Chất lượng cao, không khuyết tật",
-                "price_multiplier": 1.0
+                "name": "Loai 1",
+                "description": "Chat luong cao, khong khuyet tat ro rang",
+                "price_multiplier": 1.0,
             },
             {
                 "grade": "grade_2",
-                "name": "Loại 2",
-                "description": "Chất lượng trung bình, ít khuyết tật",
-                "price_multiplier": 0.7
+                "name": "Loai 2",
+                "description": "Chat luong trung binh, co khuyet tat nhe",
+                "price_multiplier": 0.82,
             },
             {
                 "grade": "grade_3",
-                "name": "Loại 3",
-                "description": "Chất lượng thấp, nhiều khuyết tật",
-                "price_multiplier": 0.4
-            }
+                "name": "Loai 3",
+                "description": "Chat luong thap, can ban nhanh hoac che bien",
+                "price_multiplier": 0.58,
+            },
         ]
     }

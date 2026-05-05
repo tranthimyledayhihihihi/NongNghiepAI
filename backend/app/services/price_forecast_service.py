@@ -1,16 +1,15 @@
 """
-P2-11: Price Forecast Service
-Lấy price_history từ repository → gọi predictor → tính trend, warning, best_selling_time.
-POST /api/price-forecast/predict hoạt động.
+Price Forecast Service - merged Tien (schema/API) + Quang (AI model + rich analysis)
+- API endpoint dùng: predict_price(db, request: PricePredictionRequest)
+- Thử AI model trước, fallback về moving average, rồi về mock
 """
-from datetime import datetime, timedelta, date
+from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
 
-from ..models.price import PriceHistory, MarketPrice
-from ..models.crop import CropType
+from app.schemas.price_schema import PricePredictionRequest
+from app.services.pricing_service import pricing_service
 
 
 class PriceForecastService:
@@ -18,6 +17,7 @@ class PriceForecastService:
 
     @staticmethod
     def _get_model():
+        """Lazy import AI price forecast model (Quang)."""
         try:
             from ai_models.price_forecast.price_model import price_forecast_model
             return price_forecast_model
@@ -25,120 +25,136 @@ class PriceForecastService:
             return None
 
     # ------------------------------------------------------------------ #
-    # Phương thức chính
+    # API interface
     # ------------------------------------------------------------------ #
 
-    def predict_price(
-        self,
-        db: Session,
-        crop_name: str,
-        region: str,
-        forecast_days: int = 7,
-    ) -> Dict:
+    def predict_price(self, db: Session, request: PricePredictionRequest) -> dict:
         """
         Dự báo giá:
-        1. Lấy lịch sử giá từ DB
-        2. Đưa lịch sử vào predictor
-        3. Tính trend + warning + best_selling_time
-        4. Trả về kết quả chuẩn API contract
+        1. Thử AI model (Quang's price_forecast model)
+        2. Fallback về moving average từ DB history
+        3. Fallback cuối: mock dựa trên giá hiện tại
         """
-        # 1. Lịch sử giá
-        price_history = self._load_price_history(db, crop_name, region, days=60)
+        crop_name = request.crop_name
+        region = request.region
+        forecast_days = request.forecast_days
 
-        # 2. Gọi predictor
+        # 1. Thử AI model
         model = self._get_model()
         if model:
-            raw = model.predict(crop_name=crop_name, region=region, days=forecast_days)
-        else:
-            raw = self._fallback_forecast(crop_name, region, price_history, forecast_days)
+            try:
+                raw = model.predict(crop_name=crop_name, region=region, days=forecast_days)
+                predicted_prices = raw.get("forecast_data", [])
+                trend = raw.get("trend", self._calc_trend([p["predicted_price"] for p in predicted_prices]))
+                return {
+                    "crop_name": crop_name,
+                    "region": region,
+                    "forecast_days": forecast_days,
+                    "predicted_prices": predicted_prices,
+                    "trend": trend,
+                    "best_selling_time": self._find_best_selling_time(predicted_prices),
+                    "warning": self._build_warning(trend, [p["predicted_price"] for p in predicted_prices]),
+                    "recommendation": raw.get("recommendation", self._get_recommendation(trend)),
+                }
+            except Exception:
+                pass
 
-        # 3. Bổ sung thông tin phân tích
-        predicted_prices = [item["predicted_price"] for item in raw.get("forecast_data", [])]
-        trend            = raw.get("trend", self._calc_trend(predicted_prices))
-        warning          = self._build_warning(trend, predicted_prices)
-        best_selling     = self._find_best_selling_time(raw.get("forecast_data", []))
+        # 2. Fallback: lịch sử giá từ DB + moving average
+        price_history = self._load_price_history(db, crop_name, region, days=60)
+        if price_history:
+            raw = self._fallback_forecast(price_history, forecast_days)
+            predicted_prices = raw.get("forecast_data", [])
+            trend = raw.get("trend", "stable")
+            return {
+                "crop_name": crop_name,
+                "region": region,
+                "forecast_days": forecast_days,
+                "predicted_prices": predicted_prices,
+                "trend": trend,
+                "best_selling_time": self._find_best_selling_time(predicted_prices),
+                "warning": self._build_warning(trend, [p["predicted_price"] for p in predicted_prices]),
+                "recommendation": raw.get("recommendation", self._get_recommendation(trend)),
+            }
 
+        # 3. Fallback cuối: mock từ giá hiện tại
+        current = pricing_service.get_current_price(db, crop_name, region)
+        base_price = float(current["current_price"])
+        predicted_prices = []
+        for offset in range(1, forecast_days + 1):
+            predicted = round(base_price * (1 + offset * 0.006), 2)
+            predicted_prices.append({
+                "date": (date.today() + timedelta(days=offset)).isoformat(),
+                "predicted_price": predicted,
+                "confidence_lower": round(predicted * 0.92, 2),
+                "confidence_upper": round(predicted * 1.08, 2),
+            })
+
+        trend = self._calc_trend([p["predicted_price"] for p in predicted_prices])
         return {
-            "crop_name":         crop_name,
-            "region":            region,
-            "forecast_days":     forecast_days,
-            "predicted_prices":  raw.get("forecast_data", []),
-            "trend":             trend,
-            "best_selling_time": best_selling,
-            "warning":           warning,
-            "recommendation":    raw.get("recommendation", self._get_recommendation(trend)),
+            "crop_name": crop_name,
+            "region": region,
+            "forecast_days": forecast_days,
+            "predicted_prices": predicted_prices,
+            "trend": trend,
+            "best_selling_time": self._best_selling_time(trend, forecast_days),
+            "warning": self._build_warning(trend, [p["predicted_price"] for p in predicted_prices]),
+            "recommendation": self._get_recommendation(trend),
         }
 
     # ------------------------------------------------------------------ #
     # Helpers
     # ------------------------------------------------------------------ #
 
-    def _load_price_history(
-        self, db: Session, crop_name: str, region: str, days: int = 60
-    ) -> List[Dict]:
-        """Lấy lịch sử giá từ DB, trả về list dict."""
-        crop = (
-            db.query(CropType)
-            .filter(CropType.CropName == crop_name)
-            .first()
-        )
-        if not crop:
+    def _load_price_history(self, db: Session, crop_name: str, region: str, days: int = 60) -> List[Dict]:
+        """Lấy lịch sử giá từ DB (Quang)."""
+        try:
+            from app.models.crop import CropType
+            from app.models.price import PriceHistory
+            crop = db.query(CropType).filter(CropType.CropName == crop_name).first()
+            if not crop:
+                return []
+            start = (datetime.now() - timedelta(days=days)).date()
+            rows = (
+                db.query(PriceHistory)
+                .filter(
+                    PriceHistory.CropID == crop.CropID,
+                    PriceHistory.Region == region,
+                    PriceHistory.RecordDate >= start,
+                )
+                .order_by(PriceHistory.RecordDate)
+                .all()
+            )
+            return [{"date": r.RecordDate.isoformat(), "price": float(r.AvgPrice)} for r in rows]
+        except Exception:
             return []
 
-        start = (datetime.now() - timedelta(days=days)).date()
-        rows = (
-            db.query(PriceHistory)
-            .filter(
-                PriceHistory.CropID == crop.CropID,
-                PriceHistory.Region == region,
-                PriceHistory.RecordDate >= start,
-            )
-            .order_by(PriceHistory.RecordDate)
-            .all()
-        )
-        return [
-            {
-                "date":  r.RecordDate.isoformat(),
-                "price": float(r.AvgPrice),
-            }
-            for r in rows
-        ]
-
     @staticmethod
-    def _fallback_forecast(
-        crop_name: str,
-        region: str,
-        history: List[Dict],
-        days: int,
-    ) -> Dict:
-        """Moving average đơn giản khi không có model."""
-        import numpy as np
-
-        if history:
+    def _fallback_forecast(history: List[Dict], days: int) -> Dict:
+        """Moving average đơn giản khi không có AI model."""
+        try:
+            import numpy as np
             prices = [h["price"] for h in history]
             base = float(np.mean(prices[-7:])) if len(prices) >= 7 else float(np.mean(prices))
-        else:
-            base = 20000.0
+        except ImportError:
+            base = sum(h["price"] for h in history[-7:]) / min(7, len(history))
 
         forecast_data = []
         current = base
         for i in range(1, days + 1):
-            noise = np.random.uniform(-0.03, 0.03)
+            # Simple random walk (deterministic seed cho reproducibility)
+            noise = 0.01 * ((i * 7) % 5 - 2) / 5
             current = current * (1 + noise)
-            dt = (datetime.now() + timedelta(days=i)).strftime("%Y-%m-%d")
             forecast_data.append({
-                "date":             dt,
-                "predicted_price":  round(current),
+                "date": (datetime.now() + timedelta(days=i)).strftime("%Y-%m-%d"),
+                "predicted_price": round(current),
                 "confidence_lower": round(current * 0.92),
                 "confidence_upper": round(current * 1.08),
             })
 
-        prices_list = [f["predicted_price"] for f in forecast_data]
-        trend = PriceForecastService._calc_trend(prices_list)
-
+        trend = PriceForecastService._calc_trend([f["predicted_price"] for f in forecast_data])
         return {
-            "forecast_data":  forecast_data,
-            "trend":          trend,
+            "forecast_data": forecast_data,
+            "trend": trend,
             "recommendation": PriceForecastService._get_recommendation(trend),
         }
 
@@ -146,13 +162,13 @@ class PriceForecastService:
     def _calc_trend(prices: List[float]) -> str:
         if len(prices) < 2:
             return "stable"
-        mid    = len(prices) // 2
-        first  = sum(prices[:mid]) / mid
-        second = sum(prices[mid:]) / (len(prices) - mid)
+        mid = max(len(prices) // 2, 1)
+        first = sum(prices[:mid]) / mid
+        second = sum(prices[mid:]) / max(len(prices) - mid, 1)
         change = ((second - first) / first) * 100
         if change > 5:
             return "increasing"
-        elif change < -5:
+        if change < -5:
             return "decreasing"
         return "stable"
 
@@ -165,12 +181,20 @@ class PriceForecastService:
         return best.get("date")
 
     @staticmethod
+    def _best_selling_time(trend: str, forecast_days: int) -> str:
+        if trend == "increasing":
+            return f"Can nhac ban sau {min(forecast_days, 7)} ngay neu bao quan tot."
+        if trend == "decreasing":
+            return "Nen ban som trong 1-2 ngay toi."
+        return "Co the ban bat ky thoi diem phu hop trong ky du bao."
+
+    @staticmethod
     def _build_warning(trend: str, prices: List[float]) -> Optional[str]:
         if trend == "decreasing":
             return "Giá có xu hướng giảm trong thời gian tới. Cân nhắc bán sớm."
         if trend == "increasing":
             return "Giá có xu hướng tăng. Có thể chờ thêm để bán giá tốt hơn."
-        if prices and max(prices) / (min(prices) + 1) > 1.2:
+        if prices and min(prices) > 0 and max(prices) / min(prices) > 1.2:
             return "Giá biến động lớn. Theo dõi thị trường trước khi quyết định."
         return None
 
@@ -179,7 +203,7 @@ class PriceForecastService:
         recs = {
             "increasing": "Giá đang tăng – nên giữ hàng thêm vài ngày để bán được giá tốt hơn.",
             "decreasing": "Giá đang giảm – nên bán sớm để tránh mất giá.",
-            "stable":     "Giá ổn định – có thể bán bất kỳ lúc nào phù hợp với kế hoạch.",
+            "stable": "Giá ổn định – có thể bán bất kỳ lúc nào phù hợp với kế hoạch.",
         }
         return recs.get(trend, "Theo dõi thị trường để chọn thời điểm bán phù hợp.")
 

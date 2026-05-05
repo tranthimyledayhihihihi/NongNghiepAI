@@ -1,44 +1,35 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean
+from sqlalchemy import Boolean, Column, DateTime, Integer, String
+from sqlalchemy.orm import synonym
 from sqlalchemy.sql import func
+
 from ..core.database import Base
+
 
 class User(Base):
     __tablename__ = "Users"
-    
+
     UserID = Column("UserID", Integer, primary_key=True, index=True)
     FullName = Column("FullName", String(100), nullable=False)
-    Email = Column("Email", String(100), unique=True)
-    PhoneNumber = Column("PhoneNumber", String(20))
-    ZaloID = Column("ZaloID", String(100))
-    PasswordHash = Column("PasswordHash", String(255), nullable=False)
-    Role = Column("Role", String(20), default='farmer')
-    Region = Column("Region", String(100))
-    IsActive = Column("IsActive", Boolean, default=True)
-    IsVerified = Column("IsVerified", Boolean, default=False)
-    CreatedAt = Column("CreatedAt", DateTime, server_default=func.getdate())
-    UpdatedAt = Column("UpdatedAt", DateTime, server_default=func.getdate())
-    
-    # Aliases for backward compatibility
-    @property
-    def id(self):
-        return self.UserID
-    
-    @property
-    def user_id(self):
-        return self.UserID
-    
-    @property
-    def full_name(self):
-        return self.FullName
-    
-    @property
-    def email(self):
-        return self.Email
-    
-    @property
-    def phone_number(self):
-        return self.PhoneNumber
-    
-    @property
-    def zalo_id(self):
-        return self.ZaloID
+    Email = Column("Email", String(100), unique=True, nullable=True)
+    PhoneNumber = Column("PhoneNumber", String(20), nullable=True)
+    ZaloID = Column("ZaloID", String(100), nullable=True)
+    PasswordHash = Column("PasswordHash", String(255), nullable=False, default="")
+    Role = Column("Role", String(20), nullable=False, default="farmer")
+    Region = Column("Region", String(100), nullable=True)
+    IsActive = Column("IsActive", Boolean, nullable=False, default=True)
+    IsVerified = Column("IsVerified", Boolean, nullable=False, default=False)
+    CreatedAt = Column("CreatedAt", DateTime, server_default=func.now(), nullable=False)
+    UpdatedAt = Column("UpdatedAt", DateTime, server_default=func.now(), nullable=False)
+
+    id = synonym("UserID")
+    full_name = synonym("FullName")
+    email = synonym("Email")
+    phone_number = synonym("PhoneNumber")
+    zalo_id = synonym("ZaloID")
+    password_hash = synonym("PasswordHash")
+    role = synonym("Role")
+    region = synonym("Region")
+    is_active = synonym("IsActive")
+    is_verified = synonym("IsVerified")
+    created_at = synonym("CreatedAt")
+    updated_at = synonym("UpdatedAt")
