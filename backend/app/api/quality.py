@@ -67,3 +67,17 @@ async def get_quality_grades():
             },
         ]
     }
+
+
+@router.get("/history/{user_id}")
+async def get_quality_history(user_id: int, limit: int = 50, db: Session = Depends(get_db)):
+    history = quality_service.get_history(db, user_id, limit)
+    return {"user_id": user_id, "total": len(history), "history": history}
+
+
+@router.get("/{record_id}")
+async def get_quality_detail(record_id: int, db: Session = Depends(get_db)):
+    record = quality_service.get_detail(db, record_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="quality record not found")
+    return record

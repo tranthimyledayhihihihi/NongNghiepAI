@@ -1,15 +1,23 @@
+<<<<<<< HEAD
 """
 Quality Service - merged Tien (repository + pricing) + Quang (AI detector + DB records)
 - API endpoint dùng: check_quality(db, *, image_path, crop_name, region)
 - Thử AI detector trước, fallback về mock_grade
 """
+=======
+>>>>>>> 66f30715951267b33a40918eff337ea69faad67f
 import json
 from datetime import datetime
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.repositories.quality_repository import create_quality_check
+from app.repositories.common import to_api_grade
+from app.repositories.quality_repository import (
+    create_quality_check,
+    get_quality_check_by_id,
+    get_quality_checks_by_user,
+)
 from app.schemas.price_schema import PricingSuggestRequest
 from app.services.pricing_service import pricing_service
 
@@ -124,6 +132,7 @@ class QualityService:
             "checked_at": getattr(record, "checked_at", None) or datetime.now(),
         }
 
+<<<<<<< HEAD
     # ------------------------------------------------------------------ #
     # Helpers
     # ------------------------------------------------------------------ #
@@ -165,6 +174,20 @@ class QualityService:
         except Exception as exc:
             db.rollback()
             print(f"Warning: cannot save QualityRecord: {exc}")
+=======
+    def get_history(self, db: Session, user_id: int, limit: int = 50) -> list[dict]:
+        return [
+            self._record_to_dict(record, crop)
+            for record, crop in get_quality_checks_by_user(db, user_id, limit)
+        ]
+
+    def get_detail(self, db: Session, record_id: int) -> dict | None:
+        result = get_quality_check_by_id(db, record_id)
+        if result is None:
+            return None
+        record, crop = result
+        return self._record_to_dict(record, crop)
+>>>>>>> 66f30715951267b33a40918eff337ea69faad67f
 
     @staticmethod
     def _mock_grade(image_path: str) -> tuple[str, float, list[str]]:
@@ -189,6 +212,50 @@ class QualityService:
         if grade in ("grade_2", "Loại 2"):
             return ["Phu hop cho cho dau moi hoac thuong lai dia phuong."]
         return ["Nen ban nhanh hoac chuyen sang kenh che bien de giam hao hut."]
+
+    @staticmethod
+    def _record_to_dict(record, crop) -> dict:
+        issues = QualityService._parse_issues(record.detected_issues)
+        suggested_min = float(record.suggested_price_min or 0)
+        suggested_max = float(record.suggested_price_max or 0)
+        suggested_price = round((suggested_min + suggested_max) / 2, 2) if suggested_min or suggested_max else 0
+        grade = to_api_grade(record.quality_grade)
+        return {
+            "record_id": record.id,
+            "schedule_id": record.schedule_id,
+            "user_id": record.user_id,
+            "crop_id": crop.id,
+            "crop_name": crop.name,
+            "image_path": record.image_path,
+            "quality_grade": grade,
+            "disease_detected": bool(issues.get("disease_detected", False)),
+            "damage_level": issues.get("damage_level") or QualityService._damage_level(grade),
+            "suggested_price": suggested_price,
+            "confidence": float(record.confidence_score or 0),
+            "defects": issues.get("defects", []),
+            "suggested_price_range": {
+                "min": suggested_min,
+                "max": suggested_max,
+            },
+            "recommendation": record.recommendation,
+            "recommendations": QualityService._recommendations(grade),
+            "checked_at": record.checked_at,
+        }
+
+    @staticmethod
+    def _parse_issues(raw: str | None) -> dict:
+        if not raw:
+            return {}
+        try:
+            issues = json.loads(raw)
+        except (TypeError, ValueError):
+            return {"defects": [raw]}
+        if not isinstance(issues, dict):
+            return {"defects": issues if isinstance(issues, list) else [str(issues)]}
+        defects = issues.get("defects")
+        if defects is None and issues.get("disease_detected"):
+            defects = ["detected_issue"]
+        return {**issues, "defects": defects or []}
 
 
 quality_service = QualityService()

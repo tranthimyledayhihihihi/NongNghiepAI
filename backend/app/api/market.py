@@ -25,6 +25,12 @@ async def suggest_market_channel(request: MarketSuggestRequest, db: Session = De
     return market_service.suggest_market(db, request)
 
 
+@router.get("/history/{user_id}")
+async def get_market_history(user_id: int, limit: int = 50, db: Session = Depends(get_db)):
+    history = market_service.get_history(db, user_id, limit)
+    return {"user_id": user_id, "total": len(history), "history": history}
+
+
 @router.get("/demand/{crop_name}")
 async def get_market_demand(crop_name: str):
     return {"crop_name": crop_name, "demand": "medium"}

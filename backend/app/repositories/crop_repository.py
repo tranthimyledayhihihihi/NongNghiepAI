@@ -25,9 +25,31 @@ def get_crop_by_name(db: Session, name: str) -> Crop | None:
         return None
 
 
+def get_crop_by_id(db: Session, crop_id: int) -> Crop | None:
+    try:
+        return db.query(Crop).filter(Crop.CropID == crop_id).first()
+    except SQLAlchemyError:
+        db.rollback()
+        return None
+
+
 def list_crops(db: Session) -> list[Crop]:
     try:
         return db.query(Crop).order_by(Crop.CropName).all()
+    except SQLAlchemyError:
+        db.rollback()
+        return []
+
+
+def search_crops(db: Session, keyword: str) -> list[Crop]:
+    try:
+        pattern = f"%{keyword.strip()}%"
+        return (
+            db.query(Crop)
+            .filter((Crop.CropName.ilike(pattern)) | (Crop.CropNameEN.ilike(pattern)))
+            .order_by(Crop.CropName)
+            .all()
+        )
     except SQLAlchemyError:
         db.rollback()
         return []

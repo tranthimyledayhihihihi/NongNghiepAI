@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.repositories.alert_repository import (
     create_alert,
     deactivate_alert,
+    get_alert_by_id,
     get_alert_crop_name,
     get_alert_receiver,
     get_alerts,
@@ -57,6 +58,7 @@ class AlertService:
             return None
         return {"alert_id": alert.id, "message": "Da tat canh bao gia."}
 
+<<<<<<< HEAD
     # ------------------------------------------------------------------ #
     # Business logic - kiểm tra và kích hoạt cảnh báo (Quang)
     # ------------------------------------------------------------------ #
@@ -162,6 +164,14 @@ class AlertService:
     # ------------------------------------------------------------------ #
     # Helpers
     # ------------------------------------------------------------------ #
+=======
+    def get_price_alert(self, db: Session, alert_id: int) -> dict | None:
+        alert = get_alert_by_id(db, alert_id)
+        if not alert:
+            return None
+        message = "Canh bao dang hoat dong." if alert.is_active else "Canh bao da tat."
+        return self._to_response(db, alert, message)
+>>>>>>> 66f30715951267b33a40918eff337ea69faad67f
 
     @staticmethod
     def _to_response(db: Session, alert, message: str) -> dict:

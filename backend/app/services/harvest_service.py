@@ -9,7 +9,11 @@ from unicodedata import category, normalize
 
 from sqlalchemy.orm import Session
 
-from app.repositories.harvest_repository import create_harvest_forecast
+from app.repositories.harvest_repository import (
+    create_harvest_forecast,
+    get_harvest_forecast_history,
+    get_harvest_schedules_by_user,
+)
 from app.schemas.harvest_schema import HarvestForecastRequest
 
 
@@ -127,6 +131,7 @@ class HarvestService:
             "recommendations": [result["recommendation"]],
         }
 
+<<<<<<< HEAD
     # ------------------------------------------------------------------ #
     # Lưu kế hoạch thu hoạch (Quang)
     # ------------------------------------------------------------------ #
@@ -167,6 +172,52 @@ class HarvestService:
     # ------------------------------------------------------------------ #
     # Helpers
     # ------------------------------------------------------------------ #
+=======
+    def get_history(self, db: Session, user_id: int, limit: int = 50) -> list[dict]:
+        records = get_harvest_forecast_history(db, user_id, limit)
+        return [
+            {
+                "forecast_id": forecast.id,
+                "schedule_id": schedule.id,
+                "user_id": schedule.user_id,
+                "crop_id": crop.id,
+                "crop_name": crop.name,
+                "region": schedule.region,
+                "planting_date": schedule.planting_date,
+                "expected_harvest_date": forecast.expected_harvest_date,
+                "confidence": forecast.confidence_score,
+                "warning": forecast.weather_warning,
+                "recommendation": forecast.labor_recommendation,
+                "transport_recommendation": forecast.transport_recommendation,
+                "model_version": forecast.model_version,
+                "generated_at": forecast.generated_at,
+            }
+            for forecast, schedule, crop in records
+        ]
+
+    def get_schedules(self, db: Session, user_id: int, limit: int = 50) -> list[dict]:
+        records = get_harvest_schedules_by_user(db, user_id, limit)
+        return [
+            {
+                "schedule_id": schedule.id,
+                "user_id": schedule.user_id,
+                "crop_id": crop.id,
+                "crop_name": crop.name,
+                "planting_date": schedule.planting_date,
+                "area_size": schedule.area_size,
+                "region": schedule.region,
+                "expected_harvest_date": schedule.expected_harvest_date,
+                "actual_harvest_date": schedule.actual_harvest_date,
+                "estimated_yield_kg": schedule.estimated_yield_kg,
+                "actual_yield_kg": schedule.actual_yield_kg,
+                "status": schedule.status,
+                "notes": schedule.notes,
+                "created_at": schedule.created_at,
+                "updated_at": schedule.updated_at,
+            }
+            for schedule, crop in records
+        ]
+>>>>>>> 66f30715951267b33a40918eff337ea69faad67f
 
     def _growth_days_for(self, crop_name: str) -> int:
         key = self._normalize_key(crop_name)

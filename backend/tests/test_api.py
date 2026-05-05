@@ -20,17 +20,61 @@ def test_health_check():
 def test_person_1_api_contract_is_registered():
     paths = {route.path for route in app.routes}
     expected_paths = {
+        "/db-test",
+        "/api/crops",
+        "/api/crops/",
+        "/api/crops/search",
+        "/api/crops/{crop_id}",
         "/api/harvest/forecast",
+        "/api/harvest/history/{user_id}",
+        "/api/harvest/schedules/{user_id}",
         "/api/quality/check",
+        "/api/quality/history/{user_id}",
+        "/api/quality/{record_id}",
+        "/api/pricing/current",
         "/api/pricing/suggest",
         "/api/price-forecast/predict",
         "/api/market/suggest",
+        "/api/market/history/{user_id}",
         "/api/alert/create",
         "/api/alert/list",
         "/api/alert/{alert_id}",
         "/api/weather/current/{region}",
     }
     assert expected_paths.issubset(paths)
+
+
+def test_added_contract_endpoints_smoke():
+    db_response = client.get("/db-test")
+    assert db_response.status_code == 200
+    assert db_response.json()["status"] == "success"
+
+    client.post(
+        "/api/harvest/forecast",
+        json={
+            "crop_name": "ca chua",
+            "region": "Ha Noi",
+            "planting_date": "2026-01-01",
+        },
+    )
+
+    crops_response = client.get("/api/crops")
+    assert crops_response.status_code == 200
+    crops = crops_response.json()["crops"]
+    assert crops
+
+    crop_id = crops[0]["crop_id"]
+    assert client.get(f"/api/crops/{crop_id}").status_code == 200
+    assert client.get("/api/crops/search?keyword=ca").status_code == 200
+
+    current_response = client.get("/api/pricing/current?crop_name=ca%20chua&region=Ha%20Noi")
+    assert current_response.status_code == 200
+    assert current_response.json()["current_price"] > 0
+
+    assert client.get("/api/harvest/history/1").status_code == 200
+    assert client.get("/api/harvest/schedules/1").status_code == 200
+    assert client.get("/api/quality/history/1").status_code == 200
+    assert client.get("/api/market/history/1").status_code == 200
 
 
 def test_harvest_forecast():

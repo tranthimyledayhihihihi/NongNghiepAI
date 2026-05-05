@@ -1,6 +1,8 @@
+from sqlalchemy import desc
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.models.crop import Crop
 from app.models.market import MarketSuggestion
 from app.repositories.common import ensure_crop, ensure_user, to_db_channel, to_db_grade
 from app.repositories.price_repository import get_latest_prices_by_crop
@@ -40,4 +42,19 @@ def create_market_suggestion(
     return suggestion
 
 
-__all__ = ["create_market_suggestion", "get_latest_prices_by_crop"]
+def get_market_suggestions_by_user(db: Session, user_id: int, limit: int = 50) -> list[tuple[MarketSuggestion, Crop]]:
+    try:
+        return (
+            db.query(MarketSuggestion, Crop)
+            .join(Crop, Crop.CropID == MarketSuggestion.CropID)
+            .filter(MarketSuggestion.UserID == user_id)
+            .order_by(desc(MarketSuggestion.CreatedAt))
+            .limit(limit)
+            .all()
+        )
+    except SQLAlchemyError:
+        db.rollback()
+        return []
+
+
+__all__ = ["create_market_suggestion", "get_latest_prices_by_crop", "get_market_suggestions_by_user"]
