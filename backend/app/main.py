@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.api import alert, crops, harvest, market, price_forecast, pricing, quality, weather
+from app.api import alert, auth, crops, harvest, market, price_forecast, pricing, quality, weather
 from app.core.config import settings
 from app.core import database
 
@@ -36,6 +36,7 @@ app.add_middleware(
 )
 
 app.include_router(crops.router)
+app.include_router(auth.router)
 app.include_router(harvest.router)
 app.include_router(quality.router)
 app.include_router(pricing.router)
@@ -82,6 +83,9 @@ async def root():
             "weather_current": "/api/weather/current/{region}",
             "weather_create": "/api/weather/",
             "docs": "/docs",
+            "auth_register": "/api/auth/register",
+            "auth_login": "/api/auth/login",
+            "auth_me": "/api/auth/me",
         },
     }
 

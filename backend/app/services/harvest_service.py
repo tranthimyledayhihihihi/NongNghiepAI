@@ -31,7 +31,12 @@ class HarvestService:
         except ImportError:
             return None
 
-    def forecast_harvest(self, db: Session, request: HarvestForecastRequest) -> dict:
+    def forecast_harvest(
+        self,
+        db: Session,
+        request: HarvestForecastRequest,
+        user_id: int | None = None,
+    ) -> dict:
         crop_name = request.crop_name
         region = request.region
         planting_date = request.planting_date
@@ -79,6 +84,7 @@ class HarvestService:
             confidence=confidence,
             warning=warning,
             recommendation=recommendation,
+            user_id=user_id,
         )
 
         return {
@@ -98,13 +104,14 @@ class HarvestService:
         crop_name: str,
         planting_date: datetime,
         region: str,
+        user_id: int | None = None,
     ) -> dict:
         request = HarvestForecastRequest(
             crop_name=crop_name,
             region=region,
             planting_date=planting_date.date(),
         )
-        result = self.forecast_harvest(db, request)
+        result = self.forecast_harvest(db, request, user_id=user_id)
         return {
             **result,
             "predicted_harvest_date": result["expected_harvest_date"],

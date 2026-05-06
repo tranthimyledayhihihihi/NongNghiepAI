@@ -405,7 +405,7 @@ const CropDetailPage = () => {
               {weatherData.disease}
             </p>
             <button className="text-green-700 font-medium hover:text-green-800 text-sm">
-              Xem chi tiết hơn cảo →
+              Xem chi tiết hơn →
             </button>
           </div>
 

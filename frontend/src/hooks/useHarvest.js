@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import api from '../services/api';
+import { getApiErrorMessage } from '../services/api';
+import { harvestApi } from '../services/harvestApi';
 
 export const useHarvest = () => {
   const [loading, setLoading] = useState(false);
@@ -11,15 +12,11 @@ export const useHarvest = () => {
     setError(null);
 
     try {
-      const response = await api.post('/api/harvest/predict', {
-        crop_name: cropName,
-        planting_date: plantingDate,
-        region: region,
-      });
-      setData(response.data);
-      return response.data;
+      const result = await harvestApi.forecastHarvest(cropName, plantingDate, region);
+      setData(result);
+      return result;
     } catch (err) {
-      setError(err.response?.data?.message || 'Lỗi khi dự báo thu hoạch');
+      setError(getApiErrorMessage(err, 'Loi khi du bao thu hoach'));
       throw err;
     } finally {
       setLoading(false);

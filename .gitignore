@@ -32,6 +32,9 @@ dist/
 .cache/
 
 # Environment
+.env
+backend/.env
+frontend/.env
 .env.local
 .env.*.local
 
@@ -49,6 +52,8 @@ Thumbs.db
 # Uploads
 backend/uploads/*
 !backend/uploads/.gitkeep
+backend/storage/uploads/*
+!backend/storage/uploads/.gitkeep
 
 # AI Models
 backend/ai_models/weights/*.pt

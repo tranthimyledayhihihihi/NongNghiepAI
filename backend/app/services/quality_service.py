@@ -75,6 +75,7 @@ class QualityService:
             damage_level=damage_level,
             suggested_price=pricing["suggested_price"],
             confidence=confidence,
+            user_id=user_id,
         )
 
         self._save_quality_record_direct(

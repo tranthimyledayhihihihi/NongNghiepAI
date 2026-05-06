@@ -267,7 +267,8 @@ File `NongNghiepAI_Full.sql` bao gồm dữ liệu mẫu:
 
 ### 2. Test Connection
 ```bash
-python test_models_updated.py
+cd backend
+pytest tests/test_api.py
 ```
 
 ### 3. Kết quả mong đợi

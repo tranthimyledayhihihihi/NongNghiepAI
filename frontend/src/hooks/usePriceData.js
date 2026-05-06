@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { getApiErrorMessage } from '../services/api';
 import { pricingApi } from '../services/pricingApi';
 
 export const usePriceData = (cropName, region, autoFetch = false) => {
@@ -17,7 +18,7 @@ export const usePriceData = (cropName, region, autoFetch = false) => {
       setCurrentPrice(data);
       return data;
     } catch (err) {
-      setError(err.message);
+      setError(getApiErrorMessage(err, 'Loi khi tai gia hien tai'));
       throw err;
     } finally {
       setLoading(false);
@@ -33,7 +34,7 @@ export const usePriceData = (cropName, region, autoFetch = false) => {
       setForecast(data);
       return data;
     } catch (err) {
-      setError(err.message);
+      setError(getApiErrorMessage(err, 'Loi khi tai du bao gia'));
       throw err;
     } finally {
       setLoading(false);
@@ -49,7 +50,7 @@ export const usePriceData = (cropName, region, autoFetch = false) => {
       setHistory(data);
       return data;
     } catch (err) {
-      setError(err.message);
+      setError(getApiErrorMessage(err, 'Loi khi tai lich su gia'));
       throw err;
     } finally {
       setLoading(false);

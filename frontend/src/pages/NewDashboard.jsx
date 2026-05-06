@@ -362,7 +362,7 @@ const NewDashboard = () => {
               Cũng nên chốt giá cao?
             </p>
             <button className="text-green-700 font-medium hover:text-green-800 text-sm flex items-center space-x-1">
-              <span>Xem chi tiết hơn cảo</span>
+              <span>Xem chi tiết hơn</span>
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>

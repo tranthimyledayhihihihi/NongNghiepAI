@@ -3,7 +3,9 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.api.auth import get_optional_current_user
 from app.core.database import get_db
+from app.models.user import User
 from app.schemas.harvest_schema import HarvestForecastRequest, HarvestForecastResponse
 from app.services.harvest_service import harvest_service
 
@@ -11,8 +13,16 @@ router = APIRouter(prefix="/api/harvest", tags=["harvest"])
 
 
 @router.post("/forecast", response_model=HarvestForecastResponse)
-async def forecast_harvest(request: HarvestForecastRequest, db: Session = Depends(get_db)):
-    return harvest_service.forecast_harvest(db, request)
+async def forecast_harvest(
+    request: HarvestForecastRequest,
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
+):
+    return harvest_service.forecast_harvest(
+        db,
+        request,
+        user_id=current_user.UserID if current_user else None,
+    )
 
 
 @router.post("/predict")
@@ -21,12 +31,19 @@ async def predict_harvest(
     planting_date: str,
     region: str,
     db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
 ):
     try:
         planting_dt = datetime.fromisoformat(planting_date)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="planting_date must be ISO format") from exc
-    return harvest_service.predict_harvest_date(db, crop_name, planting_dt, region)
+    return harvest_service.predict_harvest_date(
+        db,
+        crop_name,
+        planting_dt,
+        region,
+        user_id=current_user.UserID if current_user else None,
+    )
 
 
 @router.get("/schedule")

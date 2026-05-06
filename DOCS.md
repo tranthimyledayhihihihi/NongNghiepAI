@@ -44,6 +44,12 @@ npm install
 npm run dev
 ```
 
+Frontend calls Backend through `VITE_API_URL` in `frontend/.env.example`.
+Default value:
+```env
+VITE_API_URL=http://localhost:8000
+```
+
 ### Access Application
 - **Frontend:** http://localhost:5173
 - **Backend API:** http://localhost:8000

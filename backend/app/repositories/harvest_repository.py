@@ -19,9 +19,18 @@ def create_harvest_forecast(
     confidence: float,
     warning: str | None,
     recommendation: str,
+    user_id: int | None = None,
 ) -> HarvestForecast:
     crop = ensure_crop(db, crop_name)
-    user = ensure_user(db, region=region)
+    user = None
+    if user_id is not None:
+        try:
+            from app.models.user import User
+
+            user = db.query(User).filter(User.UserID == user_id).first()
+        except SQLAlchemyError:
+            db.rollback()
+    user = user or ensure_user(db, region=region)
     schedule = HarvestSchedule(
         UserID=user.UserID,
         CropID=crop.CropID,

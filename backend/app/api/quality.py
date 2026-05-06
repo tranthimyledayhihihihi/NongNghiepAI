@@ -5,8 +5,10 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
+from app.api.auth import get_optional_current_user
 from app.core.config import settings
 from app.core.database import get_db
+from app.models.user import User
 from app.schemas.quality_schema import QualityCheckResponse
 from app.services.quality_service import quality_service
 
@@ -20,6 +22,7 @@ async def check_quality(
     crop_name: str = Form("unknown"),
     region: str = Form("unknown"),
     db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
 ):
     upload = image or file
     if upload is None:
@@ -40,6 +43,7 @@ async def check_quality(
         image_path=str(file_path),
         crop_name=crop_name,
         region=region,
+        user_id=current_user.UserID if current_user else None,
     )
 
 

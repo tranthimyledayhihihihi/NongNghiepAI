@@ -108,7 +108,7 @@ const AlertManagementPage = () => {
           Trung tâm Cảnh báo & Đăng ký
         </h1>
         <p className="text-gray-600">
-          Quản lý các cảnh báo thời gian thực về giá thật/Vụng, điều kiện thời tiết và dịch bệnh sâu bệnh.
+          Quản lý các cảnh báo thời gian thực về giá theo vùng, điều kiện thời tiết và dịch bệnh cây trồng.
         </p>
       </div>
 

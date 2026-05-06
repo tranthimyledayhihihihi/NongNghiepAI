@@ -208,7 +208,7 @@ const PricingDashboard = () => {
               <div>
                 <h2 className="text-xl font-bold text-gray-900 mb-1">Dự Báo Giá</h2>
                 <p className="text-sm text-gray-500">
-                  Phân tích số sở với dự báo 3 tháng tới bằng AI
+                  Phân tích dữ liệu với dự báo 3 tháng tới bằng AI
                 </p>
               </div>
               <div className="flex items-center space-x-4">

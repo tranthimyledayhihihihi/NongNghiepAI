@@ -20,9 +20,18 @@ def create_quality_check(
     damage_level: str,
     suggested_price: float,
     confidence: float,
+    user_id: int | None = None,
 ) -> QualityCheck:
     crop = ensure_crop(db, crop_name)
-    user = ensure_user(db, region=region)
+    user = None
+    if user_id is not None:
+        try:
+            from app.models.user import User
+
+            user = db.query(User).filter(User.UserID == user_id).first()
+        except SQLAlchemyError:
+            db.rollback()
+    user = user or ensure_user(db, region=region)
     detected_issues = {
         "disease_detected": disease_detected,
         "damage_level": damage_level,

@@ -1,134 +1,163 @@
 import { Bell } from 'lucide-react';
 import { useState } from 'react';
+import { alertApi } from '../../services/alertApi';
+import { getApiErrorMessage } from '../../services/api';
+import { PageError } from '../StatusState';
 
-const AlertSubscribe = () => {
+const crops = ['ca chua', 'dua chuot', 'rau muong', 'cai xanh', 'ot', 'lua'];
+const regions = ['Ha Noi', 'TP.HCM', 'Da Nang', 'Can Tho', 'Hai Phong'];
+
+const AlertSubscribe = ({ onCreated }) => {
   const [formData, setFormData] = useState({
-    crop: 'Cà chua',
-    region: 'Hà Nội',
-    priceChange: 10,
+    crop: 'ca chua',
+    region: 'Ha Noi',
+    targetPrice: 25000,
+    condition: 'above',
     notifyMethod: 'email',
     contact: '',
   });
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState(null);
+  const [error, setError] = useState(null);
 
-  const crops = ['Cà chua', 'Dưa chuột', 'Rau muống', 'Cải xanh', 'Ớt'];
-  const regions = ['Hà Nội', 'TP.HCM', 'Đà Nẵng', 'Cần Thơ', 'Hải Phòng'];
+  const updateField = (key, value) => {
+    setFormData((current) => ({ ...current, [key]: value }));
+  };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    // TODO: Implement API call in Phase 2
-    alert('Tính năng đăng ký cảnh báo sẽ có trong Phase 2');
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const alert = await alertApi.createPriceAlert({
+        cropName: formData.crop,
+        region: formData.region,
+        targetPrice: formData.targetPrice,
+        condition: formData.condition,
+        notificationChannel: formData.notifyMethod,
+        receiver: formData.contact,
+      });
+      setMessage(alert.message || 'Đã tạo cảnh báo giá');
+      onCreated?.(alert);
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Không thể tạo cảnh báo'));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <div className="bg-white rounded-lg shadow p-6">
-      <div className="flex items-center mb-6">
-        <Bell className="h-6 w-6 text-primary-600 mr-2" />
-        <h2 className="text-lg font-semibold">Đăng ký cảnh báo giá</h2>
+    <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+      <div className="mb-5 flex items-center gap-3">
+        <div className="rounded-lg bg-green-50 p-2 text-green-700">
+          <Bell className="h-6 w-6" />
+        </div>
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900">Đăng ký cảnh báo giá</h2>
+          <p className="text-sm text-gray-600">Tạo ngưỡng cảnh báo qua email, Zalo hoặc SMS.</p>
+        </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Loại nông sản
-          </label>
-          <select
-            value={formData.crop}
-            onChange={(e) => setFormData({ ...formData, crop: e.target.value })}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-          >
-            {crops.map((crop) => (
-              <option key={crop} value={crop}>
-                {crop}
-              </option>
-            ))}
-          </select>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700">Loại nông sản</label>
+            <select
+              value={formData.crop}
+              onChange={(event) => updateField('crop', event.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
+            >
+              {crops.map((crop) => (
+                <option key={crop} value={crop}>
+                  {crop}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700">Khu vực</label>
+            <select
+              value={formData.region}
+              onChange={(event) => updateField('region', event.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
+            >
+              {regions.map((region) => (
+                <option key={region} value={region}>
+                  {region}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Khu vực
-          </label>
-          <select
-            value={formData.region}
-            onChange={(e) =>
-              setFormData({ ...formData, region: e.target.value })
-            }
-            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-          >
-            {regions.map((region) => (
-              <option key={region} value={region}>
-                {region}
-              </option>
-            ))}
-          </select>
-        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700">Điều kiện</label>
+            <select
+              value={formData.condition}
+              onChange={(event) => updateField('condition', event.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
+            >
+              <option value="above">Giá trên</option>
+              <option value="below">Giá dưới</option>
+            </select>
+          </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Cảnh báo khi giá thay đổi
-          </label>
-          <div className="flex items-center space-x-2">
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700">Giá mục tiêu</label>
             <input
               type="number"
-              value={formData.priceChange}
-              onChange={(e) =>
-                setFormData({ ...formData, priceChange: e.target.value })
-              }
-              className="w-24 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              min="1"
+              value={formData.targetPrice}
+              onChange={(event) => updateField('targetPrice', event.target.value)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
+              required
             />
-            <span className="text-gray-600">%</span>
           </div>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Phương thức nhận thông báo
-          </label>
+          <label className="mb-2 block text-sm font-medium text-gray-700">Phương thức nhận thông báo</label>
           <select
             value={formData.notifyMethod}
-            onChange={(e) =>
-              setFormData({ ...formData, notifyMethod: e.target.value })
-            }
-            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            onChange={(event) => updateField('notifyMethod', event.target.value)}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2.5 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
           >
             <option value="email">Email</option>
-            <option value="zalo">Zalo (Coming soon)</option>
-            <option value="sms">SMS (Coming soon)</option>
+            <option value="zalo">Zalo</option>
+            <option value="sms">SMS</option>
           </select>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            {formData.notifyMethod === 'email' ? 'Email' : 'Số điện thoại'}
+          <label className="mb-2 block text-sm font-medium text-gray-700">
+            {formData.notifyMethod === 'email' ? 'Email' : 'Số điện thoại/Zalo ID'}
           </label>
           <input
-            type={formData.notifyMethod === 'email' ? 'email' : 'tel'}
+            type={formData.notifyMethod === 'email' ? 'email' : 'text'}
             value={formData.contact}
-            onChange={(e) =>
-              setFormData({ ...formData, contact: e.target.value })
-            }
-            placeholder={
-              formData.notifyMethod === 'email'
-                ? 'your@email.com'
-                : '0123456789'
-            }
-            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            onChange={(event) => updateField('contact', event.target.value)}
+            placeholder={formData.notifyMethod === 'email' ? 'your@email.com' : '0123456789'}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2.5 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
             required
           />
         </div>
 
+        {message && <p className="rounded-lg bg-green-50 p-3 text-sm text-green-700">{message}</p>}
+        {error && <PageError message={error} />}
+
         <button
           type="submit"
-          className="w-full bg-primary-600 text-white py-2 px-4 rounded-md hover:bg-primary-700 transition-colors"
+          disabled={loading}
+          className="w-full rounded-lg bg-green-700 px-4 py-3 font-semibold text-white transition-colors hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Đăng ký cảnh báo
+          {loading ? 'Đang tạo...' : 'Đăng ký cảnh báo'}
         </button>
-
-        <p className="text-xs text-gray-500 text-center">
-          Tính năng cảnh báo sẽ được hoàn thiện trong Phase 2
-        </p>
       </form>
-    </div>
+    </section>
   );
 };
 

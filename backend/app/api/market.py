@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.api.auth import get_optional_current_user
 from app.core.database import get_db
+from app.models.user import User
 from app.schemas.market_schema import MarketSuggestRequest, MarketSuggestResponse
 from app.services.market_service import market_service
 
@@ -21,8 +23,16 @@ async def get_market_channels():
 
 
 @router.post("/suggest", response_model=MarketSuggestResponse)
-async def suggest_market_channel(request: MarketSuggestRequest, db: Session = Depends(get_db)):
-    return market_service.suggest_market(db, request)
+async def suggest_market_channel(
+    request: MarketSuggestRequest,
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
+):
+    return market_service.suggest_market(
+        db,
+        request,
+        user_id=current_user.UserID if current_user else None,
+    )
 
 
 @router.get("/history/{user_id}")

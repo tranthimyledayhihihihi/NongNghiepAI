@@ -31,7 +31,7 @@ QUALITY_RANK = {
 
 class MarketService:
 
-    def suggest_market(self, db: Session, request: MarketSuggestRequest) -> dict:
+    def suggest_market(self, db: Session, request: MarketSuggestRequest, user_id: int | None = None) -> dict:
         """Gợi ý kênh bán hàng tối ưu dựa trên giá, số lượng và chất lượng."""
         pricing = pricing_service.suggest_price(
             db,
@@ -57,6 +57,7 @@ class MarketService:
             estimated_profit=recommended["estimated_total_revenue"],
             reason=recommended["reason"],
             warning=warning,
+            user_id=user_id,
         )
 
         return {

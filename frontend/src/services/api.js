@@ -4,6 +4,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 const api = axios.create({
   baseURL: API_URL,
+  timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -38,3 +39,11 @@ api.interceptors.response.use(
 );
 
 export default api;
+
+export const getApiErrorMessage = (error, fallback = 'Không thể kết nối API') => {
+  const detail = error.response?.data?.detail;
+  if (Array.isArray(detail)) {
+    return detail.map((item) => item.msg).join(', ');
+  }
+  return detail || error.response?.data?.message || error.message || fallback;
+};
