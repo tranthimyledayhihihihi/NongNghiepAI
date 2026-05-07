@@ -1,6 +1,9 @@
 from .price_schema import (
     PriceForecastRequest,
     PriceForecastResponse,
+    PriceImportItem,
+    PriceImportRequest,
+    PriceImportResponse,
     PriceRequest,
     PriceResponse,
     PricingSuggestRequest,
@@ -10,6 +13,9 @@ from .price_schema import (
 __all__ = [
     "PriceForecastRequest",
     "PriceForecastResponse",
+    "PriceImportItem",
+    "PriceImportRequest",
+    "PriceImportResponse",
     "PriceRequest",
     "PriceResponse",
     "PricingSuggestRequest",

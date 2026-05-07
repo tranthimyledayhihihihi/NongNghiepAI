@@ -31,3 +31,31 @@ class MarketSuggestion(Base):
     reason = synonym("Reason")
     warning = synonym("Warning")
     created_at = synonym("CreatedAt")
+
+
+class MarketChannel(Base):
+    __tablename__ = "MarketChannels"
+
+    ChannelID = Column("ChannelID", Integer, primary_key=True, index=True)
+    ChannelCode = Column("ChannelCode", String(50), nullable=False, unique=True, index=True)
+    ChannelName = Column("ChannelName", String(100), nullable=False)
+    CommissionRate = Column("CommissionRate", Float, nullable=False, default=0)
+    MinQuantityKg = Column("MinQuantityKg", Float, nullable=False, default=0)
+    RequiredQualityRank = Column("RequiredQualityRank", Integer, nullable=False, default=1)
+    PriceFactor = Column("PriceFactor", Float, nullable=False, default=1)
+    Region = Column("Region", String(100), nullable=True, index=True)
+    IsActive = Column("IsActive", Integer, nullable=False, default=1)
+    CreatedAt = Column("CreatedAt", DateTime, server_default=func.now(), nullable=False)
+    UpdatedAt = Column("UpdatedAt", DateTime, server_default=func.now(), nullable=False)
+
+    id = synonym("ChannelID")
+    channel_code = synonym("ChannelCode")
+    channel_name = synonym("ChannelName")
+    commission_rate = synonym("CommissionRate")
+    min_quantity_kg = synonym("MinQuantityKg")
+    required_quality_rank = synonym("RequiredQualityRank")
+    price_factor = synonym("PriceFactor")
+    region = synonym("Region")
+    is_active = synonym("IsActive")
+    created_at = synonym("CreatedAt")
+    updated_at = synonym("UpdatedAt")

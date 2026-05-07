@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,7 +20,50 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
     CLAUDE_API_KEY: str = ""
+    AI_PROVIDER: str = "claude"
+    AI_API_KEY: str = ""
+    AI_MODEL_NAME: str = "claude-3-5-sonnet-latest"
+    AI_TIMEOUT_SECONDS: float = 20.0
     WEATHER_API_KEY: str = ""
+    WEATHER_PROVIDER: str = "open-meteo"
+    OPEN_METEO_BASE_URL: str = "https://api.open-meteo.com"
+    WEATHER_CACHE_TTL_SECONDS: int = 1800
+    WEATHER_TIMEOUT_SECONDS: float = 4.0
+    WEATHER_RETRY_COUNT: int = 1
+    REGION_COORDINATES_JSON: str = json.dumps(
+        {
+            "Ha Noi": {"latitude": 21.0285, "longitude": 105.8542},
+            "TP.HCM": {"latitude": 10.8231, "longitude": 106.6297},
+            "Da Nang": {"latitude": 16.0544, "longitude": 108.2022},
+            "Can Tho": {"latitude": 10.0452, "longitude": 105.7469},
+            "Lam Dong": {"latitude": 11.9404, "longitude": 108.4583},
+            "Hai Phong": {"latitude": 20.8449, "longitude": 106.6881},
+        }
+    )
+
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    FROM_EMAIL: str = ""
+    ZALO_OA_TOKEN: str = ""
+    ZALO_API_BASE_URL: str = "https://openapi.zalo.me"
+    PRICE_SOURCE_URLS_JSON: str = json.dumps(
+        [
+            {"name": "agro.gov.vn", "url": "https://agro.gov.vn/index.aspx"},
+            {"name": "agro.gov.vn-gia", "url": "https://agro.gov.vn/vn/nguonwmy.aspx"},
+        ]
+    )
+    ENABLE_STOOQ_PRICE_SOURCE: bool = True
+    EXCHANGE_RATE_API_URL: str = "https://open.er-api.com/v6/latest/USD"
+    USD_VND_FALLBACK_RATE: float = 26000.0
+    MARKET_NEWS_RSS_URLS_JSON: str = json.dumps(
+        [
+            "https://vnexpress.net/rss/kinh-doanh.rss",
+            "https://vnexpress.net/rss/tin-moi-nhat.rss",
+        ]
+    )
+    MARKET_NEWS_CACHE_TTL_SECONDS: int = 1800
 
     BACKEND_CORS_ORIGINS: list[str] = [
         "http://localhost:3000",
@@ -47,6 +90,13 @@ class Settings(BaseSettings):
                 return json.loads(stripped)
             return [origin.strip() for origin in stripped.split(",") if origin.strip()]
         return value
+
+    @model_validator(mode="after")
+    def validate_production_secret(self):
+        unsafe_keys = {"", "change-this-secret-key", "your-secret-key-change-this-in-production"}
+        if self.ENVIRONMENT.lower() == "production" and self.SECRET_KEY in unsafe_keys:
+            raise ValueError("SECRET_KEY must be set to a strong value in production")
+        return self
 
 
 settings = Settings()

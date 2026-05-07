@@ -101,7 +101,7 @@ class AlertService:
             crop = db.query(CropType).filter(CropType.CropID == alert.CropID).first()
             crop_name = crop.CropName if crop else get_alert_crop_name(db, alert) or "N/A"
 
-            self._send_alert_notification(
+            notification = self._send_alert_notification(
                 db=db,
                 alert=alert,
                 crop_name=crop_name,
@@ -120,6 +120,7 @@ class AlertService:
                 "target_price": target_price,
                 "condition": condition,
                 "triggered": True,
+                "notification": notification,
             }
         except Exception as exc:
             db.rollback()
@@ -127,8 +128,9 @@ class AlertService:
             return None
 
     @staticmethod
-    def _send_alert_notification(db: Session, alert, crop_name: str, current_price: float) -> None:
+    def _send_alert_notification(db: Session, alert, crop_name: str, current_price: float) -> dict | None:
         try:
+            from app.models.alert import AlertNotification
             from app.services.notification_service import notification_service
 
             subject, plain, html = notification_service.build_price_alert_message(
@@ -139,15 +141,32 @@ class AlertService:
                 condition=to_api_alert_condition(alert.AlertType),
             )
             receiver = get_alert_receiver(db, alert) or f"user_{alert.UserID}@agriai.vn"
-            notification_service.send(
+            result = notification_service.send(
                 channel=(alert.NotifyMethod or "email").lower(),
                 receiver=receiver,
                 subject=subject,
                 message=plain,
                 html_message=html,
             )
+            row = AlertNotification(
+                AlertID=alert.AlertID,
+                CurrentPrice=current_price,
+                Message=plain,
+                NotifyMethod=alert.NotifyMethod,
+                SendStatus=result.get("status", "unknown"),
+                Channel=result.get("channel"),
+                Receiver=receiver,
+                Status=result.get("status"),
+                ProviderMessageID=result.get("message_id"),
+                ErrorMessage=result.get("error"),
+            )
+            db.add(row)
+            db.commit()
+            return result
         except Exception as exc:
+            db.rollback()
             logger.error("_send_alert_notification error: %s", exc)
+            return {"status": "failed", "error": str(exc)}
 
     @staticmethod
     def _to_response(db: Session, alert, message: str) -> dict:

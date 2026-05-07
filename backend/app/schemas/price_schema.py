@@ -17,6 +17,12 @@ class PriceResponse(BaseModel):
     price_trend: str
     forecast_7days: list[dict] | None = None
     last_updated: datetime
+    source_name: str | None = None
+    source_url: str | None = None
+    price_date: date | None = None
+    cache_status: str = "unknown"
+    is_mock: bool = False
+    data_age_minutes: int | None = None
 
 
 class PricingSuggestRequest(BaseModel):
@@ -37,6 +43,36 @@ class PricingSuggestResponse(BaseModel):
     unit: str = "VND/kg"
     nearby_region_prices: list[dict] = Field(default_factory=list)
     message: str
+    source_name: str | None = None
+    source_url: str | None = None
+    price_date: date | None = None
+    cache_status: str = "unknown"
+    is_mock: bool = False
+    last_updated: datetime | None = None
+
+
+class PriceImportItem(BaseModel):
+    crop_name: str = Field(..., min_length=1)
+    region: str = Field(..., min_length=1)
+    price: float = Field(..., gt=0)
+    unit: str = "VND/kg"
+    quality_grade: str = "grade_1"
+    source_name: str = "manual"
+    source_url: str | None = None
+    price_date: date | None = None
+    market_type: str | None = None
+
+
+class PriceImportRequest(BaseModel):
+    records: list[PriceImportItem] = Field(..., min_length=1)
+
+
+class PriceImportResponse(BaseModel):
+    status: str
+    records_received: int
+    records_saved: int
+    records_updated: int
+    errors: list[str] = Field(default_factory=list)
 
 
 class PriceForecastRequest(BaseModel):

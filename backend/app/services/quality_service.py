@@ -39,6 +39,11 @@ class QualityService:
         user_id: Optional[int] = None,
     ) -> dict:
         detector = self._get_detector()
+        model_version = "mock-detector-v1"
+        inference_time_ms = None
+        bbox = []
+        image_width = None
+        image_height = None
         if detector:
             try:
                 analysis = detector.detect_quality(image_path)
@@ -47,6 +52,9 @@ class QualityService:
                 defects = analysis.get("defects", [])
                 disease_detected = analysis.get("disease_detected", bool(defects))
                 damage_level = analysis.get("damage_level", self._damage_level(grade))
+                model_version = analysis.get("model_version", model_version)
+                inference_time_ms = analysis.get("inference_time_ms")
+                bbox = analysis.get("bbox", [])
             except Exception:
                 detector = None
 
@@ -54,6 +62,14 @@ class QualityService:
             grade, confidence, defects = self._mock_grade(image_path)
             disease_detected = bool(defects)
             damage_level = self._damage_level(grade)
+
+        try:
+            from PIL import Image
+
+            with Image.open(image_path) as image:
+                image_width, image_height = image.size
+        except Exception:
+            pass
 
         pricing = pricing_service.suggest_price(
             db,
@@ -86,6 +102,12 @@ class QualityService:
             grade=grade,
             confidence=confidence,
             defects=defects,
+            defect_details={"defects": defects, "bbox": bbox},
+            model_version=model_version,
+            inference_time_ms=inference_time_ms,
+            image_width=image_width,
+            image_height=image_height,
+            suggested_price_source=pricing.get("source_name"),
             min_price=pricing["min_price"],
             max_price=pricing["max_price"],
             recommendations=self._recommendations(grade),
@@ -101,6 +123,12 @@ class QualityService:
             "suggested_price": pricing["suggested_price"],
             "confidence": confidence,
             "defects": defects,
+            "model_version": model_version,
+            "inference_time_ms": inference_time_ms,
+            "image_width": image_width,
+            "image_height": image_height,
+            "suggested_price_source": pricing.get("source_name"),
+            "price_is_mock": pricing.get("is_mock", False),
             "suggested_price_range": {
                 "min": pricing["min_price"],
                 "max": pricing["max_price"],
@@ -131,6 +159,12 @@ class QualityService:
         grade: str,
         confidence: float,
         defects: list,
+        defect_details: dict,
+        model_version: str,
+        inference_time_ms: float | None,
+        image_width: int | None,
+        image_height: int | None,
+        suggested_price_source: str | None,
         min_price: float,
         max_price: float,
         recommendations: list,
@@ -151,6 +185,12 @@ class QualityService:
                 AIGrade=to_db_grade(grade),
                 ConfidenceScore=confidence,
                 DetectedIssues=json.dumps(defects, ensure_ascii=False),
+                DefectDetails=json.dumps(defect_details, ensure_ascii=False),
+                ModelVersion=model_version,
+                InferenceTimeMs=inference_time_ms,
+                ImageWidth=image_width,
+                ImageHeight=image_height,
+                SuggestedPriceSource=suggested_price_source,
                 SuggestedPriceMin=min_price,
                 SuggestedPriceMax=max_price,
                 Recommendation="\n".join(recommendations),
@@ -208,6 +248,9 @@ class QualityService:
             "suggested_price": suggested_price,
             "confidence": float(record.confidence_score or 0),
             "defects": issues.get("defects", []),
+            "model_version": getattr(record, "model_version", None),
+            "inference_time_ms": getattr(record, "inference_time_ms", None),
+            "suggested_price_source": getattr(record, "suggested_price_source", None),
             "suggested_price_range": {
                 "min": suggested_min,
                 "max": suggested_max,

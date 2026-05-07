@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.api import alert, auth, crops, harvest, market, price_forecast, pricing, quality, weather
+from app.api import admin, ai, alert, auth, crops, harvest, market, market_news, price_forecast, pricing, quality, weather
 from app.core.config import settings
 from app.core import database
 
@@ -36,14 +36,17 @@ app.add_middleware(
 )
 
 app.include_router(crops.router)
+app.include_router(admin.router)
 app.include_router(auth.router)
 app.include_router(harvest.router)
 app.include_router(quality.router)
 app.include_router(pricing.router)
 app.include_router(price_forecast.router)
 app.include_router(market.router)
+app.include_router(market_news.router)
 app.include_router(alert.router)
 app.include_router(weather.router)
+app.include_router(ai.router)
 
 os.makedirs(os.path.join(settings.UPLOAD_DIR, "quality_check"), exist_ok=True)
 
@@ -72,16 +75,21 @@ async def root():
             "pricing_forecast_legacy": "/api/pricing/forecast",
             "pricing_history": "/api/pricing/history/{crop_name}/{region}",
             "pricing_compare_regions": "/api/pricing/compare-regions/{crop_name}",
+            "pricing_import": "/api/pricing/import",
+            "admin_ingestion_run": "/api/admin/ingestion/run",
             "price_forecast": "/api/price-forecast/predict",
             "market_channels": "/api/market/channels",
             "market_suggest": "/api/market/suggest",
             "market_history": "/api/market/history/{user_id}",
+            "market_news": "/api/market-news/",
             "alert_create": "/api/alert/create",
             "alert_list": "/api/alert/list",
             "alert_detail": "/api/alert/{alert_id}",
             "alert_deactivate": "/api/alert/{alert_id}",
             "weather_current": "/api/weather/current/{region}",
+            "weather_refresh": "/api/weather/refresh/{region}",
             "weather_create": "/api/weather/",
+            "ai_chat": "/api/ai/chat",
             "docs": "/docs",
             "auth_register": "/api/auth/register",
             "auth_login": "/api/auth/login",

@@ -136,6 +136,68 @@ def _switch_to_sqlite_fallback():
     SessionLocal.configure(bind=engine)
 
 
+def _apply_lightweight_schema_upgrades() -> None:
+    """Add columns introduced after the classroom SQL script for local demos."""
+    column_upgrades = {
+        "WeatherData": {
+            "Latitude": "FLOAT NULL",
+            "Longitude": "FLOAT NULL",
+            "WindSpeed": "FLOAT NULL",
+            "Pressure": "FLOAT NULL",
+            "WeatherCode": "INTEGER NULL" if _is_sqlite() else "INT NULL",
+            "SourceName": "VARCHAR(100) NULL",
+            "SourceUpdatedAt": "DATETIME NULL",
+        },
+        "AIConversations": {
+            "ContextSnapshot": "TEXT NULL" if _is_sqlite() else "NVARCHAR(MAX) NULL",
+            "Provider": "VARCHAR(50) NULL",
+            "ModelName": "VARCHAR(100) NULL",
+            "TokenUsage": "TEXT NULL" if _is_sqlite() else "NVARCHAR(MAX) NULL",
+        },
+        "AlertNotifications": {
+            "Channel": "VARCHAR(20) NULL",
+            "Receiver": "VARCHAR(255) NULL",
+            "Status": "VARCHAR(30) NULL",
+            "ProviderMessageID": "VARCHAR(100) NULL",
+            "ErrorMessage": "TEXT NULL" if _is_sqlite() else "NVARCHAR(MAX) NULL",
+        },
+        "QualityRecords": {
+            "DefectDetails": "TEXT NULL" if _is_sqlite() else "NVARCHAR(MAX) NULL",
+            "ModelVersion": "VARCHAR(100) NULL",
+            "InferenceTimeMs": "FLOAT NULL",
+            "ImageWidth": "INTEGER NULL" if _is_sqlite() else "INT NULL",
+            "ImageHeight": "INTEGER NULL" if _is_sqlite() else "INT NULL",
+            "SuggestedPriceSource": "VARCHAR(100) NULL",
+        },
+    }
+    if _is_sqlite():
+        with engine.begin() as conn:
+            for requested_table, columns in column_upgrades.items():
+                table_name = _sqlite_table_name(conn, requested_table)
+                if not table_name:
+                    continue
+                existing = _sqlite_columns(conn, table_name)
+                for column, ddl in columns.items():
+                    if column not in existing:
+                        conn.exec_driver_sql(
+                            f"ALTER TABLE {_quote_sqlite_identifier(table_name)} "
+                            f"ADD COLUMN {_quote_sqlite_identifier(column)} {ddl}"
+                        )
+        return
+
+    if active_database_url.startswith("mssql"):
+        with engine.begin() as conn:
+            for table_name, columns in column_upgrades.items():
+                for column, ddl in columns.items():
+                    conn.execute(
+                        text(
+                            f"IF COL_LENGTH('{table_name}', :column_name) IS NULL "
+                            f"ALTER TABLE {table_name} ADD {column} {ddl}"
+                        ),
+                        {"column_name": column},
+                    )
+
+
 def get_db():
     db = SessionLocal()
     try:
@@ -147,18 +209,22 @@ def get_db():
 def init_db():
     """Create database tables for the imported SQLAlchemy models."""
     import app.models  # noqa: F401
-    from app.core.seed import seed_demo_users
+    from app.core.seed import seed_demo_users, seed_market_channels
 
     try:
         legacy_users_table = _migrate_legacy_sqlite_users()
         Base.metadata.create_all(bind=engine)
+        _apply_lightweight_schema_upgrades()
         _copy_legacy_sqlite_users(legacy_users_table)
         seed_demo_users(SessionLocal)
+        seed_market_channels(SessionLocal)
     except SQLAlchemyError:
         if settings.ENVIRONMENT.lower() == "production" or active_database_url.startswith("sqlite"):
             raise
         _switch_to_sqlite_fallback()
         legacy_users_table = _migrate_legacy_sqlite_users()
         Base.metadata.create_all(bind=engine)
+        _apply_lightweight_schema_upgrades()
         _copy_legacy_sqlite_users(legacy_users_table)
         seed_demo_users(SessionLocal)
+        seed_market_channels(SessionLocal)

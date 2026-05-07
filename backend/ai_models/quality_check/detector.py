@@ -4,6 +4,7 @@ Tổ chức YOLO inference trong ai_models/quality_check/detector.py
 Cung cấp hàm detect_quality(image_path) và phân loại chất lượng nông sản
 """
 import os
+import time
 import numpy as np
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
@@ -77,6 +78,7 @@ class QualityDetector:
                 recommendations: list[str],
             }
         """
+        started = time.perf_counter()
         detection = self._run_detection(image_path)
         grade, confidence = self._grade_quality(detection)
         price_range = self.QUALITY_GRADES[grade]
@@ -95,6 +97,10 @@ class QualityDetector:
             "suggested_price_min": price_range["price_min"],
             "suggested_price_max": price_range["price_max"],
             "recommendations": self._get_recommendations(grade, detection["defects"]),
+            "model_version": self._model_version(),
+            "inference_time_ms": round((time.perf_counter() - started) * 1000, 2),
+            "bbox": detection.get("bbox", []),
+            "is_mock": self.model is None,
         }
 
     # backward-compat alias (giữ cho quality.py API hoạt động)
@@ -122,7 +128,7 @@ class QualityDetector:
             return self._mock_detection()
         try:
             results = self.model(image_path, conf=0.25)
-            defects, confidences = [], []
+            defects, confidences, bbox = [], [], []
             for result in results:
                 for box in result.boxes:
                     cls = int(box.cls[0])
@@ -130,11 +136,13 @@ class QualityDetector:
                     class_name = result.names[cls]
                     defects.append(class_name)
                     confidences.append(conf)
+                    bbox.append([float(value) for value in box.xyxy[0].tolist()])
             return {
                 "defects":       defects,
                 "defect_count":  len(defects),
                 "confidences":   confidences,
                 "avg_confidence": float(np.mean(confidences)) if confidences else 0.9,
+                "bbox": bbox,
             }
         except Exception as e:
             print(f"Detection error: {e}")
@@ -147,7 +155,13 @@ class QualityDetector:
             "defect_count":   0,
             "confidences":    [0.90],
             "avg_confidence": 0.90,
+            "bbox": [],
         }
+
+    def _model_version(self) -> str:
+        if self.model is None:
+            return "mock-detector-v1"
+        return os.path.basename(self.model_path)
 
     def _grade_quality(self, detection: Dict) -> Tuple[str, float]:
         defect_count   = detection["defect_count"]

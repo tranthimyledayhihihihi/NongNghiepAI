@@ -11,15 +11,8 @@ router = APIRouter(prefix="/api/market", tags=["market"])
 
 
 @router.get("/channels")
-async def get_market_channels():
-    return {
-        "channels": [
-            {"id": "wholesale", "name": "Cho dau moi", "commission": "5-10%"},
-            {"id": "retail", "name": "Cho ban le", "commission": "0%"},
-            {"id": "supermarket", "name": "Sieu thi/cua hang sach", "commission": "10-15%"},
-            {"id": "processor", "name": "Co so che bien", "commission": "0-5%"},
-        ]
-    }
+async def get_market_channels(region: str | None = None, db: Session = Depends(get_db)):
+    return market_service.get_channels(db, region)
 
 
 @router.post("/suggest", response_model=MarketSuggestResponse)

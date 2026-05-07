@@ -17,6 +17,13 @@ class WeatherData(Base):
     Rainfall = Column("Rainfall", Float, nullable=True)
     SunshineHours = Column("SunshineHours", Float, nullable=True)
     WeatherDesc = Column("WeatherDesc", String(100), nullable=True)
+    Latitude = Column("Latitude", Float, nullable=True)
+    Longitude = Column("Longitude", Float, nullable=True)
+    WindSpeed = Column("WindSpeed", Float, nullable=True)
+    Pressure = Column("Pressure", Float, nullable=True)
+    WeatherCode = Column("WeatherCode", Integer, nullable=True)
+    SourceName = Column("SourceName", String(100), nullable=True)
+    SourceUpdatedAt = Column("SourceUpdatedAt", DateTime, nullable=True)
     CreatedAt = Column("CreatedAt", DateTime, server_default=func.now(), nullable=False)
 
     id = synonym("WeatherID")
@@ -28,6 +35,13 @@ class WeatherData(Base):
     rainfall = synonym("Rainfall")
     sunshine_hours = synonym("SunshineHours")
     weather_desc = synonym("WeatherDesc")
+    latitude = synonym("Latitude")
+    longitude = synonym("Longitude")
+    wind_speed = synonym("WindSpeed")
+    pressure = synonym("Pressure")
+    weather_code = synonym("WeatherCode")
+    source_name = synonym("SourceName")
+    source_updated_at = synonym("SourceUpdatedAt")
     created_at = synonym("CreatedAt")
 
     @property

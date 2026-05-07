@@ -1,26 +1,72 @@
 version: '3.8'
 
 services:
-  # Dịch vụ Database
   db:
     image: mcr.microsoft.com/mssql/server:2022-latest
     environment:
-      - ACCEPT_EULA=Y
-      - MSSQL_SA_PASSWORD=YourStrongPassword123!
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "YourStrongPassword123!"
+      MSSQL_PID: "Express"
     ports:
       - "1433:1433"
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/1433'"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
 
-  # Dịch vụ Cache (cho giá real-time)
   redis:
-    image: redis:alpine
+    image: redis:7-alpine
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
-  # Dịch vụ Backend (Sẽ build từ thư mục backend)
   backend:
     build: ./backend
+    env_file:
+      - .env.example
+    environment:
+      DATABASE_URL: "mssql+pymssql://sa:YourStrongPassword123!@db:1433/NongNghiepAI"
+      REDIS_URL: "redis://redis:6379/0"
     ports:
       - "8000:8000"
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+
+  frontend:
+    build: ./frontend
+    env_file:
+      - .env.example
+    environment:
+      VITE_API_URL: "http://localhost:8000"
+    ports:
+      - "5173:5173"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  worker:
+    build: ./backend
+    env_file:
+      - .env.example
+    environment:
+      DATABASE_URL: "mssql+pymssql://sa:YourStrongPassword123!@db:1433/NongNghiepAI"
+      REDIS_URL: "redis://redis:6379/0"
+    command: ["celery", "-A", "app.tasks.celery_app.celery_app", "worker", "--loglevel=INFO"]
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy

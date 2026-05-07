@@ -12,6 +12,7 @@ import {
 import { Minus, Search, TrendingDown, TrendingUp } from 'lucide-react';
 import { useState } from 'react';
 import { Line } from 'react-chartjs-2';
+import DataSourceBadge from '../components/DataSourceBadge';
 import { EmptyState, InlineLoading, PageError } from '../components/StatusState';
 import { getApiErrorMessage } from '../services/api';
 import { pricingApi } from '../services/pricingApi';
@@ -202,6 +203,19 @@ const PricingPage = () => {
       )}
 
       {currentPrice && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700 shadow-sm">
+          <DataSourceBadge data={currentPrice} />
+          <span>Source: {currentPrice.source_name || 'unknown'}</span>
+          {currentPrice.last_updated && (
+            <span>Updated: {new Date(currentPrice.last_updated).toLocaleString('vi-VN')}</span>
+          )}
+          {currentPrice.is_mock && (
+            <span className="font-medium text-amber-700">Demo data is being shown.</span>
+          )}
+        </div>
+      )}
+
+      {currentPrice && (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
             <p className="text-sm text-gray-600">Giá hiện tại</p>
@@ -240,6 +254,12 @@ const PricingPage = () => {
 
       {history?.history?.length > 0 && (
         <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+          {history.history.some((item) => item.is_mock) && (
+            <div className="mb-3 flex flex-wrap items-center gap-3 text-sm text-amber-700">
+              <DataSourceBadge data={{ is_mock: true }} />
+              <span>History chart is using demo fallback data.</span>
+            </div>
+          )}
           <h2 className="text-lg font-semibold text-gray-900">Lịch sử giá gần đây</h2>
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {history.history.slice(-6).map((item) => (

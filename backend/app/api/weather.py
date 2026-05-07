@@ -13,6 +13,20 @@ async def get_current_weather(region: str, db: Session = Depends(get_db)):
     return weather_service.get_current_weather(db, region)
 
 
+@router.post("/refresh/{region}", response_model=WeatherResponse)
+async def refresh_current_weather(region: str, db: Session = Depends(get_db)):
+    return weather_service.get_current_weather(db, region, force_refresh=True)
+
+
+@router.get("/forecast/{region}")
+async def get_weather_forecast(region: str, days: int = 7, db: Session = Depends(get_db)):
+    return {
+        "region": region,
+        "days": days,
+        "forecast": weather_service.get_forecast(db, region, days),
+    }
+
+
 @router.post("/", response_model=WeatherResponse)
 async def create_weather(request: WeatherCreateRequest, db: Session = Depends(get_db)):
     return weather_service.create_weather(db, request)

@@ -106,10 +106,11 @@ class HarvestService:
         region: str,
         user_id: int | None = None,
     ) -> dict:
+        planting_day = planting_date.date() if hasattr(planting_date, "date") else planting_date
         request = HarvestForecastRequest(
             crop_name=crop_name,
             region=region,
-            planting_date=planting_date.date(),
+            planting_date=planting_day,
         )
         result = self.forecast_harvest(db, request, user_id=user_id)
         return {

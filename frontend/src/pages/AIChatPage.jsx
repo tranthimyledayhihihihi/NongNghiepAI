@@ -16,6 +16,8 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import DataSourceBadge from '../components/DataSourceBadge';
+import { aiApi } from '../services/aiApi';
 
 const initialMessages = [
   {
@@ -141,15 +143,16 @@ const AIChatPage = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
 
-  const createBotResponse = () => ({
+  const createBotResponse = (data = null) => ({
     id: crypto.randomUUID(),
     type: 'bot',
-    content:
+    content: data?.answer ||
       'Tôi đã nhận được thông tin. Bạn nên bổ sung khu vực canh tác, tuổi cây, ảnh cận cảnh và lịch bón phân gần nhất để tôi phân tích chính xác hơn.',
     timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+    source: data ? { source_name: data.provider, is_mock: data.is_mock } : null,
   });
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     const trimmedMessage = inputMessage.trim();
     if (!trimmedMessage) return;
 
@@ -165,10 +168,20 @@ const AIChatPage = () => {
     setInputMessage('');
     setIsTyping(true);
 
-    window.setTimeout(() => {
+    try {
+      const data = await aiApi.chat({
+        question: trimmedMessage,
+        cropName: 'ca chua',
+        region: 'Ha Noi',
+        userId: 1,
+        sessionId: 'frontend-session',
+      });
+      setMessages((current) => [...current, createBotResponse(data)]);
+    } catch {
       setMessages((current) => [...current, createBotResponse()]);
+    } finally {
       setIsTyping(false);
-    }, 900);
+    }
   };
 
   const handleFileUpload = (event) => {
@@ -346,6 +359,11 @@ const AIChatPage = () => {
                       <img src={message.image} alt="Ảnh đã gửi" className="mb-3 max-h-72 w-full rounded-lg object-cover" />
                     )}
                     <p>{message.content}</p>
+                    {message.source && (
+                      <div className="mt-3">
+                        <DataSourceBadge data={message.source} />
+                      </div>
+                    )}
 
                     {message.analysis && (
                       <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4 text-left">

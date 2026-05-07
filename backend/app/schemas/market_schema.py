@@ -15,3 +15,6 @@ class MarketSuggestResponse(BaseModel):
     reason: str
     profit_comparison: list[dict] = Field(default_factory=list)
     warning: str | None = None
+    source: str | None = None
+    is_mock: bool = False
+    pricing_source: str | None = None

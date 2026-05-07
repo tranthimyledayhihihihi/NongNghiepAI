@@ -9,6 +9,7 @@ from app.schemas.alert_schema import (
     AlertResponse,
 )
 from app.services.alert_service import alert_service
+from app.tasks.alert_tasks import check_price_alerts_task
 
 router = APIRouter(prefix="/api/alert", tags=["alert"])
 
@@ -21,6 +22,11 @@ async def create_price_alert(request: AlertCreateRequest, db: Session = Depends(
 @router.get("/list", response_model=AlertListResponse)
 async def list_price_alerts(db: Session = Depends(get_db)):
     return {"alerts": alert_service.list_price_alerts(db)}
+
+
+@router.post("/check")
+async def check_price_alerts():
+    return check_price_alerts_task()
 
 
 @router.get("/{alert_id}", response_model=AlertResponse)

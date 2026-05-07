@@ -1,5 +1,8 @@
 import { ArrowRight, Cloud, Droplets, MapPin, Sparkles, TrendingUp } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import DataSourceBadge from '../components/DataSourceBadge';
+import { weatherApi } from '../services/weatherApi';
 
 const Dashboard = () => {
   // Mock data - sẽ được thay thế bằng API calls
@@ -37,6 +40,29 @@ const Dashboard = () => {
     humidity: '85%',
     rainfall: 'Dự báo mưa vào 5 ngày tới'
   };
+
+  const [weatherLive, setWeatherLive] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    weatherApi.getCurrentWeather('Ha Noi')
+      .then((data) => {
+        if (!active) return;
+        setWeatherLive({
+          ...data,
+          temp: Math.round(data.temperature ?? 28),
+          humidity: `${Math.round(data.humidity ?? 0)}%`,
+          rainfall: `${data.rainfall ?? 0} mm`,
+          condition: data.condition || 'unknown',
+        });
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const displayedWeather = weatherLive || weather;
 
   return (
     <div className="space-y-6">
@@ -185,12 +211,15 @@ const Dashboard = () => {
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">Thời tiết sắp tới</h3>
-              <Cloud className="w-6 h-6 text-gray-400" />
+              <div className="flex items-center gap-2">
+                <DataSourceBadge data={displayedWeather} />
+                <Cloud className="w-6 h-6 text-gray-400" />
+              </div>
             </div>
 
             <div className="text-center mb-4">
-              <div className="text-5xl font-bold text-gray-900">{weather.temp}°C</div>
-              <p className="text-gray-600 mt-2">{weather.condition}</p>
+              <div className="text-5xl font-bold text-gray-900">{displayedWeather.temp}°C</div>
+              <p className="text-gray-600 mt-2">{displayedWeather.condition}</p>
             </div>
 
             <div className="space-y-3">
@@ -199,11 +228,11 @@ const Dashboard = () => {
                   <Droplets className="w-5 h-5 text-blue-600 mr-2" />
                   <span className="text-sm text-gray-700">Độ ẩm</span>
                 </div>
-                <span className="text-sm font-semibold text-gray-900">{weather.humidity}</span>
+                <span className="text-sm font-semibold text-gray-900">{displayedWeather.humidity}</span>
               </div>
 
               <div className="p-3 bg-amber-50 rounded-lg">
-                <p className="text-sm text-amber-800">{weather.rainfall}</p>
+                <p className="text-sm text-amber-800">{displayedWeather.rainfall}</p>
               </div>
             </div>
           </div>

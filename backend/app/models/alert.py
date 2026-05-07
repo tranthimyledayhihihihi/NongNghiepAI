@@ -42,6 +42,11 @@ class AlertNotification(Base):
     Message = Column("Message", Text, nullable=True)
     NotifyMethod = Column("NotifyMethod", String(20), nullable=True)
     SendStatus = Column("SendStatus", String(20), nullable=False, default="Pending")
+    Channel = Column("Channel", String(20), nullable=True)
+    Receiver = Column("Receiver", String(255), nullable=True)
+    Status = Column("Status", String(30), nullable=True)
+    ProviderMessageID = Column("ProviderMessageID", String(100), nullable=True)
+    ErrorMessage = Column("ErrorMessage", Text, nullable=True)
     SentAt = Column("SentAt", DateTime, server_default=func.now(), nullable=False)
 
     id = synonym("NotificationID")
@@ -50,6 +55,11 @@ class AlertNotification(Base):
     message = synonym("Message")
     notify_method = synonym("NotifyMethod")
     send_status = synonym("SendStatus")
+    channel = synonym("Channel")
+    receiver = synonym("Receiver")
+    status = synonym("Status")
+    provider_message_id = synonym("ProviderMessageID")
+    error_message = synonym("ErrorMessage")
     sent_at = synonym("SentAt")
 
 

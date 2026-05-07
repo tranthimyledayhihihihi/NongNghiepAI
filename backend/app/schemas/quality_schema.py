@@ -13,6 +13,12 @@ class QualityCheckResponse(BaseModel):
     suggested_price: float
     confidence: float = Field(..., ge=0, le=1)
     defects: list[str] = Field(default_factory=list)
+    model_version: str | None = None
+    inference_time_ms: float | None = None
+    image_width: int | None = None
+    image_height: int | None = None
+    suggested_price_source: str | None = None
+    price_is_mock: bool = False
     suggested_price_range: dict[str, float] = Field(default_factory=dict)
     recommendations: list[str] = Field(default_factory=list)
     checked_at: datetime | None = None

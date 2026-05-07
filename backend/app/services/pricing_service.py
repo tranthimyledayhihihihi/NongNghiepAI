@@ -3,7 +3,7 @@ Pricing Service - merged Tien (repository + schema) + Quang (DB queries + mock d
 - API endpoints dùng: get_current_price, suggest_price, forecast_price, get_price_history
 - Internal: analyze_price_trend (dùng bởi market_service, price_forecast_service)
 """
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from unicodedata import category, normalize
 
 from sqlalchemy import desc
@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.redis_client import redis_client
 from app.repositories.price_repository import (
     create_pricing_request,
+    bulk_upsert_market_prices,
     get_latest_price,
     get_latest_prices_by_crop,
     get_price_history,
@@ -65,20 +66,30 @@ class PricingService:
         region: str,
         quality_grade: str = "grade_1",
     ) -> dict:
-        """Lấy giá hiện tại, có cache Redis 1 giờ."""
         cache_key = f"price:{crop_name}:{region}:{quality_grade}"
         cached = redis_client.get(cache_key)
         if cached:
+            cached["cache_status"] = "hit"
             return cached
 
         latest_price = get_latest_price(db, crop_name, region, quality_grade)
         if latest_price:
             current_price = float(latest_price.price)
             last_updated = latest_price.collected_at
+            price_date = latest_price.price_date
+            source_name = latest_price.source_name or "database"
+            source_url = latest_price.source_url
+            cache_status = "from_db"
+            is_mock = False
         else:
-            # Fallback: thử lấy từ DB trực tiếp, rồi mock
-            current_price = self._get_price_from_db(db, crop_name, region, quality_grade)
-            last_updated = datetime.now()
+            fallback = self._get_price_fallback(db, crop_name, region, quality_grade)
+            current_price = fallback["current_price"]
+            last_updated = fallback["last_updated"]
+            price_date = fallback["price_date"]
+            source_name = fallback["source_name"]
+            source_url = fallback["source_url"]
+            cache_status = fallback["cache_status"]
+            is_mock = fallback["is_mock"]
 
         result = {
             "crop_name": crop_name,
@@ -87,12 +98,14 @@ class PricingService:
             "quality_grade": quality_grade,
             "price_trend": self.analyze_price_trend(db, crop_name, region),
             "last_updated": last_updated,
+            "source_name": source_name,
+            "source_url": source_url,
+            "price_date": price_date,
+            "cache_status": cache_status,
+            "is_mock": is_mock,
+            "data_age_minutes": self._age_minutes(last_updated),
         }
-        redis_client.set(
-            cache_key,
-            {**result, "last_updated": result["last_updated"].isoformat() if hasattr(result["last_updated"], "isoformat") else result["last_updated"]},
-            expire=3600,
-        )
+        redis_client.set(cache_key, self._cache_payload(result), expire=3600)
         return result
 
     def suggest_price(self, db: Session, request: PricingSuggestRequest) -> dict:
@@ -127,6 +140,28 @@ class PricingService:
             "unit": "VND/kg",
             "nearby_region_prices": nearby_prices,
             "message": "Gia de xuat dua tren du lieu thi truong hien tai.",
+            "source_name": current.get("source_name"),
+            "source_url": current.get("source_url"),
+            "price_date": current.get("price_date"),
+            "cache_status": current.get("cache_status", "unknown"),
+            "is_mock": current.get("is_mock", False),
+            "last_updated": current.get("last_updated"),
+        }
+
+    def import_prices(self, db: Session, records: list) -> dict:
+        normalized_records = [
+            record.model_dump() if hasattr(record, "model_dump") else dict(record)
+            for record in records
+        ]
+        result = bulk_upsert_market_prices(db, normalized_records)
+        for record in normalized_records:
+            redis_client.delete(
+                f"price:{record.get('crop_name')}:{record.get('region')}:{record.get('quality_grade', 'grade_1')}"
+            )
+        return {
+            "status": "success" if not result["errors"] else "partial_success",
+            "records_received": len(normalized_records),
+            **result,
         }
 
     def forecast_price(self, crop_name: str, region: str, days: int = 7) -> dict:
@@ -160,6 +195,9 @@ class PricingService:
                     "avg_price": float(item.avg_price),
                     "min_price": float(item.min_price or item.avg_price),
                     "max_price": float(item.max_price or item.avg_price),
+                    "source_count": int(item.volume or 0),
+                    "cache_status": "from_db",
+                    "is_mock": False,
                 }
                 for item in history
             ]
@@ -172,6 +210,9 @@ class PricingService:
                 "avg_price": round(base_price * (1 + ((days - i) % 5 - 2) * 0.01), 2),
                 "min_price": round(base_price * 0.94, 2),
                 "max_price": round(base_price * 1.06, 2),
+                "source_count": 0,
+                "cache_status": "mock",
+                "is_mock": True,
             }
             for i in range(days, 0, -1)
         ]
@@ -202,6 +243,76 @@ class PricingService:
     # ------------------------------------------------------------------ #
     # Helpers - kết hợp cả Tien và Quang
     # ------------------------------------------------------------------ #
+
+    def _get_price_fallback(self, db: Session, crop_name: str, region: str, quality_grade: str) -> dict:
+        now = datetime.now()
+        try:
+            from app.models.crop import CropType
+            from app.models.price import MarketPrice
+
+            crop = db.query(CropType).filter(CropType.CropName == crop_name).first()
+            if crop:
+                row = (
+                    db.query(MarketPrice)
+                    .filter(MarketPrice.CropID == crop.CropID, MarketPrice.Region == region)
+                    .order_by(desc(MarketPrice.PriceDate), desc(MarketPrice.UpdatedAt))
+                    .first()
+                )
+                if row:
+                    multiplier = self.quality_multipliers.get(quality_grade, 1.0)
+                    return {
+                        "current_price": round(float(row.PricePerKg) * multiplier, 2),
+                        "last_updated": row.UpdatedAt or now,
+                        "price_date": row.PriceDate,
+                        "source_name": row.SourceName or "database",
+                        "source_url": row.SourceURL,
+                        "cache_status": "from_db",
+                        "is_mock": False,
+                    }
+                if crop.TypicalPriceMin and crop.TypicalPriceMax:
+                    base = (float(crop.TypicalPriceMin) + float(crop.TypicalPriceMax)) / 2
+                    return {
+                        "current_price": round(base, 2),
+                        "last_updated": getattr(crop, "CreatedAt", None) or now,
+                        "price_date": date.today(),
+                        "source_name": "CropTypes typical price",
+                        "source_url": None,
+                        "cache_status": "from_db",
+                        "is_mock": False,
+                    }
+        except Exception:
+            pass
+
+        return {
+            "current_price": self._mock_price(crop_name, region, quality_grade),
+            "last_updated": now,
+            "price_date": date.today(),
+            "source_name": "Mock Pricing",
+            "source_url": None,
+            "cache_status": "mock",
+            "is_mock": True,
+        }
+
+    @staticmethod
+    def _cache_payload(result: dict) -> dict:
+        payload = result.copy()
+        payload["cache_status"] = "hit"
+        for key in ("last_updated", "price_date"):
+            value = payload.get(key)
+            if hasattr(value, "isoformat"):
+                payload[key] = value.isoformat()
+        return payload
+
+    @staticmethod
+    def _age_minutes(value) -> int | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            try:
+                value = datetime.fromisoformat(value)
+            except ValueError:
+                return None
+        return max(int((datetime.now() - value.replace(tzinfo=None)).total_seconds() // 60), 0)
 
     def _get_price_from_db(self, db: Session, crop_name: str, region: str, quality_grade: str) -> float:
         """Lấy giá từ DB trực tiếp (Quang) rồi fallback mock."""
@@ -260,6 +371,9 @@ class PricingService:
                 "price": float(item.price),
                 "unit": getattr(item, "unit", "VND/kg"),
                 "collected_at": item.collected_at.isoformat(),
+                "source_name": getattr(item, "source_name", None) or "database",
+                "source_url": getattr(item, "source_url", None),
+                "is_mock": False,
             })
         if result:
             return result
@@ -272,6 +386,9 @@ class PricingService:
                 "price": self._mock_price(crop_name, r, "grade_1"),
                 "unit": "VND/kg",
                 "collected_at": datetime.now().isoformat(),
+                "source_name": "Mock Pricing",
+                "source_url": None,
+                "is_mock": True,
             }
             for r in fallback_regions if r != region
         ][:3]

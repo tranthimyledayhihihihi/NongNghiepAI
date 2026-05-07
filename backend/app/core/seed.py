@@ -3,6 +3,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.security import get_password_hash
 from app.models.user import User
+from app.repositories.market_repository import seed_default_market_channels
 
 
 DEMO_USER_PASSWORD = "123456"
@@ -96,5 +97,13 @@ def seed_demo_users(session_factory) -> None:
         db.commit()
     except SQLAlchemyError:
         db.rollback()
+    finally:
+        db.close()
+
+
+def seed_market_channels(session_factory) -> None:
+    db = session_factory()
+    try:
+        seed_default_market_channels(db)
     finally:
         db.close()
