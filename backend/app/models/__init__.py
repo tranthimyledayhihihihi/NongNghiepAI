@@ -5,10 +5,21 @@ from .harvest import HarvestForecast, HarvestSchedule
 from .market import MarketChannel, MarketSuggestion
 from .ingestion import DataIngestionLog
 from .market_news import MarketNews
+from .notification import Notification, NotificationDelivery
 from .price import MarketPrice, PriceForecastResult, PriceHistory, PricingRequest
 from .quality import QualityCheck, QualityRecord
+from .settings import NotificationPreference, UserSettings
 from .user import User
-from .weather import WeatherData
+from .weather import (
+    CropWeatherRule,
+    FarmPlot,
+    WeatherAlert,
+    WeatherData,
+    WeatherForecast,
+    WeatherLocation,
+    WeatherObservation,
+    WeatherRecommendation,
+)
 
 __all__ = [
     "AIConversation",
@@ -23,6 +34,9 @@ __all__ = [
     "MarketChannel",
     "MarketNews",
     "MarketSuggestion",
+    "Notification",
+    "NotificationDelivery",
+    "NotificationPreference",
     "PriceAlert",
     "PriceForecastResult",
     "PriceHistory",
@@ -30,5 +44,13 @@ __all__ = [
     "QualityCheck",
     "QualityRecord",
     "User",
+    "UserSettings",
+    "CropWeatherRule",
+    "FarmPlot",
+    "WeatherAlert",
     "WeatherData",
+    "WeatherForecast",
+    "WeatherLocation",
+    "WeatherObservation",
+    "WeatherRecommendation",
 ]

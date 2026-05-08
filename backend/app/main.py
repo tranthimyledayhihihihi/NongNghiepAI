@@ -6,7 +6,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.api import admin, ai, alert, auth, crops, harvest, market, market_news, price_forecast, pricing, quality, weather
+from app.api import (
+    admin,
+    ai,
+    alert,
+    auth,
+    crops,
+    dashboard,
+    harvest,
+    market,
+    market_news,
+    notifications,
+    price_forecast,
+    pricing,
+    quality,
+    reports,
+    settings as settings_api,
+    weather,
+)
 from app.core.config import settings
 from app.core import database
 
@@ -36,6 +53,7 @@ app.add_middleware(
 )
 
 app.include_router(crops.router)
+app.include_router(dashboard.router)
 app.include_router(admin.router)
 app.include_router(auth.router)
 app.include_router(harvest.router)
@@ -44,6 +62,9 @@ app.include_router(pricing.router)
 app.include_router(price_forecast.router)
 app.include_router(market.router)
 app.include_router(market_news.router)
+app.include_router(reports.router)
+app.include_router(settings_api.router)
+app.include_router(notifications.router)
 app.include_router(alert.router)
 app.include_router(weather.router)
 app.include_router(ai.router)
@@ -66,6 +87,12 @@ async def root():
             "harvest_forecast": "/api/harvest/forecast",
             "harvest_history": "/api/harvest/history/{user_id}",
             "harvest_schedules": "/api/harvest/schedules/{user_id}",
+            "harvest_schedules_me": "/api/harvest/schedules/me",
+            "dashboard_summary": "/api/dashboard/summary",
+            "dashboard_featured_crop": "/api/dashboard/featured-crop",
+            "dashboard_price_trend": "/api/dashboard/price-trend",
+            "dashboard_weather_overview": "/api/dashboard/weather-overview",
+            "dashboard_ai_recommendation": "/api/dashboard/ai-recommendation",
             "quality_check": "/api/quality/check",
             "quality_grades": "/api/quality/grades",
             "quality_history": "/api/quality/history/{user_id}",
@@ -82,11 +109,19 @@ async def root():
             "market_suggest": "/api/market/suggest",
             "market_history": "/api/market/history/{user_id}",
             "market_news": "/api/market-news/",
+            "reports_summary": "/api/reports/summary",
+            "settings_me": "/api/settings/me",
+            "notifications": "/api/notifications",
             "alert_create": "/api/alert/create",
             "alert_list": "/api/alert/list",
             "alert_detail": "/api/alert/{alert_id}",
             "alert_deactivate": "/api/alert/{alert_id}",
             "weather_current": "/api/weather/current/{region}",
+            "weather_forecast": "/api/weather/forecast/{region}",
+            "weather_hourly": "/api/weather/hourly/{region}",
+            "weather_agriculture": "/api/weather/agriculture/{region}",
+            "weather_alerts": "/api/weather/alerts/{region}",
+            "weather_recommendations": "/api/weather/recommendations/{region}",
             "weather_refresh": "/api/weather/refresh/{region}",
             "weather_create": "/api/weather/",
             "ai_chat": "/api/ai/chat",

@@ -37,4 +37,23 @@ export const harvestApi = {
     });
     return response.data;
   },
+
+  getMyHistory: async (limit = 50) => {
+    const response = await api.get('/api/harvest/history/me', {
+      params: { limit },
+    });
+    return response.data;
+  },
+
+  getMySchedules: async (limit = 50) => {
+    const response = await api.get('/api/harvest/schedules/me', {
+      params: { limit },
+    });
+    return response.data;
+  },
+
+  createSchedule: async (payload) => {
+    const response = await api.post('/api/harvest/schedules', payload);
+    return response.data;
+  },
 };

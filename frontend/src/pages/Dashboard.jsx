@@ -2,9 +2,13 @@ import { ArrowRight, Cloud, Droplets, MapPin, Sparkles, TrendingUp } from 'lucid
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import DataSourceBadge from '../components/DataSourceBadge';
-import { weatherApi } from '../services/weatherApi';
+import { InlineLoading, PageError } from '../components/StatusState';
+import { useAuth } from '../contexts/AuthContext';
+import { getApiErrorMessage } from '../services/api';
+import { dashboardApi } from '../services/dashboardApi';
 
 const Dashboard = () => {
+  const { user } = useAuth();
   // Mock data - sẽ được thay thế bằng API calls
   const featuredCrop = {
     name: 'Lúa OM 5451',
@@ -41,28 +45,81 @@ const Dashboard = () => {
     rainfall: 'Dự báo mưa vào 5 ngày tới'
   };
 
+  const [dashboardSummary, setDashboardSummary] = useState(null);
+  const [priceTrend, setPriceTrend] = useState(null);
+  const [aiInsight, setAiInsight] = useState(null);
   const [weatherLive, setWeatherLive] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     let active = true;
-    weatherApi.getCurrentWeather('Ha Noi')
-      .then((data) => {
+    const region = user?.region || 'Ha Noi';
+    setLoading(true);
+    setError(null);
+
+    Promise.all([
+      dashboardApi.getSummary(region),
+      dashboardApi.getPriceTrend({ cropName: 'lua', region, days: 7 }),
+      dashboardApi.getAiRecommendation({ cropName: 'lua', region }),
+    ])
+      .then(([summary, trend, recommendation]) => {
         if (!active) return;
-        setWeatherLive({
-          ...data,
-          temp: Math.round(data.temperature ?? 28),
-          humidity: `${Math.round(data.humidity ?? 0)}%`,
-          rainfall: `${data.rainfall ?? 0} mm`,
-          condition: data.condition || 'unknown',
-        });
+        const weatherData = summary.weather?.current;
+        setDashboardSummary(summary);
+        setPriceTrend(trend);
+        setAiInsight(recommendation);
+        if (weatherData) {
+          setWeatherLive({
+            ...weatherData,
+            temp: Math.round(weatherData.temperature ?? 28),
+            humidity: `${Math.round(weatherData.humidity ?? 0)}%`,
+            rainfall: `${weatherData.rainfall ?? 0} mm`,
+            condition: weatherData.condition || 'unknown',
+          });
+        }
       })
-      .catch(() => {});
+      .catch((err) => {
+        if (active) setError(getApiErrorMessage(err, 'Khong the tai dashboard'));
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
     return () => {
       active = false;
     };
-  }, []);
+  }, [user?.region]);
 
+  const displayedCrop = dashboardSummary?.featured_crop || featuredCrop;
+  const displayedForecast = priceTrend?.forecast?.length
+    ? priceTrend.forecast.slice(0, 3).map((item) => {
+        const itemDate = new Date(item.date);
+        return {
+          day: Number.isNaN(itemDate.getTime()) ? item.date : String(itemDate.getDate()).padStart(2, '0'),
+          date: Number.isNaN(itemDate.getTime()) ? '' : `T${itemDate.getDay() + 1}`,
+          price: item.predicted_price,
+          change: item.confidence === 'high' ? 'DO TIN CAY CAO' : 'DO TIN CAY TB',
+          trend: item.trend === 'up' ? 'up' : 'neutral',
+        };
+      })
+    : forecast7Days;
+  const displayedAi = aiInsight
+    ? {
+        title: aiInsight.title,
+        description: aiInsight.description,
+        confidence: `${Math.round((aiInsight.confidence || 0) * 100)}%`,
+        period: aiInsight.period,
+      }
+    : aiRecommendation;
   const displayedWeather = weatherLive || weather;
+
+  if (loading) {
+    return <InlineLoading text="Dang tai tong quan dashboard..." />;
+  }
+
+  if (error) {
+    return <PageError message={error} onRetry={() => window.location.reload()} />;
+  }
 
   return (
     <div className="space-y-6">
@@ -83,24 +140,26 @@ const Dashboard = () => {
                 <div className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 mb-2">
                   THỊTRƯỜNG NỔI BẬT HÔM NAY
                 </div>
-                <h2 className="text-3xl font-bold text-gray-900 mt-2">{featuredCrop.name}</h2>
+                <h2 className="text-3xl font-bold text-gray-900 mt-2">{displayedCrop.name}</h2>
                 <p className="text-sm text-gray-600 flex items-center mt-1">
                   <MapPin className="w-4 h-4 mr-1" />
-                  {featuredCrop.location}
+                  {displayedCrop.location}
                 </p>
               </div>
               <div className="text-right">
                 <div className="flex items-center text-emerald-600 text-sm font-medium">
                   <TrendingUp className="w-4 h-4 mr-1" />
-                  {featuredCrop.change}
+                  {displayedCrop.change}
                 </div>
-                <p className="text-xs text-gray-500 mt-1">{featuredCrop.lastUpdate}</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {displayedCrop.last_updated ? new Date(displayedCrop.last_updated).toLocaleString('vi-VN') : displayedCrop.lastUpdate}
+                </p>
               </div>
             </div>
 
             <div className="mb-6">
               <div className="text-4xl font-bold text-gray-900">
-                {featuredCrop.price.toLocaleString()}
+                {Number(displayedCrop.price || 0).toLocaleString()}
                 <span className="text-lg text-gray-600 font-normal ml-2">VNĐ/kg</span>
               </div>
             </div>
@@ -123,7 +182,7 @@ const Dashboard = () => {
             </div>
 
             <div className="space-y-3">
-              {forecast7Days.map((day, idx) => (
+              {displayedForecast.map((day, idx) => (
                 <div key={idx} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                   <div className="flex items-center space-x-4">
                     <div className="text-center">
@@ -187,16 +246,16 @@ const Dashboard = () => {
               <span className="text-sm font-medium">Khuyến Nghị AI</span>
             </div>
 
-            <h3 className="text-2xl font-bold mb-3">{aiRecommendation.title}</h3>
+            <h3 className="text-2xl font-bold mb-3">{displayedAi.title}</h3>
 
             <p className="text-emerald-100 text-sm mb-4">
-              {aiRecommendation.description}
+              {displayedAi.description}
             </p>
 
             <div className="bg-emerald-700/50 rounded-lg p-4 mb-4">
               <div className="text-sm text-emerald-200 mb-1">LỢI NHUẬN DỰ KIẾN</div>
-              <div className="text-3xl font-bold">{aiRecommendation.confidence}</div>
-              <div className="text-sm text-emerald-200">{aiRecommendation.period}</div>
+              <div className="text-3xl font-bold">{displayedAi.confidence}</div>
+              <div className="text-sm text-emerald-200">{displayedAi.period}</div>
             </div>
 
             <Link

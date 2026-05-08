@@ -162,6 +162,19 @@ class AlertService:
             )
             db.add(row)
             db.commit()
+            try:
+                from app.services.notification_center_service import notification_center_service
+
+                notification_center_service.create_price_alert_inbox(
+                    db,
+                    user_id=alert.UserID,
+                    crop_name=crop_name,
+                    region=alert.Region,
+                    message=plain,
+                    alert_id=alert.AlertID,
+                )
+            except Exception:
+                logger.exception("could not store price alert in notification inbox")
             return result
         except Exception as exc:
             db.rollback()

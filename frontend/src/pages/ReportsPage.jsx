@@ -22,9 +22,7 @@ import { Bar } from 'react-chartjs-2';
 import { EmptyState, InlineLoading, PageError } from '../components/StatusState';
 import { useAuth } from '../contexts/AuthContext';
 import { getApiErrorMessage } from '../services/api';
-import { harvestApi } from '../services/harvestApi';
-import { marketApi } from '../services/marketApi';
-import { qualityApi } from '../services/qualityApi';
+import { reportsApi } from '../services/reportsApi';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
@@ -62,28 +60,28 @@ const ReportsPage = () => {
     market: [],
     quality: [],
   });
+  const [summary, setSummary] = useState({
+    total_revenue: 0,
+    total_quantity: 0,
+    quality_summary: {},
+    top_quality_grade: null,
+    monthly_revenue: [],
+    record_counts: { harvest: 0, market: 0, quality: 0 },
+  });
 
   const loadReports = async () => {
-    if (!user?.id) {
-      setLoading(false);
-      return;
-    }
-
     setLoading(true);
     setError(null);
 
     try {
-      const [qualityData, harvestData, marketData] = await Promise.all([
-        qualityApi.getHistory(user.id),
-        harvestApi.getHistory(user.id),
-        marketApi.getHistory(user.id),
-      ]);
+      const data = await reportsApi.getSummary(100);
 
       setReportData({
-        quality: qualityData.history || [],
-        harvest: harvestData.history || [],
-        market: marketData.history || [],
+        quality: data.quality || [],
+        harvest: data.harvest || [],
+        market: data.market || [],
       });
+      setSummary(data);
     } catch (err) {
       setError(getApiErrorMessage(err, 'Không thể tải báo cáo của tài khoản'));
     } finally {
@@ -96,16 +94,17 @@ const ReportsPage = () => {
   }, [user?.id]);
 
   const totalRevenue = useMemo(
-    () => reportData.market.reduce((sum, item) => sum + Number(item.estimated_profit || 0), 0),
-    [reportData.market]
+    () => Number(summary.total_revenue || 0),
+    [summary.total_revenue]
   );
 
   const totalQuantity = useMemo(
-    () => reportData.market.reduce((sum, item) => sum + Number(item.quantity || 0), 0),
-    [reportData.market]
+    () => Number(summary.total_quantity || 0),
+    [summary.total_quantity]
   );
 
   const qualitySummary = useMemo(() => {
+    if (summary.top_quality_grade) return gradeLabel(summary.top_quality_grade);
     if (!reportData.quality.length) return 'Chưa có';
     const counts = reportData.quality.reduce((result, item) => {
       const label = gradeLabel(item.quality_grade);
@@ -113,7 +112,7 @@ const ReportsPage = () => {
       return result;
     }, {});
     return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
-  }, [reportData.quality]);
+  }, [reportData.quality, summary.top_quality_grade]);
 
   const tableRows = useMemo(() => {
     const marketRows = reportData.market.map((item) => ({
@@ -159,26 +158,22 @@ const ReportsPage = () => {
   }, [reportData]);
 
   const chartData = useMemo(() => {
-    const buckets = reportData.market.reduce((result, item) => {
-      const key = monthKey(item.created_at);
-      result[key] = (result[key] || 0) + Number(item.estimated_profit || 0);
-      return result;
-    }, {});
-    const labels = Object.keys(buckets);
+    const monthlyRevenue = summary.monthly_revenue || [];
+    const labels = monthlyRevenue.map((item) => item.month);
 
     return {
       labels: labels.length ? labels : ['Chưa có dữ liệu'],
       datasets: [
         {
           label: 'Doanh thu theo tài khoản',
-          data: labels.length ? labels.map((label) => buckets[label]) : [0],
+          data: labels.length ? monthlyRevenue.map((item) => Number(item.revenue || 0)) : [0],
           backgroundColor: '#15803d',
           borderRadius: 8,
           barThickness: 56,
         },
       ],
     };
-  }, [reportData.market]);
+  }, [summary.monthly_revenue]);
 
   const chartOptions = {
     responsive: true,

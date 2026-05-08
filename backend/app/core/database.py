@@ -143,6 +143,7 @@ def _apply_lightweight_schema_upgrades() -> None:
             "Latitude": "FLOAT NULL",
             "Longitude": "FLOAT NULL",
             "WindSpeed": "FLOAT NULL",
+            "UVIndex": "FLOAT NULL",
             "Pressure": "FLOAT NULL",
             "WeatherCode": "INTEGER NULL" if _is_sqlite() else "INT NULL",
             "SourceName": "VARCHAR(100) NULL",

@@ -27,7 +27,22 @@ def test_person_1_api_contract_is_registered():
         "/api/crops/{crop_id}",
         "/api/harvest/forecast",
         "/api/harvest/history/{user_id}",
+        "/api/harvest/history/me",
         "/api/harvest/schedules/{user_id}",
+        "/api/harvest/schedules/me",
+        "/api/harvest/schedules",
+        "/api/dashboard/summary",
+        "/api/dashboard/featured-crop",
+        "/api/dashboard/price-trend",
+        "/api/dashboard/weather-overview",
+        "/api/dashboard/ai-recommendation",
+        "/api/reports/summary",
+        "/api/reports/me",
+        "/api/settings/me",
+        "/api/notifications",
+        "/api/notifications/mark-all-read",
+        "/api/notifications/{notification_id}/read",
+        "/api/notifications/{notification_id}",
         "/api/quality/check",
         "/api/quality/history/{user_id}",
         "/api/quality/{record_id}",
@@ -40,6 +55,11 @@ def test_person_1_api_contract_is_registered():
         "/api/alert/list",
         "/api/alert/{alert_id}",
         "/api/weather/current/{region}",
+        "/api/weather/forecast/{region}",
+        "/api/weather/hourly/{region}",
+        "/api/weather/agriculture/{region}",
+        "/api/weather/alerts/{region}",
+        "/api/weather/recommendations/{region}",
     }
     assert expected_paths.issubset(paths)
 
@@ -179,3 +199,13 @@ def test_weather_current():
     response = client.get("/api/weather/current/Ha%20Noi")
     assert response.status_code == 200
     assert response.json()["region"] == "Ha Noi"
+
+
+def test_weather_agriculture_module():
+    response = client.get("/api/weather/agriculture/Ha%20Noi?crop_name=lua&growth_stage=lam%20dong")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["module_name"] == "Thời tiết nông vụ thông minh"
+    assert len(data["forecast"]) == 7
+    assert data["activity_recommendations"]
+    assert "summary" in data["ai_recommendation"]

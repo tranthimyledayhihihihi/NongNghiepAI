@@ -9,7 +9,8 @@ from app.repositories.harvest_repository import (
     get_harvest_forecast_history,
     get_harvest_schedules_by_user,
 )
-from app.schemas.harvest_schema import HarvestForecastRequest
+from app.repositories.common import ensure_crop
+from app.schemas.harvest_schema import HarvestForecastRequest, HarvestScheduleCreateRequest
 
 
 class HarvestService:
@@ -153,6 +154,40 @@ class HarvestService:
             db.rollback()
             return None
 
+    def create_schedule_from_request(
+        self,
+        db: Session,
+        user_id: int,
+        request: HarvestScheduleCreateRequest,
+    ) -> dict | None:
+        try:
+            from app.models.harvest import HarvestSchedule
+
+            crop = ensure_crop(db, request.crop_name)
+            expected_date = request.expected_harvest_date
+            if expected_date is None:
+                expected_date = request.planting_date + timedelta(days=self._resolve_growth_days(db, request.crop_name))
+
+            schedule = HarvestSchedule(
+                UserID=user_id,
+                CropID=crop.CropID,
+                Region=request.region,
+                PlantingDate=request.planting_date,
+                ExpectedHarvestDate=expected_date,
+                AreaSize=request.area_size,
+                EstimatedYieldKg=request.estimated_yield_kg,
+                FertilizerUsed=request.fertilizer_used,
+                PesticideUsed=request.pesticide_used,
+                Notes=request.notes,
+            )
+            db.add(schedule)
+            db.commit()
+            db.refresh(schedule)
+            return self._schedule_to_dict(schedule, crop)
+        except Exception:
+            db.rollback()
+            return None
+
     def get_history(self, db: Session, user_id: int, limit: int = 50) -> list[dict]:
         records = get_harvest_forecast_history(db, user_id, limit)
         return [
@@ -178,25 +213,33 @@ class HarvestService:
     def get_schedules(self, db: Session, user_id: int, limit: int = 50) -> list[dict]:
         records = get_harvest_schedules_by_user(db, user_id, limit)
         return [
-            {
-                "schedule_id": schedule.id,
-                "user_id": schedule.user_id,
-                "crop_id": crop.id,
-                "crop_name": crop.name,
-                "planting_date": schedule.planting_date,
-                "area_size": schedule.area_size,
-                "region": schedule.region,
-                "expected_harvest_date": schedule.expected_harvest_date,
-                "actual_harvest_date": schedule.actual_harvest_date,
-                "estimated_yield_kg": schedule.estimated_yield_kg,
-                "actual_yield_kg": schedule.actual_yield_kg,
-                "status": schedule.status,
-                "notes": schedule.notes,
-                "created_at": schedule.created_at,
-                "updated_at": schedule.updated_at,
-            }
+            self._schedule_to_dict(schedule, crop)
             for schedule, crop in records
         ]
+
+    @staticmethod
+    def _schedule_to_dict(schedule, crop) -> dict:
+        return {
+            "schedule_id": schedule.id,
+            "user_id": schedule.user_id,
+            "crop_id": crop.id,
+            "crop_name": crop.name,
+            "crop_image": getattr(crop, "image_url", None),
+            "planting_date": schedule.planting_date,
+            "area_size": schedule.area_size,
+            "unit": "hectare",
+            "region": schedule.region,
+            "expected_harvest_date": schedule.expected_harvest_date,
+            "actual_harvest_date": schedule.actual_harvest_date,
+            "estimated_yield_kg": schedule.estimated_yield_kg,
+            "actual_yield_kg": schedule.actual_yield_kg,
+            "fertilizer_used": getattr(schedule, "FertilizerUsed", None),
+            "pesticide_used": getattr(schedule, "PesticideUsed", None),
+            "status": schedule.status,
+            "notes": schedule.notes,
+            "created_at": schedule.created_at,
+            "updated_at": schedule.updated_at,
+        }
 
     def _growth_days_for(self, crop_name: str) -> int:
         key = self._normalize_key(crop_name)

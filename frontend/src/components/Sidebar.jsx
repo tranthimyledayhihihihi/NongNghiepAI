@@ -4,6 +4,7 @@ import {
   Bot,
   Camera,
   Calendar,
+  CloudSun,
   FileText,
   LayoutDashboard,
   Leaf,
@@ -15,6 +16,7 @@ import {
 import { Link, useLocation } from 'react-router-dom';
 
 const navigation = [
+  { name: 'Thời tiết nông vụ', href: '/weather', icon: CloudSun, match: ['/weather'] },
   { name: 'Bảng điều khiển', href: '/dashboard', icon: LayoutDashboard, match: ['/dashboard', '/dashboard-new'] },
   { name: 'Định giá nông sản', href: '/pricing', icon: TrendingUp, match: ['/pricing', '/pricing-dashboard', '/crop'] },
   { name: 'Kiểm định chất lượng', href: '/quality', icon: Camera, match: ['/quality', '/quality-check'] },

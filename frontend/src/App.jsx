@@ -14,6 +14,7 @@ const ContactPage = lazy(() => import('./pages/ContactPage'));
 const CropDetailPage = lazy(() => import('./pages/CropDetailPage'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const FeaturesPage = lazy(() => import('./pages/FeaturesPage'));
+const ForecastPage = lazy(() => import('./pages/ForecastPage'));
 const HarvestForecastPage = lazy(() => import('./pages/HarvestForecastPage'));
 const HarvestPage = lazy(() => import('./pages/HarvestPage'));
 const LandingPage = lazy(() => import('./pages/LandingPage'));
@@ -59,6 +60,7 @@ const appRoutes = [
   '/quality-check',
   '/harvest',
   '/harvest-forecast',
+  '/weather',
   '/season-management',
   '/market',
   '/market-strategy',
@@ -109,6 +111,7 @@ const AppShell = ({ sidebarOpen, setSidebarOpen }) => (
 
               <Route path="/harvest" element={<HarvestPage />} />
               <Route path="/harvest-forecast" element={<HarvestForecastPage />} />
+              <Route path="/weather" element={<ForecastPage />} />
               <Route path="/season-management" element={<SeasonManagementPage />} />
 
               <Route path="/market" element={<MarketPage />} />

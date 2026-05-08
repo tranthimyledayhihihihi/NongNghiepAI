@@ -53,7 +53,7 @@ class WeatherClient:
                     "pressure_msl",
                 ]
             ),
-            "daily": "temperature_2m_min,temperature_2m_max,precipitation_sum,weather_code",
+            "daily": "temperature_2m_min,temperature_2m_max,precipitation_sum,weather_code,uv_index_max",
             "timezone": "auto",
         }
         url = f"{self.base_url}/v1/forecast"
@@ -75,6 +75,7 @@ class WeatherClient:
             "condition": WEATHER_CODE_CONDITIONS.get(weather_code, "unknown"),
             "weather_code": weather_code,
             "wind_speed": current.get("wind_speed_10m"),
+            "uv_index": self._first(daily.get("uv_index_max")),
             "pressure": current.get("pressure_msl"),
             "source_name": "Open-Meteo",
             "source_url": url,
@@ -87,7 +88,7 @@ class WeatherClient:
         params = {
             "latitude": coordinates["latitude"],
             "longitude": coordinates["longitude"],
-            "daily": "temperature_2m_min,temperature_2m_max,precipitation_sum,relative_humidity_2m_mean,weather_code,wind_speed_10m_max",
+            "daily": "temperature_2m_min,temperature_2m_max,precipitation_sum,precipitation_probability_max,relative_humidity_2m_mean,weather_code,wind_speed_10m_max,uv_index_max",
             "forecast_days": forecast_days,
             "timezone": "auto",
         }
@@ -109,13 +110,62 @@ class WeatherClient:
                         self._at(daily.get("temperature_2m_max"), index),
                     ),
                     "rainfall": self._at(daily.get("precipitation_sum"), index),
+                    "rain_probability": self._at(daily.get("precipitation_probability_max"), index),
                     "humidity": self._at(daily.get("relative_humidity_2m_mean"), index),
                     "wind_speed": self._at(daily.get("wind_speed_10m_max"), index),
+                    "uv_index": self._at(daily.get("uv_index_max"), index),
                     "weather_code": weather_code,
                     "condition": WEATHER_CODE_CONDITIONS.get(weather_code, "unknown"),
                     "source_name": "Open-Meteo",
                     "source_url": url,
                     "is_realtime": index == 0,
+                    "is_mock": False,
+                    "cache_status": "miss",
+                    "last_updated": datetime.now(),
+                }
+            )
+        return result
+
+    def get_hourly_forecast(self, region: str, hours: int = 24) -> list[dict]:
+        coordinates = self._coordinates_for_region(region)
+        forecast_hours = min(max(hours, 1), 168)
+        params = {
+            "latitude": coordinates["latitude"],
+            "longitude": coordinates["longitude"],
+            "hourly": "temperature_2m,relative_humidity_2m,precipitation_probability,precipitation,weather_code,wind_speed_10m,uv_index",
+            "forecast_days": max(2, min((forecast_hours + 47) // 24, 16)),
+            "timezone": "auto",
+        }
+        url = f"{self.base_url}/v1/forecast"
+        payload = self._get_json(url, params)
+        hourly = payload.get("hourly") or {}
+        times = hourly.get("time") or []
+        start_at = datetime.now().replace(minute=0, second=0, microsecond=0)
+        result = []
+        for index, forecast_time in enumerate(times):
+            if len(result) >= forecast_hours:
+                break
+            forecast_at = self._parse_datetime(forecast_time)
+            if forecast_at and forecast_at < start_at:
+                continue
+            weather_code = self._at(hourly.get("weather_code"), index)
+            result.append(
+                {
+                    "time": forecast_time,
+                    "date": forecast_time[:10],
+                    "forecast_at": forecast_at,
+                    "region": region,
+                    "temperature": self._at(hourly.get("temperature_2m"), index),
+                    "rainfall": self._at(hourly.get("precipitation"), index),
+                    "rain_probability": self._at(hourly.get("precipitation_probability"), index),
+                    "humidity": self._at(hourly.get("relative_humidity_2m"), index),
+                    "wind_speed": self._at(hourly.get("wind_speed_10m"), index),
+                    "uv_index": self._at(hourly.get("uv_index"), index),
+                    "weather_code": weather_code,
+                    "condition": WEATHER_CODE_CONDITIONS.get(weather_code, "unknown"),
+                    "source_name": "Open-Meteo",
+                    "source_url": url,
+                    "is_realtime": len(result) == 0,
                     "is_mock": False,
                     "cache_status": "miss",
                     "last_updated": datetime.now(),

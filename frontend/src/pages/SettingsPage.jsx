@@ -12,7 +12,10 @@ import {
   User,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { InlineLoading, PageError } from '../components/StatusState';
 import { useAuth } from '../contexts/AuthContext';
+import { getApiErrorMessage } from '../services/api';
+import { settingsApi } from '../services/settingsApi';
 
 const Toggle = ({ checked, onChange, label, description }) => (
   <div className="flex items-center justify-between gap-4 rounded-lg border border-gray-200 bg-white p-4">
@@ -46,15 +49,54 @@ const SettingsPage = () => {
     twoFactor: false,
   });
   const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    setSettings((current) => ({
-      ...current,
-      fullName: user?.name || '',
-      email: user?.email || '',
-      phone: user?.phone || '',
-      location: user?.region || '',
-    }));
+    let active = true;
+
+    const loadSettings = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await settingsApi.getMe();
+        if (!active) return;
+        setSettings((current) => ({
+          ...current,
+          fullName: data.full_name || user?.name || '',
+          email: data.email || user?.email || '',
+          phone: data.phone_number || user?.phone || '',
+          location: data.region || user?.region || '',
+          language: data.language || current.language,
+          unit: data.unit || current.unit,
+          theme: data.theme || current.theme,
+          priceAlerts: Boolean(data.price_alerts),
+          weatherAlerts: Boolean(data.weather_alerts),
+          harvestReminders: Boolean(data.harvest_reminders),
+          emailChannel: Boolean(data.email_channel),
+          zaloChannel: Boolean(data.zalo_channel),
+          twoFactor: Boolean(data.two_factor_enabled),
+        }));
+      } catch (err) {
+        if (!active) return;
+        setError(getApiErrorMessage(err, 'Khong the tai cai dat'));
+        setSettings((current) => ({
+          ...current,
+          fullName: user?.name || '',
+          email: user?.email || '',
+          phone: user?.phone || '',
+          location: user?.region || '',
+        }));
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    loadSettings();
+
+    return () => {
+      active = false;
+    };
   }, [user?.name, user?.email, user?.phone, user?.region]);
 
   const updateSetting = (key, value) => {
@@ -62,10 +104,42 @@ const SettingsPage = () => {
     setSaved(false);
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
-    setSaved(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const data = await settingsApi.updateMe({
+        full_name: settings.fullName,
+        email: settings.email,
+        phone_number: settings.phone,
+        region: settings.location,
+        language: settings.language,
+        unit: settings.unit,
+        theme: settings.theme,
+        price_alerts: settings.priceAlerts,
+        weather_alerts: settings.weatherAlerts,
+        harvest_reminders: settings.harvestReminders,
+        email_channel: settings.emailChannel,
+        zalo_channel: settings.zaloChannel,
+        two_factor_enabled: settings.twoFactor,
+      });
+      setSettings((current) => ({
+        ...current,
+        fullName: data.full_name || current.fullName,
+        email: data.email || current.email,
+        phone: data.phone_number || current.phone,
+        location: data.region || current.location,
+      }));
+      setSaved(true);
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Khong the luu cai dat'));
+    }
   };
+
+  if (loading) {
+    return <InlineLoading text="Dang tai cai dat tu backend..." />;
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -74,7 +148,7 @@ const SettingsPage = () => {
           <p className="text-sm font-semibold uppercase tracking-wide text-green-700">Thiết lập hệ thống</p>
           <h1 className="mt-2 text-3xl font-bold text-gray-900">Cài đặt</h1>
           <p className="mt-2 text-gray-600">
-            Thông tin tài khoản được lấy từ backend; các tuỳ chọn hiển thị hiện được lưu trong state local phía FE.
+            Thông tin tài khoản và tuỳ chọn hiển thị được lưu qua API backend.
           </p>
         </div>
         <button
@@ -86,10 +160,12 @@ const SettingsPage = () => {
         </button>
       </div>
 
+      {error && <PageError message={error} />}
+
       {saved && (
         <div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
           <Check className="h-5 w-5" />
-          Đã lưu tuỳ chọn hiển thị ở FE. Thông tin tài khoản vẫn lấy từ backend.
+          Đã lưu cấu hình vào backend.
         </div>
       )}
 
