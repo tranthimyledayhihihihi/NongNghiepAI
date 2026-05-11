@@ -57,10 +57,17 @@ DEMO_USERS = [
 ]
 
 
-def _should_replace_password_hash(current_hash: str | None, placeholder_hash: str) -> bool:
-    if not current_hash:
+import logging as _logging
+_seed_logger = _logging.getLogger(__name__)
+
+
+def _is_invalid_hash(current_hash: str | None, placeholder_hash: str) -> bool:
+    if not current_hash or current_hash in {"mock-password", placeholder_hash}:
         return True
-    return current_hash in {"mock-password", placeholder_hash}
+    # Placeholder bcrypt strings like "$2b$12$hashpassword0" are not valid hashes
+    if current_hash.startswith(("$2a$", "$2b$", "$2y$")) and len(current_hash) < 60:
+        return True
+    return False
 
 
 def seed_demo_users(session_factory) -> None:
@@ -69,19 +76,21 @@ def seed_demo_users(session_factory) -> None:
         for seed in DEMO_USERS:
             email = seed["Email"].strip().lower()
             user = db.query(User).filter(func.lower(User.Email) == email).first()
+            new_hash = get_password_hash(DEMO_USER_PASSWORD)
             if user is None:
                 user = User(
                     FullName=seed["FullName"],
                     Email=email,
                     PhoneNumber=seed["PhoneNumber"],
                     ZaloID=seed["ZaloID"],
-                    PasswordHash=get_password_hash(DEMO_USER_PASSWORD),
+                    PasswordHash=new_hash,
                     Role=seed["Role"],
                     Region=seed["Region"],
                     IsActive=True,
                     IsVerified=False,
                 )
                 db.add(user)
+                _seed_logger.info("[Seed] Created demo user: %s", email)
                 continue
 
             user.FullName = seed["FullName"]
@@ -90,12 +99,15 @@ def seed_demo_users(session_factory) -> None:
             user.Role = seed["Role"]
             user.Region = seed["Region"]
             user.IsActive = True
-            if _should_replace_password_hash(user.PasswordHash, seed["PlaceholderHash"]):
-                user.PasswordHash = get_password_hash(DEMO_USER_PASSWORD)
+            if _is_invalid_hash(user.PasswordHash, seed["PlaceholderHash"]):
+                user.PasswordHash = new_hash
+                _seed_logger.info("[Seed] Reset password for demo user: %s", email)
             db.add(user)
 
         db.commit()
-    except SQLAlchemyError:
+        _seed_logger.info("[Seed] Demo users seeded OK.")
+    except SQLAlchemyError as exc:
+        _seed_logger.warning("[Seed] seed_demo_users failed: %s", exc)
         db.rollback()
     finally:
         db.close()

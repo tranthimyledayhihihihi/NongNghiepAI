@@ -14,13 +14,14 @@ import {
   ChevronRight,
   Filter,
   Globe,
+  Loader2,
   MapPin,
-  Sun,
   TrendingDown,
   TrendingUp
 } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Line } from 'react-chartjs-2';
+import { pricingApi } from '../services/pricingApi';
 
 ChartJS.register(
   CategoryScale,
@@ -33,296 +34,273 @@ ChartJS.register(
   Filler
 );
 
+const CROPS = [
+  'ca phe', 'lua', 'sau rieng', 'ho tieu', 'ca chua', 'xoai', 'thanh long',
+];
+const CROP_LABELS = {
+  'ca phe': 'Cà phê',
+  'lua': 'Lúa',
+  'sau rieng': 'Sầu riêng',
+  'ho tieu': 'Hồ tiêu',
+  'ca chua': 'Cà chua',
+  'xoai': 'Xoài',
+  'thanh long': 'Thanh long',
+};
+const DEFAULT_REGION = 'Dak Lak';
+
+const internationalPrices = [
+  { market: 'London Robusta (LCE)', price: '$2,450/tấn', change: '(+2%)', flag: '🇬🇧' },
+  { market: 'New York Arabica (ICE)', price: '$3,100/tấn', change: '(+1.5%)', flag: '🇺🇸' },
+  { market: 'Brazilian Conillon', price: '$2,100/tấn', change: '(-1%)', flag: '🇧🇷' },
+];
+
 const PricingDashboard = () => {
-  const [selectedCrop, setSelectedCrop] = useState('Cà phê Robusta');
-  const [forecastData, setForecastData] = useState(null);
-  const [priceComparison, setPriceComparison] = useState([]);
+  const [selectedCrop, setSelectedCrop] = useState('ca phe');
+  const [currentPrice, setCurrentPrice] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [forecast, setForecast] = useState([]);
+  const [regionData, setRegionData] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  // Mock data - sẽ thay bằng API call thực tế
-  const currentPrice = 42500;
-  const priceChange = '+14.2%';
-  const confidence = '92%';
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const [priceRes, histRes, fcRes, regionRes] = await Promise.allSettled([
+        pricingApi.getCurrentPrice(selectedCrop, DEFAULT_REGION),
+        pricingApi.getPriceHistory(selectedCrop, DEFAULT_REGION, 90),
+        pricingApi.getPriceForecast(selectedCrop, DEFAULT_REGION, 90),
+        pricingApi.compareRegions(selectedCrop),
+      ]);
 
-  const regionalPrices = [
-    {
-      region: 'Đắk Lắk',
-      subRegion: 'Tây Nguyên',
-      price: 42800,
-      change: '+1.2%',
-      trend: 'up',
-      status: 'CAO'
-    },
-    {
-      region: 'Lâm Đồng',
-      subRegion: 'Tây Nguyên',
-      price: 43100,
-      change: '+0.8%',
-      trend: 'up',
-      status: 'RẤT CAO'
-    },
-    {
-      region: 'Long An',
-      subRegion: 'Đồng bằng sông Cửu Long',
-      price: 41500,
-      change: '0.0%',
-      trend: 'stable',
-      status: 'BÌNH THƯỜNG'
+      if (priceRes.status === 'fulfilled') setCurrentPrice(priceRes.value);
+      if (histRes.status === 'fulfilled') setHistory(histRes.value?.history || []);
+      if (fcRes.status === 'fulfilled') setForecast(fcRes.value?.forecast_data || []);
+      if (regionRes.status === 'fulfilled') setRegionData(regionRes.value?.regions || []);
+    } catch {
+      setError('Không thể tải dữ liệu giá');
+    } finally {
+      setLoading(false);
     }
-  ];
+  }, [selectedCrop]);
 
-  const internationalPrices = [
-    {
-      market: 'London Robusta (LCE)',
-      price: '$2,450/tấn',
-      change: '(+2%)',
-      flag: '🇬🇧'
-    },
-    {
-      market: 'Brazilian Conillon',
-      price: '$2,100/tấn (-1%)',
-      change: '(-1%)',
-      flag: '🇧🇷'
-    }
-  ];
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
-  const weatherAlert = {
-    type: 'Tác Động Thời Tiết',
-    title: 'Mưa khô kéo dài ở Tây Nguyên dự báo sẽ làm giảm sản lượng thu hoạch 15%, gây ra đợt tăng giá mạnh vào đầu quý 4.',
-    icon: <Sun className="w-6 h-6 text-yellow-500" />
-  };
+  // Build chart combining history + forecast
+  const histLabels = history.slice(-30).map((h) => h.date?.slice(5) || '');
+  const fcLabels = forecast.slice(0, 30).map((f) => f.date?.slice(5) || '');
+  const allLabels = [...histLabels, ...fcLabels];
 
-  // Chart data
+  const histPrices = history.slice(-30).map((h) => h.avg_price || null);
+  const bridgePoint = histPrices.length > 0 ? histPrices[histPrices.length - 1] : null;
+  const fcPrices = [bridgePoint, ...forecast.slice(0, 30).map((f) => f.predicted_price || null)];
+  const fcLabelsWithBridge = ['', ...fcLabels];
+
   const chartData = {
-    labels: ['Tháng 4', 'Tháng 5', 'Tháng 6', 'Tháng 7', 'Tháng 8 (Dự kiến)', 'Tháng 9 (Dự kiến)', 'Tháng 10 (Dự kiến)'],
+    labels: [...histLabels, ...fcLabels],
     datasets: [
       {
         label: 'Lịch sử',
-        data: [38000, 39500, 41000, 40500, null, null, null],
+        data: [...histPrices, ...Array(fcLabels.length).fill(null)],
         borderColor: '#15803d',
-        backgroundColor: 'rgba(21, 128, 61, 0.1)',
-        borderWidth: 3,
+        backgroundColor: 'rgba(21, 128, 61, 0.08)',
+        borderWidth: 2.5,
         tension: 0.4,
         fill: true,
         pointRadius: 0,
-        pointHoverRadius: 6
+        pointHoverRadius: 5,
       },
       {
         label: 'Dự báo AI',
-        data: [null, null, null, 40500, 42500, 44000, 45500],
+        data: [...Array(histLabels.length - 1).fill(null), bridgePoint, ...forecast.slice(0, 30).map((f) => f.predicted_price || null)],
         borderColor: '#15803d',
-        backgroundColor: 'rgba(21, 128, 61, 0.1)',
-        borderWidth: 3,
+        backgroundColor: 'rgba(21, 128, 61, 0.04)',
+        borderWidth: 2.5,
         borderDash: [5, 5],
         tension: 0.4,
         fill: true,
         pointRadius: 0,
-        pointHoverRadius: 6
-      }
-    ]
+        pointHoverRadius: 5,
+      },
+    ],
   };
 
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: {
-        display: false
-      },
+      legend: { display: false },
       tooltip: {
         mode: 'index',
         intersect: false,
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+        backgroundColor: 'rgba(0,0,0,0.8)',
         padding: 12,
-        titleColor: '#fff',
-        bodyColor: '#fff',
-        borderColor: '#15803d',
-        borderWidth: 1
-      }
+        callbacks: { label: (ctx) => `${ctx.dataset.label}: ${(ctx.parsed.y || 0).toLocaleString()} ₫` },
+      },
     },
     scales: {
-      x: {
-        grid: {
-          display: false
-        },
-        ticks: {
-          font: {
-            size: 11
-          }
-        }
-      },
+      x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } },
       y: {
-        grid: {
-          color: 'rgba(0, 0, 0, 0.05)'
-        },
-        ticks: {
-          callback: function (value) {
-            return value.toLocaleString() + ' ₫';
-          }
-        }
-      }
+        grid: { color: 'rgba(0,0,0,0.05)' },
+        ticks: { callback: (v) => v.toLocaleString() + ' ₫' },
+      },
     },
-    interaction: {
-      mode: 'nearest',
-      axis: 'x',
-      intersect: false
-    }
+    interaction: { mode: 'nearest', axis: 'x', intersect: false },
   };
+
+  const price = currentPrice?.current_price || 0;
+  const changePct = currentPrice?.price_change_pct || 0;
+  const priceChangeStr = `${changePct >= 0 ? '+' : ''}${changePct.toFixed(1)}%`;
+  const cropLabel = CROP_LABELS[selectedCrop] || selectedCrop;
+
+  const displayedRegions = regionData.length > 0
+    ? regionData.slice(0, 3).map((r) => ({
+        region: r.region,
+        subRegion: '',
+        price: r.price || 0,
+        change: '+0.0%',
+        trend: 'stable',
+        status: r.price > price ? 'CAO' : r.price < price * 0.95 ? 'THẤP' : 'BÌNH THƯỜNG',
+      }))
+    : [];
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-start">
+      <div className="flex justify-between items-start flex-wrap gap-4">
         <div>
           <div className="flex items-center space-x-2 text-sm text-gray-500 mb-2">
-            <span>Thứ Năm, Thu Tư</span>
+            <span>Phân tích giá nông sản</span>
             <ChevronRight className="w-4 h-4" />
             <span className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-xs font-medium">
-              CẬP NHẬT THỰC TIẾP
+              DỮ LIỆU THỰC
             </span>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            Dự Báo Giá Thông Minh
-          </h1>
-          <p className="text-gray-600">
-            Phân tích cà phê Robusta thời gian thực cho vùng Tây Nguyên & Đồng bằng sông Cửu Long.
-          </p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Dự Báo Giá Thông Minh</h1>
+          <p className="text-gray-600">Phân tích {cropLabel} theo thời gian thực — {DEFAULT_REGION}</p>
         </div>
         <div className="text-right">
-          <div className="text-sm text-gray-500 mb-1">THIẾT LẬP THEO HIỆN TẠI</div>
-          <div className="text-4xl font-bold text-gray-900">{currentPrice.toLocaleString()} VNĐ/kg</div>
-          <div className="flex items-center justify-end space-x-2 mt-1">
-            <TrendingUp className="w-5 h-5 text-green-600" />
-            <span className="text-green-600 font-semibold">{priceChange}</span>
-          </div>
+          {loading ? (
+            <div className="flex items-center space-x-2 text-gray-500">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              <span>Đang tải...</span>
+            </div>
+          ) : (
+            <>
+              <div className="text-sm text-gray-500 mb-1">GIÁ HIỆN TẠI</div>
+              <div className="text-4xl font-bold text-gray-900">{price.toLocaleString()} VNĐ/kg</div>
+              <div className="flex items-center justify-end space-x-2 mt-1">
+                {changePct >= 0 ? <TrendingUp className="w-5 h-5 text-green-600" /> : <TrendingDown className="w-5 h-5 text-red-600" />}
+                <span className={`font-semibold ${changePct >= 0 ? 'text-green-600' : 'text-red-600'}`}>{priceChangeStr}</span>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Main Content Grid */}
+      {/* Crop Selector */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="text-sm font-medium text-gray-600">Chọn cây trồng:</span>
+          {CROPS.map((c) => (
+            <button
+              key={c}
+              onClick={() => setSelectedCrop(c)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition ${selectedCrop === c ? 'bg-green-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+            >
+              {CROP_LABELS[c] || c}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-2 text-red-700">
+          <AlertCircle className="w-5 h-5 flex-shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
       <div className="grid lg:grid-cols-3 gap-6">
-        {/* Left Column - Chart */}
+        {/* Left Column */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Price Forecast Chart */}
+          {/* Price Chart */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h2 className="text-xl font-bold text-gray-900 mb-1">Dự Báo Giá</h2>
-                <p className="text-sm text-gray-500">
-                  Phân tích dữ liệu với dự báo 3 tháng tới bằng AI
-                </p>
+                <p className="text-sm text-gray-500">Lịch sử 30 ngày + dự báo 30 ngày tới</p>
               </div>
-              <div className="flex items-center space-x-4">
-                <button className="px-4 py-2 bg-green-700 text-white rounded-lg text-sm font-medium">
-                  Lịch sử
-                </button>
-                <button className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg text-sm font-medium">
-                  Dự báo AI
-                </button>
+              <div className="flex items-center gap-3 text-sm">
+                <div className="flex items-center gap-1">
+                  <div className="w-8 h-0.5 bg-green-700 rounded" />
+                  <span className="text-gray-600">Lịch sử</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <div className="w-8 border-t-2 border-dashed border-green-700" />
+                  <span className="text-gray-600">Dự báo</span>
+                </div>
               </div>
             </div>
-
-            {/* Chart */}
             <div className="h-80">
-              <Line data={chartData} options={chartOptions} />
-            </div>
-
-            {/* Chart Legend */}
-            <div className="flex items-center justify-between mt-6 pt-6 border-t border-gray-200">
-              <div className="flex items-center space-x-6">
-                <div className="flex items-center space-x-2">
-                  <div className="w-12 h-1 bg-green-700 rounded"></div>
-                  <span className="text-sm text-gray-600">Độ tin cậy</span>
-                  <span className="text-sm font-bold text-gray-900">{confidence}</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <div className="w-12 h-1 bg-green-700 rounded opacity-30"></div>
-                  <span className="text-sm text-gray-600">Lợi nhuận dự kiến</span>
-                  <span className="text-sm font-bold text-green-600">{priceChange}</span>
-                </div>
-              </div>
-              <div className="flex items-center space-x-2">
-                <span className="text-sm text-gray-600">AI</span>
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                <span className="text-sm text-gray-600">6x</span>
-              </div>
+              {history.length > 0 || forecast.length > 0
+                ? <Line data={chartData} options={chartOptions} />
+                : <div className="h-full flex items-center justify-center text-gray-400">Chưa có dữ liệu biểu đồ</div>
+              }
             </div>
           </div>
 
-          {/* Regional Price Comparison */}
+          {/* Regional Comparison */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-gray-900">
-                So Sánh Giá Theo Khu Vực
-              </h2>
+              <h2 className="text-xl font-bold text-gray-900">So Sánh Giá Theo Khu Vực</h2>
               <button className="flex items-center space-x-2 text-green-700 font-medium hover:text-green-800">
                 <span>Lọc Khu Vực</span>
                 <Filter className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="space-y-4">
-              <div className="grid grid-cols-6 gap-4 text-xs font-medium text-gray-500 uppercase pb-2 border-b border-gray-200">
-                <div className="col-span-2">Khu vực / Tỉnh thành</div>
-                <div className="text-right">Giá hôm nay</div>
-                <div className="text-right">Thay đổi 24h</div>
-                <div className="text-right">Mức tồn kho</div>
-                <div className="text-right">Hành động</div>
-              </div>
-
-              {regionalPrices.map((item, index) => (
-                <div key={index} className="grid grid-cols-6 gap-4 items-center py-4 border-b border-gray-100 hover:bg-gray-50 transition">
-                  <div className="col-span-2 flex items-center space-x-3">
-                    <MapPin className="w-5 h-5 text-gray-400" />
-                    <div>
-                      <div className="font-bold text-gray-900">{item.region}</div>
-                      <div className="text-sm text-gray-500">{item.subRegion}</div>
+            {displayedRegions.length > 0 ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-5 gap-4 text-xs font-medium text-gray-500 uppercase pb-2 border-b border-gray-200">
+                  <div className="col-span-2">Khu vực</div>
+                  <div className="text-right">Giá hôm nay</div>
+                  <div className="text-right">Mức giá</div>
+                  <div className="text-right">Hành động</div>
+                </div>
+                {displayedRegions.map((item, index) => (
+                  <div key={index} className="grid grid-cols-5 gap-4 items-center py-3 border-b border-gray-100 hover:bg-gray-50 transition">
+                    <div className="col-span-2 flex items-center space-x-3">
+                      <MapPin className="w-5 h-5 text-gray-400" />
+                      <div>
+                        <div className="font-bold text-gray-900">{item.region}</div>
+                        {item.subRegion && <div className="text-sm text-gray-500">{item.subRegion}</div>}
+                      </div>
+                    </div>
+                    <div className="text-right font-bold text-gray-900">
+                      {item.price.toLocaleString()} VNĐ/kg
+                    </div>
+                    <div className="text-right">
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                        item.status === 'CAO' ? 'bg-orange-100 text-orange-700' :
+                        item.status === 'THẤP' ? 'bg-blue-100 text-blue-700' :
+                        'bg-green-100 text-green-700'
+                      }`}>
+                        {item.status}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <button className="text-green-700 font-medium hover:text-green-800 text-sm">Xem Chi Tiết</button>
                     </div>
                   </div>
-                  <div className="text-right font-bold text-gray-900">
-                    {item.price.toLocaleString()} VNĐ/kg
-                  </div>
-                  <div className={`text-right font-semibold flex items-center justify-end space-x-1 ${item.trend === 'up' ? 'text-green-600' :
-                      item.trend === 'down' ? 'text-red-600' : 'text-gray-600'
-                    }`}>
-                    {item.trend === 'up' && <TrendingUp className="w-4 h-4" />}
-                    {item.trend === 'down' && <TrendingDown className="w-4 h-4" />}
-                    <span>{item.change}</span>
-                  </div>
-                  <div className="text-right">
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${item.status === 'RẤT CAO' ? 'bg-red-100 text-red-700' :
-                        item.status === 'CAO' ? 'bg-orange-100 text-orange-700' :
-                          'bg-green-100 text-green-700'
-                      }`}>
-                      {item.status}
-                    </span>
-                  </div>
-                  <div className="text-right">
-                    <button className="text-green-700 font-medium hover:text-green-800">
-                      Xem Chi Tiết
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Weather Impact */}
-          <div className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-2xl border border-yellow-200 p-6">
-            <div className="flex items-start space-x-4">
-              <div className="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                {weatherAlert.icon}
+                ))}
               </div>
-              <div className="flex-1">
-                <div className="flex items-center space-x-2 mb-2">
-                  <h3 className="font-bold text-gray-900">{weatherAlert.type}</h3>
-                  <span className="text-xs text-gray-500">2 giờ trước</span>
-                </div>
-                <p className="text-gray-700 leading-relaxed">
-                  {weatherAlert.title}
-                </p>
-              </div>
-              <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0" />
-            </div>
+            ) : (
+              <p className="text-gray-400 text-sm py-4">Chưa có dữ liệu so sánh vùng miền.</p>
+            )}
           </div>
 
           {/* International Market */}
@@ -330,9 +308,8 @@ const PricingDashboard = () => {
             <div className="flex items-center space-x-2 mb-6">
               <Globe className="w-5 h-5 text-gray-600" />
               <h2 className="text-xl font-bold text-gray-900">Thị Trường Quốc Tế</h2>
-              <span className="text-xs text-gray-500 ml-auto">Tự vấn cập nhật</span>
+              <span className="text-xs text-gray-500 ml-auto">Tham khảo</span>
             </div>
-
             <div className="space-y-4">
               {internationalPrices.map((item, index) => (
                 <div key={index} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
@@ -340,72 +317,45 @@ const PricingDashboard = () => {
                     <span className="text-2xl">{item.flag}</span>
                     <div>
                       <div className="font-medium text-gray-900">{item.market}</div>
-                      <div className="text-sm text-gray-500">
-                        Nhu cầu toàn cầu dự kiến tăng trong 3 tháng tới
-                      </div>
+                      <div className="text-sm text-gray-500">Giá tham khảo quốc tế</div>
                     </div>
                   </div>
                   <div className="text-right">
                     <div className="font-bold text-gray-900">{item.price}</div>
-                    <div className={`text-sm ${item.change.includes('+') ? 'text-green-600' : 'text-red-600'}`}>
-                      {item.change}
-                    </div>
+                    <div className={`text-sm ${item.change.includes('+') ? 'text-green-600' : 'text-red-600'}`}>{item.change}</div>
                   </div>
                 </div>
               ))}
             </div>
-
-            <div className="mt-4 text-sm text-gray-600 italic">
-              Nhu cầu toàn cầu dự kiến tăng trong 3 tháng tới do mua vụ tại Brazil.
-            </div>
           </div>
         </div>
 
-        {/* Right Column - B2B Recommendation */}
+        {/* Right Column */}
         <div className="lg:col-span-1">
-          <div className="bg-gradient-to-br from-green-800 to-green-900 rounded-2xl p-6 text-white sticky top-6">
-            <div className="text-sm font-medium text-green-200 mb-2">
-              KHUYẾN NGHỊ CHO BẠN
-            </div>
-            <h2 className="text-2xl font-bold mb-4">
-              Xuất Khẩu B2B Trực Tiếp
-            </h2>
-            <p className="text-green-100 mb-6 leading-relaxed">
-              Dựa trên lượng hiện tại của bạn thông AI và sự thiếu hụt toàn cầu, bán
-              cho các nhà xuất khẩu trực tiếp sẽ mang lại lợi nhuận cao hơn 8% so với
-              thương lái địa phương.
+          <div className="bg-gradient-to-br from-green-800 to-green-900 rounded-2xl p-6 text-white sticky top-6 space-y-4">
+            <div className="text-sm font-medium text-green-200">KHUYẾN NGHỊ AI</div>
+            <h2 className="text-2xl font-bold">{currentPrice?.price_trend === 'increasing' ? 'Nên Giữ Lại' : 'Bán Theo Đợt'}</h2>
+            <p className="text-green-100 leading-relaxed text-sm">
+              {currentPrice?.weather_explanation || `Dựa trên xu hướng giá ${cropLabel} tại ${DEFAULT_REGION}, cân nhắc bán dần để tối ưu lợi nhuận.`}
             </p>
 
-            <div className="space-y-4 mb-6">
-              <div className="flex items-center space-x-2">
-                <div className="w-5 h-5 bg-green-600 rounded-full flex items-center justify-center">
-                  <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                  </svg>
+            <div className="bg-green-700/40 rounded-xl p-4 space-y-2">
+              <div className="text-xs text-green-300 uppercase font-medium">Thông tin giá</div>
+              {currentPrice?.weather_adjusted_price && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-green-200">Điều chỉnh thời tiết</span>
+                  <span className="font-bold">{currentPrice.weather_adjusted_price.toLocaleString()} ₫/kg</span>
                 </div>
-                <span className="text-green-100">Giá Hợp Đồng: 46,200 VNĐ/kg</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <div className="w-5 h-5 bg-green-600 rounded-full flex items-center justify-center">
-                  <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                  </svg>
-                </div>
-                <span className="text-green-100">Thời Hạn Thanh Toán: T+2 Ngày</span>
+              )}
+              <div className="flex justify-between text-sm">
+                <span className="text-green-200">Xu hướng</span>
+                <span className="font-bold capitalize">{currentPrice?.price_trend || '–'}</span>
               </div>
             </div>
 
             <button className="w-full bg-white text-green-800 py-3 rounded-xl font-bold hover:bg-green-50 transition">
-              Liên Hệ Đại Lý Thu Mua
+              Xem Dự Báo Chi Tiết →
             </button>
-
-            <div className="mt-6 pt-6 border-t border-green-700">
-              <div className="text-sm text-green-200 mb-2">Tư vấn cập nhật</div>
-              <div className="text-3xl font-bold mb-1">+4,500 VNĐ/kg</div>
-              <div className="text-sm text-green-200">
-                Giá lợi nhuận có thể giúp tăng doanh thu của bạn thêm khoảng 18.5 triệu VNĐ.
-              </div>
-            </div>
           </div>
         </div>
       </div>

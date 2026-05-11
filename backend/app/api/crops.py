@@ -10,18 +10,17 @@ router = APIRouter(prefix="/api/crops", tags=["crops"])
 
 def _crop_to_dict(crop: Crop) -> dict:
     return {
-        "crop_id": crop.id,
-        "crop_name": crop.name,
-        "crop_name_en": crop.crop_name_en,
-        "category": crop.category,
-        "growth_duration_days": crop.growth_duration_days,
-        "harvest_season": crop.harvest_season,
-        "typical_price_min": crop.typical_price_min,
-        "typical_price_max": crop.typical_price_max,
-        "description": crop.description,
-        "image_url": crop.image_url,
-        "default_unit": crop.default_unit,
-        "created_at": crop.created_at,
+        "crop_id": crop.CropID,
+        "crop_name": crop.CropName,
+        "crop_name_en": crop.CropNameEN,
+        "category": crop.Category,
+        "growth_duration_days": crop.GrowthDurationDays,
+        "harvest_season": crop.HarvestSeason,
+        "typical_price_min": crop.TypicalPriceMin,
+        "typical_price_max": crop.TypicalPriceMax,
+        "description": crop.Description,
+        "image_url": crop.ImageURL,
+        "created_at": crop.CreatedAt,
     }
 
 

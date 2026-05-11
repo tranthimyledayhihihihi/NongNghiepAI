@@ -14,13 +14,89 @@ from app.schemas.harvest_schema import HarvestForecastRequest, HarvestScheduleCr
 
 
 class HarvestService:
+    # Thời gian sinh trưởng (ngày) từ khi trồng cây giống đến thu hoạch đầu tiên.
+    # Cây lâu năm (sầu riêng, xoài, cà phê...) tính theo năm trồng mới.
+    # Cây ngắn ngày tính theo vụ.
     default_growth_days = {
-        "ca chua": 75,
-        "dua chuot": 60,
-        "rau muong": 30,
-        "cai xanh": 45,
-        "ot": 90,
-        "lua": 105,
+        # ── Rau màu ngắn ngày ──────────────────────────────
+        "ca chua":    75,   # Cà chua: 70-80 ngày
+        "dua chuot":  60,   # Dưa chuột: 55-65 ngày
+        "rau muong":  30,   # Rau muống: 25-35 ngày
+        "cai xanh":   45,   # Cải xanh: 40-50 ngày
+        "ot":         90,   # Ớt: 85-100 ngày
+        "dua hau":    80,   # Dưa hấu: 70-90 ngày
+        "khoai lang": 100,  # Khoai lang: 90-110 ngày
+        "khoai tay":  90,   # Khoai tây: 80-100 ngày
+        "hanh":       60,   # Hành tây: 55-70 ngày
+        "toi":        90,   # Tỏi: 80-100 ngày
+        "bap cai":    70,   # Bắp cải: 60-80 ngày
+        "xup lo":     70,   # Súp lơ/Bông cải: 60-80 ngày
+        # ── Ngũ cốc ────────────────────────────────────────
+        "lua":       105,   # Lúa: 90-120 ngày (tùy giống)
+        "ngo":        90,   # Ngô: 80-100 ngày
+        "dau tuong":  95,   # Đậu tương: 85-110 ngày
+        "dau phong": 120,   # Đậu phộng/Lạc: 110-130 ngày
+        # ── Cây ăn quả lâu năm ────────────────────────────
+        # (tính từ khi trồng cây giống ghép đến thu hoạch vụ đầu tiên)
+        "sau rieng": 1460,  # Sầu riêng: 4-6 năm (cây giống ghép); từ ra hoa đến quả: 90-120 ngày
+        "xoai":      1095,  # Xoài: 3-4 năm từ cây giống ghép
+        "mit":       1460,  # Mít: 4-5 năm từ cây giống
+        "bo":        1825,  # Bơ: 5-7 năm từ cây giống (giống ghép ~3 năm)
+        "vai":        730,  # Vải: 2-3 năm từ cây giống ghép
+        "nhan":       730,  # Nhãn: 2-3 năm từ cây giống ghép
+        "chom chom":  730,  # Chôm chôm: 2-3 năm từ cây giống ghép
+        "buoi":      1095,  # Bưởi: 3-4 năm từ cây giống ghép
+        "cam":        730,  # Cam: 2-3 năm từ cây giống ghép
+        "quyt":       730,  # Quýt: 2-3 năm từ cây giống ghép
+        "chanh":      548,  # Chanh: 1.5-2 năm từ cây giống ghép
+        "chuoi":      365,  # Chuối: 10-12 tháng từ khi trồng chồi
+        "du du":      270,  # Đu đủ: 8-10 tháng từ hạt
+        "dua":        365,  # Dứa/Khóm: 12-18 tháng từ chồi
+        "thanh long":  540, # Thanh long: 18 tháng từ hom giống đến thu hoạch đầu tiên
+        "mang cut":  1825,  # Măng cụt: 5-6 năm từ hạt (cây thực sinh)
+        "sapoche":   1460,  # Sapôchê/Hồng xiêm: 4-5 năm từ cây giống
+        "na":         548,  # Na/Mãng cầu: 1.5-2 năm từ cây giống
+        # ── Cây công nghiệp ────────────────────────────────
+        "ca phe":    1095,  # Cà phê: 3-4 năm từ cây giống
+        "ho tieu":   1095,  # Hồ tiêu: 3-4 năm từ hom giống
+        "cao su":    2555,  # Cao su: 7 năm từ khi trồng đến khai thác
+        "dieu":      1460,  # Điều: 4-5 năm từ cây giống
+        "mia":        365,  # Mía: 10-12 tháng từ hom giống
+        "san":        270,  # Sắn/Mì: 8-12 tháng tùy giống
+        "che":       1095,  # Chè (trà): 3-4 năm từ cây giống đến thu búp đầu tiên
+    }
+
+    # Mô tả giai đoạn sinh trưởng cho các loại cây phổ biến
+    _growth_stages = {
+        "sau rieng": [
+            "Tháng 1-6: Cây giống, làm đất, trồng mới",
+            "Năm 1-2: Nuôi cây, bón phân, cắt tỉa tạo tán",
+            "Năm 2-3: Cây bắt đầu phân cành cấp 1, cấp 2",
+            "Năm 3-4: Cây trưởng thành, có thể ra hoa vụ đầu",
+            "Từ ra hoa → quả chín: 90-120 ngày (3-4 tháng)",
+            "Thu hoạch: khi quả có mùi thơm, gai mềm, đường rãnh nở",
+        ],
+        "ca phe": [
+            "Tháng 1-6: Ươm hạt, cây giống trong vườn ươm",
+            "Năm 1-2: Trồng mới, bón phân, làm giàn che",
+            "Năm 2-3: Cây phát triển bộ khung, tỉa cành",
+            "Năm 3-4: Ra hoa lần đầu (hoa trắng thơm), đậu quả",
+            "Thu hoạch: khi quả chín đỏ/vàng (9-11 tháng sau ra hoa)",
+        ],
+        "lua": [
+            "Ngày 1-7: Ngâm ủ, gieo mạ hoặc sạ thẳng",
+            "Ngày 7-25: Giai đoạn mạ / cây con",
+            "Ngày 25-60: Đẻ nhánh, làm đòng",
+            "Ngày 60-80: Trổ bông, phơi màu",
+            "Ngày 80-105: Chín sữa → chín hoàn toàn",
+        ],
+        "thanh long": [
+            "Tháng 1-3: Trồng hom, bám giàn",
+            "Tháng 3-12: Nuôi cành, phát triển thân leo",
+            "Tháng 12-18: Ra hoa lần đầu",
+            "Từ ra hoa → thu hoạch: 28-35 ngày",
+            "Cho trái quanh năm sau khi trưởng thành",
+        ],
     }
 
     @staticmethod
@@ -70,12 +146,21 @@ class HarvestService:
             growth_days = self._growth_days_for(crop_name)
             expected_date = planting_date + timedelta(days=growth_days)
             warning = self._warning_for(expected_date)
+            years = growth_days // 365
+            months = (growth_days % 365) // 30
+            if years > 0:
+                duration_str = f"{years} năm {months} tháng" if months else f"{years} năm"
+            else:
+                duration_str = f"{growth_days} ngày"
             recommendation = (
-                f"Du kien thu hoach sau {growth_days} ngay. "
-                "Nen kiem tra do chin va theo doi thoi tiet truoc thu hoach 5-7 ngay."
+                f"Dự kiến thu hoạch {crop_name} tại {region} vào {expected_date.strftime('%d/%m/%Y')} "
+                f"(sau {duration_str} kể từ ngày trồng). "
+                "Chuẩn bị nhân lực và thiết bị trước 1-2 tuần. "
+                "Theo dõi thời tiết thường xuyên để điều chỉnh kế hoạch."
             )
             confidence = 0.78
 
+        growth_stages = self._get_growth_stages(crop_name)
         record = create_harvest_forecast(
             db,
             crop_name=crop_name,
@@ -93,9 +178,11 @@ class HarvestService:
             "region": region,
             "planting_date": planting_date,
             "expected_harvest_date": expected_date,
+            "growth_days": growth_days if not predictor else self._growth_days_for(crop_name),
             "confidence": confidence,
             "warning": warning,
             "recommendation": recommendation,
+            "growth_stages": growth_stages,
             "created_at": getattr(record, "created_at", None),
         }
 
@@ -243,7 +330,11 @@ class HarvestService:
 
     def _growth_days_for(self, crop_name: str) -> int:
         key = self._normalize_key(crop_name)
-        return self.default_growth_days.get(key, 70)
+        return self.default_growth_days.get(key, 120)  # default 120 ngày thay vì 70
+
+    def _get_growth_stages(self, crop_name: str) -> list[str]:
+        key = self._normalize_key(crop_name)
+        return self._growth_stages.get(key, [])
 
     def _resolve_growth_days(self, db: Session, crop_name: str) -> int:
         key = self._normalize_key(crop_name)

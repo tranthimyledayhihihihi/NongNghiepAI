@@ -10,168 +10,151 @@ import {
   TrendingUp,
   Wind
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Bar, Line } from 'react-chartjs-2';
 import { useNavigate, useParams } from 'react-router-dom';
+import { InlineLoading, PageError } from '../components/StatusState';
+import { cropsApi } from '../services/cropsApi';
+import { pricingApi } from '../services/pricingApi';
+
+const DEFAULT_REGION = 'Ha Noi';
 
 const CropDetailPage = () => {
   const { cropId } = useParams();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('30N'); // 30N, 90N, 1N
+  const [activeTab, setActiveTab] = useState('30N');
 
-  // Mock data - sẽ thay bằng API call
-  const cropData = {
-    name: 'Lúa OM 5451',
-    category: 'Ô Cần Thơ, Việt Nam',
-    currentPrice: 18500,
-    priceChange: '+2.4%',
-    changeAmount: '+450',
-    lastUpdate: 'Cập nhật 5 phút trước',
-    status: 'THIẾT LẬP HÔM NAY'
-  };
+  const [crop, setCrop] = useState(null);
+  const [priceData, setPriceData] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [forecast, setForecast] = useState([]);
+  const [regionComparison, setRegionComparison] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const forecast7Days = [
-    { date: '18', price: 18750, change: '+250', status: 'up' },
-    { date: '19', price: 19100, change: '+350', status: 'up' },
-    { date: '20', price: 19050, change: '-50', status: 'down' }
-  ];
+  useEffect(() => {
+    if (!cropId) return;
+    let active = true;
+    setLoading(true);
+    setError('');
 
-  const regionalPrices = [
-    { region: 'Hà Nội', subRegion: 'Bắc Bộ', price: 18900, unit: 'VNĐ/kg' },
-    { region: 'Cần Thơ', subRegion: 'Mekong', price: 18500, unit: 'VNĐ/kg' },
-    { region: 'Bắc Lắc', subRegion: 'T. Nguyên', price: 17200, unit: 'VNĐ/kg' }
-  ];
+    cropsApi.getCropDetail(cropId)
+      .then(async (cropDetail) => {
+        if (!active) return;
+        setCrop(cropDetail);
+        const name = cropDetail.crop_name;
 
-  const weatherData = {
-    humidity: '32%',
-    temperature: '28°C',
-    rainfall: 'Thấp',
-    disease: 'Khu vực xuất khẩu Philippines tăng 15% đối với dòng lúa Indica. Cũng nên chốt giá cao?',
-    estimatedYield: '12.2t'
-  };
+        const [price, hist, fc, regions] = await Promise.allSettled([
+          pricingApi.getCurrentPrice(name, DEFAULT_REGION),
+          pricingApi.getPriceHistory(name, DEFAULT_REGION, 30),
+          pricingApi.getPriceForecast(name, DEFAULT_REGION, 7),
+          pricingApi.compareRegions(name),
+        ]);
 
-  // Chart data for 30-day trend
+        if (!active) return;
+        if (price.status === 'fulfilled') setPriceData(price.value);
+        if (hist.status === 'fulfilled') setHistory(hist.value?.history || []);
+        if (fc.status === 'fulfilled') setForecast(fc.value?.forecast_data || []);
+        if (regions.status === 'fulfilled') setRegionComparison(regions.value?.regions || []);
+      })
+      .catch((err) => {
+        if (active) setError(err?.response?.data?.detail || 'Không thể tải dữ liệu cây trồng');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => { active = false; };
+  }, [cropId]);
+
+  const historyDays = history.slice(-30);
   const chartData = {
-    labels: Array.from({ length: 30 }, (_, i) => `Ngày ${i + 1}`),
+    labels: historyDays.map((h) => h.date?.slice(5) || ''),
     datasets: [
       {
         label: 'Giá trung bình',
-        data: [
-          17800, 17900, 18000, 17950, 18100, 18200, 18150, 18300, 18250, 18400,
-          18350, 18500, 18450, 18600, 18550, 18700, 18650, 18800, 18750, 18900,
-          18850, 19000, 18950, 19100, 19050, 19200, 19150, 19300, 19250, 18500
-        ],
+        data: historyDays.map((h) => h.avg_price || 0),
         borderColor: '#15803d',
         backgroundColor: 'rgba(21, 128, 61, 0.1)',
         borderWidth: 2,
         tension: 0.4,
         fill: true,
         pointRadius: 0,
-        pointHoverRadius: 5
-      }
-    ]
+        pointHoverRadius: 5,
+      },
+    ],
   };
-
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        display: false
-      },
-      tooltip: {
-        mode: 'index',
-        intersect: false,
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-        padding: 12
-      }
-    },
+    plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
     scales: {
-      x: {
-        display: false
-      },
-      y: {
-        grid: {
-          color: 'rgba(0, 0, 0, 0.05)'
-        },
-        ticks: {
-          callback: function (value) {
-            return (value / 1000).toFixed(0) + 'k';
-          }
-        }
-      }
-    }
+      x: { display: false },
+      y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { callback: (v) => (v / 1000).toFixed(0) + 'k' } },
+    },
   };
 
-  // Bar chart for 30-day comparison
   const barChartData = {
-    labels: ['01 TH05', '15 TH05', '30 TH05'],
+    labels: historyDays.filter((_, i) => i % 10 === 0).map((h) => h.date?.slice(5) || ''),
     datasets: [
       {
-        data: [17800, 18500, 19250],
-        backgroundColor: (context) => {
-          const value = context.parsed.y;
-          if (value < 18000) return 'rgba(34, 197, 94, 0.3)';
-          if (value < 19000) return 'rgba(34, 197, 94, 0.6)';
-          return 'rgba(21, 128, 61, 1)';
+        data: historyDays.filter((_, i) => i % 10 === 0).map((h) => h.avg_price || 0),
+        backgroundColor: (ctx) => {
+          const v = ctx.parsed?.y || 0;
+          if (v < 15000) return 'rgba(34,197,94,0.3)';
+          if (v < 25000) return 'rgba(34,197,94,0.6)';
+          return 'rgba(21,128,61,1)';
         },
         borderRadius: 8,
-        barThickness: 60
-      }
-    ]
+        barThickness: 50,
+      },
+    ],
   };
-
   const barChartOptions = {
     responsive: true,
     maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        display: false
-      },
-      tooltip: {
-        callbacks: {
-          label: function (context) {
-            return context.parsed.y.toLocaleString() + ' VNĐ/kg';
-          }
-        }
-      }
-    },
-    scales: {
-      x: {
-        grid: {
-          display: false
-        }
-      },
-      y: {
-        display: false
-      }
-    }
+    plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => ctx.parsed.y.toLocaleString() + ' VNĐ/kg' } } },
+    scales: { x: { grid: { display: false } }, y: { display: false } },
   };
+
+  const forecastRows = forecast.slice(0, 3).map((f) => ({
+    date: new Date(f.date).getDate(),
+    price: f.predicted_price,
+    change: f.predicted_price > (forecast[0]?.predicted_price || 0) ? `+${(f.predicted_price - (forecast[0]?.predicted_price || 0)).toLocaleString()}` : `${(f.predicted_price - (forecast[0]?.predicted_price || 0)).toLocaleString()}`,
+    status: f.predicted_price >= (forecast[0]?.predicted_price || 0) ? 'up' : 'down',
+  }));
+
+  const displayedRegions = regionComparison.length > 0
+    ? regionComparison.slice(0, 3).map((r) => ({ region: r.region, subRegion: '', price: r.price, unit: 'VNĐ/kg' }))
+    : [
+        { region: 'Hà Nội', subRegion: 'Bắc Bộ', price: crop?.typical_price_max || 0, unit: 'VNĐ/kg' },
+        { region: 'Cần Thơ', subRegion: 'Mekong', price: crop?.typical_price_min || 0, unit: 'VNĐ/kg' },
+      ];
+
+  if (loading) return <InlineLoading text="Đang tải dữ liệu cây trồng..." />;
+  if (error) return <PageError message={error} onRetry={() => window.location.reload()} />;
+  if (!crop) return <PageError message="Không tìm thấy cây trồng" onRetry={() => navigate(-1)} />;
+
+  const currentPrice = priceData?.current_price || crop.typical_price_min || 0;
+  const priceChange = priceData?.price_change_pct ? `${priceData.price_change_pct > 0 ? '+' : ''}${priceData.price_change_pct.toFixed(1)}%` : '+0.0%';
 
   return (
     <div className="space-y-6">
-      {/* Back Button */}
-      <button
-        onClick={() => navigate(-1)}
-        className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition"
-      >
+      <button onClick={() => navigate(-1)} className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition">
         <ChevronLeft className="w-5 h-5" />
         <span>Quay lại</span>
       </button>
 
-      {/* Header */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
         <div className="flex justify-between items-start mb-6">
           <div>
             <div className="inline-block bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-medium mb-3">
-              {cropData.status}
+              {crop.harvest_season || 'CẬP NHẬT HÔM NAY'}
             </div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
-              {cropData.name}
-            </h1>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">{crop.crop_name}</h1>
             <p className="text-gray-600 flex items-center space-x-2">
               <MapPin className="w-4 h-4" />
-              <span>{cropData.category}</span>
+              <span>{crop.category || DEFAULT_REGION}</span>
             </p>
           </div>
           <div className="flex items-center space-x-3">
@@ -184,15 +167,15 @@ const CropDetailPage = () => {
         <div className="flex items-end justify-between">
           <div>
             <div className="text-5xl font-bold text-gray-900 mb-2">
-              {cropData.currentPrice.toLocaleString()}
+              {currentPrice.toLocaleString()}
               <span className="text-2xl text-gray-500 ml-2">VNĐ/kg</span>
             </div>
             <div className="flex items-center space-x-3">
               <div className="flex items-center space-x-1 text-green-600">
                 <TrendingUp className="w-5 h-5" />
-                <span className="font-semibold">{cropData.priceChange}</span>
+                <span className="font-semibold">{priceChange}</span>
               </div>
-              <span className="text-gray-500">{cropData.changeAmount} VNĐ hôm nay</span>
+              <span className="text-gray-500">so sánh hôm qua</span>
             </div>
           </div>
           <button className="bg-green-700 text-white px-8 py-4 rounded-xl font-bold hover:bg-green-800 transition flex items-center space-x-2">
@@ -202,155 +185,84 @@ const CropDetailPage = () => {
         </div>
       </div>
 
-      {/* Main Content Grid */}
       <div className="grid lg:grid-cols-3 gap-6">
-        {/* Left Column */}
         <div className="lg:col-span-2 space-y-6">
           {/* 7-Day Forecast */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold text-gray-900">Dự Báo 7 Ngày</h2>
               <div className="flex items-center space-x-2">
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                <span className="text-sm text-gray-500">Cập nhật theo thời gian thực</span>
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                <span className="text-sm text-gray-500">Dữ liệu thực</span>
               </div>
             </div>
-
-            <div className="space-y-3">
-              {forecast7Days.map((day, index) => (
-                <div key={index} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition">
-                  <div className="flex items-center space-x-4">
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-gray-900">{day.date}</div>
-                      <div className="text-xs text-gray-500">Tháng 5</div>
-                    </div>
-                    <div>
-                      <div className="text-xl font-bold text-gray-900">
-                        {day.price.toLocaleString()}
+            {forecastRows.length > 0 ? (
+              <div className="space-y-3">
+                {forecastRows.map((day, index) => (
+                  <div key={index} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition">
+                    <div className="flex items-center space-x-4">
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-gray-900">{day.date}</div>
+                        <div className="text-xs text-gray-500">tháng tới</div>
                       </div>
-                      <div className="text-sm text-gray-500">VNĐ/kg dự cập</div>
+                      <div>
+                        <div className="text-xl font-bold text-gray-900">{day.price.toLocaleString()}</div>
+                        <div className="text-sm text-gray-500">VNĐ/kg dự báo</div>
+                      </div>
+                    </div>
+                    <div className={`flex items-center space-x-2 ${day.status === 'up' ? 'text-green-600' : 'text-red-600'}`}>
+                      {day.status === 'up' ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
+                      <span className="font-semibold">{day.change} VNĐ</span>
                     </div>
                   </div>
-                  <div className={`flex items-center space-x-2 ${day.status === 'up' ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                    {day.status === 'up' ? (
-                      <TrendingUp className="w-5 h-5" />
-                    ) : (
-                      <TrendingDown className="w-5 h-5" />
-                    )}
-                    <span className="font-semibold">{day.change}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-4 p-4 bg-blue-50 rounded-xl border border-blue-200">
-              <p className="text-sm text-gray-700 italic">
-                "Xu hướng ổn định nên cân nhắc bán trong tuần này."
-              </p>
-            </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-gray-500 text-sm">Chưa có dữ liệu dự báo cho cây trồng này.</p>
+            )}
           </div>
 
           {/* Price Trend Chart */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold text-gray-900">
-                Biến Động Giá (30 ngày)
-              </h2>
+              <h2 className="text-xl font-bold text-gray-900">Biến Động Giá (30 ngày)</h2>
               <div className="flex items-center space-x-2 bg-gray-100 rounded-lg p-1">
-                <button
-                  onClick={() => setActiveTab('30N')}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition ${activeTab === '30N'
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                >
-                  30N
-                </button>
-                <button
-                  onClick={() => setActiveTab('90N')}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition ${activeTab === '90N'
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                >
-                  90N
-                </button>
-                <button
-                  onClick={() => setActiveTab('1N')}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition ${activeTab === '1N'
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                >
-                  1N
-                </button>
+                {['30N', '90N', '1N'].map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    className={`px-4 py-2 rounded-md text-sm font-medium transition ${activeTab === tab ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+                  >
+                    {tab}
+                  </button>
+                ))}
               </div>
             </div>
-
-            <div className="h-64 mb-6">
-              <Line data={chartData} options={chartOptions} />
-            </div>
-
-            <div className="h-48">
-              <Bar data={barChartData} options={barChartOptions} />
-            </div>
+            {historyDays.length > 0 ? (
+              <>
+                <div className="h-64 mb-6"><Line data={chartData} options={chartOptions} /></div>
+                <div className="h-48"><Bar data={barChartData} options={barChartOptions} /></div>
+              </>
+            ) : (
+              <p className="text-gray-500 text-sm py-8 text-center">Chưa có lịch sử giá cho cây trồng này.</p>
+            )}
           </div>
 
-          {/* Regional Map */}
+          {/* Regional Comparison */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-            <h2 className="text-xl font-bold text-gray-900 mb-6">
-              So Sánh Vùng Miền
-            </h2>
-
-            {/* Map Placeholder */}
-            <div className="relative h-96 bg-gradient-to-br from-green-50 to-green-100 rounded-xl mb-6 overflow-hidden">
-              <img
-                src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e8/Vietnam_location_map.svg/800px-Vietnam_location_map.svg.png"
-                alt="Vietnam Map"
-                className="w-full h-full object-contain opacity-20"
-              />
-
-              {/* Price Markers */}
-              <div className="absolute top-1/4 left-1/2 transform -translate-x-1/2">
-                <div className="bg-white rounded-lg shadow-lg p-3 border-2 border-green-500">
-                  <div className="text-xs text-gray-600">Hà Nội</div>
-                  <div className="text-lg font-bold text-gray-900">18,900</div>
-                </div>
-              </div>
-
-              <div className="absolute bottom-1/3 left-1/3">
-                <div className="bg-white rounded-lg shadow-lg p-3 border-2 border-green-500">
-                  <div className="text-xs text-gray-600">Cần Thơ</div>
-                  <div className="text-lg font-bold text-gray-900">18,500</div>
-                </div>
-              </div>
-
-              <div className="absolute top-1/2 right-1/4">
-                <div className="bg-white rounded-lg shadow-lg p-3 border-2 border-orange-500">
-                  <div className="text-xs text-gray-600">Đắc Lắc</div>
-                  <div className="text-lg font-bold text-gray-900">17,200</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Regional Price List */}
+            <h2 className="text-xl font-bold text-gray-900 mb-6">So Sánh Vùng Miền</h2>
             <div className="space-y-3">
-              {regionalPrices.map((region, index) => (
+              {displayedRegions.map((region, index) => (
                 <div key={index} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
                   <div className="flex items-center space-x-3">
-                    <div className={`w-3 h-3 rounded-full ${index === 0 ? 'bg-green-500' :
-                        index === 1 ? 'bg-green-500' : 'bg-orange-500'
-                      }`}></div>
+                    <div className={`w-3 h-3 rounded-full ${index === 0 ? 'bg-green-500' : index === 1 ? 'bg-green-400' : 'bg-orange-500'}`} />
                     <div>
                       <div className="font-bold text-gray-900">{region.region}</div>
-                      <div className="text-sm text-gray-500">{region.subRegion}</div>
+                      {region.subRegion && <div className="text-sm text-gray-500">{region.subRegion}</div>}
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="font-bold text-gray-900">
-                      {region.price.toLocaleString()}
-                    </div>
+                    <div className="font-bold text-gray-900">{region.price.toLocaleString()}</div>
                     <div className="text-sm text-gray-500">{region.unit}</div>
                   </div>
                 </div>
@@ -359,63 +271,67 @@ const CropDetailPage = () => {
           </div>
         </div>
 
-        {/* Right Column - Weather & Info */}
+        {/* Right Column */}
         <div className="lg:col-span-1 space-y-6">
-          {/* Weather Cards */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-            <h3 className="font-bold text-gray-900 mb-4">Tình trạng kho</h3>
+            <h3 className="font-bold text-gray-900 mb-4">Thông tin cây trồng</h3>
             <div className="space-y-4">
               <div className="flex items-center justify-between p-4 bg-blue-50 rounded-xl">
                 <div className="flex items-center space-x-3">
                   <Droplet className="w-6 h-6 text-blue-600" />
-                  <span className="text-gray-700">Độ Ẩm Đất</span>
+                  <span className="text-gray-700">Chu kỳ sinh trưởng</span>
                 </div>
-                <span className="text-xl font-bold text-gray-900">{weatherData.humidity}</span>
+                <span className="text-xl font-bold text-gray-900">
+                  {crop.growth_duration_days ? `${crop.growth_duration_days} ngày` : 'N/A'}
+                </span>
               </div>
-
               <div className="flex items-center justify-between p-4 bg-orange-50 rounded-xl">
                 <div className="flex items-center space-x-3">
                   <Thermometer className="w-6 h-6 text-orange-600" />
-                  <span className="text-gray-700">Nhiệt Độ</span>
+                  <span className="text-gray-700">Mùa vụ</span>
                 </div>
-                <span className="text-xl font-bold text-gray-900">{weatherData.temperature}</span>
+                <span className="font-bold text-gray-900">{crop.harvest_season || 'Quanh năm'}</span>
               </div>
             </div>
           </div>
 
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-            <h3 className="font-bold text-gray-900 mb-4">Thời tiết sắp tới</h3>
+            <h3 className="font-bold text-gray-900 mb-4">Khoảng giá điển hình</h3>
             <div className="p-4 bg-gray-50 rounded-xl">
               <div className="flex items-center space-x-2 mb-2">
                 <Wind className="w-5 h-5 text-gray-600" />
-                <span className="text-sm text-gray-600">Mưa nhẹ dự kiến trong 3 ngày tới</span>
+                <span className="text-sm text-gray-600">Theo dữ liệu lịch sử</span>
               </div>
               <p className="text-sm text-gray-700">
-                {weatherData.rainfall}
+                {crop.typical_price_min && crop.typical_price_max
+                  ? `${Number(crop.typical_price_min).toLocaleString()} – ${Number(crop.typical_price_max).toLocaleString()} VNĐ/kg`
+                  : 'Chưa có dữ liệu'}
               </p>
             </div>
           </div>
 
-          <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-2xl border border-green-200 p-6">
-            <div className="flex items-center space-x-2 mb-4">
-              <Leaf className="w-6 h-6 text-green-700" />
-              <h3 className="font-bold text-gray-900">Nguy Cơ Sâu Bệnh</h3>
+          {crop.description && (
+            <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-2xl border border-green-200 p-6">
+              <div className="flex items-center space-x-2 mb-4">
+                <Leaf className="w-6 h-6 text-green-700" />
+                <h3 className="font-bold text-gray-900">Mô tả</h3>
+              </div>
+              <p className="text-sm text-gray-700">{crop.description}</p>
             </div>
-            <p className="text-sm text-gray-700 mb-4">
-              {weatherData.disease}
-            </p>
-            <button className="text-green-700 font-medium hover:text-green-800 text-sm">
-              Xem chi tiết hơn →
-            </button>
-          </div>
+          )}
 
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-            <h3 className="font-bold text-gray-900 mb-4">Sản Lượng Ước Tính</h3>
-            <div className="text-center py-6">
-              <div className="text-5xl font-bold text-green-700 mb-2">
-                {weatherData.estimatedYield}
+            <h3 className="font-bold text-gray-900 mb-4">Giá Hiện Tại</h3>
+            <div className="text-center py-4">
+              <div className="text-4xl font-bold text-green-700 mb-2">
+                {currentPrice.toLocaleString()}
               </div>
-              <div className="text-gray-600">tấn dự kiến</div>
+              <div className="text-gray-600">VNĐ/kg (loại 1)</div>
+              {priceData?.weather_adjusted_price && (
+                <div className="mt-3 p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
+                  Điều chỉnh thời tiết: {priceData.weather_adjusted_price.toLocaleString()} VNĐ/kg
+                </div>
+              )}
             </div>
           </div>
         </div>

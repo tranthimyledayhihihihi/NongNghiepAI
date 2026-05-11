@@ -30,8 +30,10 @@ ultralytics>=8.1.0
 opencv-python-headless>=4.9.0.80
 Pillow>=10.2.0
 
-# --- Claude AI ---
+# --- LLM AI ---
 anthropic>=0.18.1
+google-genai>=0.5.0
+tavily-python>=0.5.0
 
 # --- Crawler / Task Queue (Quang) ---
 scrapy>=2.11.0

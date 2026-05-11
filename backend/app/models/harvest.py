@@ -20,7 +20,7 @@ class HarvestSchedule(Base):
     ActualYieldKg = Column("ActualYieldKg", Float, nullable=True)
     FertilizerUsed = Column("FertilizerUsed", String(200), nullable=True)
     PesticideUsed = Column("PesticideUsed", String(200), nullable=True)
-    Status = Column("Status", String(50), nullable=False, default="Đang trồng")
+    Status = Column("Status", String(50), nullable=False, default="Dang trong")
     Notes = Column("Notes", Text, nullable=True)
     CreatedAt = Column("CreatedAt", DateTime, server_default=func.now(), nullable=False)
     UpdatedAt = Column("UpdatedAt", DateTime, server_default=func.now(), nullable=False)

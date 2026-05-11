@@ -6,6 +6,10 @@ export default {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ["'Be Vietnam Pro'", '-apple-system', 'BlinkMacSystemFont', "'Segoe UI'", 'sans-serif'],
+        mono: ["'JetBrains Mono'", 'Menlo', 'Monaco', 'Consolas', "'Courier New'", 'monospace'],
+      },
       colors: {
         primary: {
           50: '#f0fdf4',
@@ -19,7 +23,17 @@ export default {
           800: '#166534',
           900: '#14532d',
         }
-      }
+      },
+      fontSize: {
+        'xs':   ['0.75rem',  { lineHeight: '1.5' }],
+        'sm':   ['0.875rem', { lineHeight: '1.6' }],
+        'base': ['0.9375rem',{ lineHeight: '1.6' }],
+        'lg':   ['1.0625rem',{ lineHeight: '1.5' }],
+        'xl':   ['1.1875rem',{ lineHeight: '1.4' }],
+        '2xl':  ['1.375rem', { lineHeight: '1.35'}],
+        '3xl':  ['1.75rem',  { lineHeight: '1.3' }],
+        '4xl':  ['2.125rem', { lineHeight: '1.25'}],
+      },
     },
   },
   plugins: [],

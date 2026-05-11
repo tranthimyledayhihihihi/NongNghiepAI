@@ -1,41 +1,56 @@
+import asyncio
+import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 
+# Ép UTF-8 cho stdout/stderr trên Windows để tránh lỗi encode tiếng Việt
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if sys.stderr.encoding and sys.stderr.encoding.lower() != "utf-8":
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.cors import CORSMiddleware # type: ignore
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api import (
-    admin,
-    ai,
-    alert,
-    auth,
-    crops,
-    dashboard,
-    harvest,
-    market,
-    market_news,
-    notifications,
-    price_forecast,
-    pricing,
-    quality,
-    reports,
-    settings as settings_api,
-    weather,
+    ai, alert, auth, chat, crawler, crops, dashboard,
+    harvest, market, market_news, news, notifications,
+    price_forecast, pricing, quality, reports, weather,
 )
+from app.api import settings as settings_router
 from app.core.config import settings
 from app.core import database
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_app: FastAPI):
     try:
         database.init_db()
-        print(f"Database initialized: {database.active_database_url}")
+        logger.info("Database initialized: %s", database.active_database_url)
     except Exception as exc:
-        print(f"Database initialization warning: {exc}")
+        logger.warning("Database initialization warning: %s", exc)
+
+    from app.tasks.crawler_tasks import auto_crawl_loop
+    interval = os.getenv("CRAWL_INTERVAL_SECONDS", "3600")
+    crawl_task = asyncio.create_task(auto_crawl_loop())
+    logger.info("[Crawler] Started — seed 7 days on startup, update interval=%ss", interval)
+
     yield
+
+    crawl_task.cancel()
+    try:
+        await crawl_task
+    except asyncio.CancelledError:
+        pass
+    logger.info("[Crawler] Auto-crawl task stopped.")
 
 app = FastAPI(
     title="AgriAI Backend",
@@ -52,22 +67,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(crops.router)
-app.include_router(dashboard.router)
-app.include_router(admin.router)
 app.include_router(auth.router)
+app.include_router(chat.router)
+app.include_router(ai.router)
+app.include_router(crops.router)
 app.include_router(harvest.router)
 app.include_router(quality.router)
 app.include_router(pricing.router)
 app.include_router(price_forecast.router)
 app.include_router(market.router)
-app.include_router(market_news.router)
-app.include_router(reports.router)
-app.include_router(settings_api.router)
-app.include_router(notifications.router)
 app.include_router(alert.router)
 app.include_router(weather.router)
-app.include_router(ai.router)
+app.include_router(crawler.router)
+app.include_router(news.router)
+app.include_router(dashboard.router)
+app.include_router(notifications.router)
+app.include_router(reports.router)
+app.include_router(settings_router.router)
+app.include_router(market_news.router)
 
 os.makedirs(os.path.join(settings.UPLOAD_DIR, "quality_check"), exist_ok=True)
 
@@ -80,6 +97,7 @@ async def root():
         "status": "running",
         "endpoints": {
             "health": "/health",
+            "ai_chat": "/api/chat",
             "db_test": "/db-test",
             "crops_list": "/api/crops",
             "crop_detail": "/api/crops/{crop_id}",
@@ -87,12 +105,6 @@ async def root():
             "harvest_forecast": "/api/harvest/forecast",
             "harvest_history": "/api/harvest/history/{user_id}",
             "harvest_schedules": "/api/harvest/schedules/{user_id}",
-            "harvest_schedules_me": "/api/harvest/schedules/me",
-            "dashboard_summary": "/api/dashboard/summary",
-            "dashboard_featured_crop": "/api/dashboard/featured-crop",
-            "dashboard_price_trend": "/api/dashboard/price-trend",
-            "dashboard_weather_overview": "/api/dashboard/weather-overview",
-            "dashboard_ai_recommendation": "/api/dashboard/ai-recommendation",
             "quality_check": "/api/quality/check",
             "quality_grades": "/api/quality/grades",
             "quality_history": "/api/quality/history/{user_id}",
@@ -102,33 +114,27 @@ async def root():
             "pricing_forecast_legacy": "/api/pricing/forecast",
             "pricing_history": "/api/pricing/history/{crop_name}/{region}",
             "pricing_compare_regions": "/api/pricing/compare-regions/{crop_name}",
-            "pricing_import": "/api/pricing/import",
-            "admin_ingestion_run": "/api/admin/ingestion/run",
             "price_forecast": "/api/price-forecast/predict",
             "market_channels": "/api/market/channels",
             "market_suggest": "/api/market/suggest",
             "market_history": "/api/market/history/{user_id}",
-            "market_news": "/api/market-news/",
-            "reports_summary": "/api/reports/summary",
-            "settings_me": "/api/settings/me",
-            "notifications": "/api/notifications",
             "alert_create": "/api/alert/create",
             "alert_list": "/api/alert/list",
             "alert_detail": "/api/alert/{alert_id}",
             "alert_deactivate": "/api/alert/{alert_id}",
             "weather_current": "/api/weather/current/{region}",
-            "weather_forecast": "/api/weather/forecast/{region}",
-            "weather_hourly": "/api/weather/hourly/{region}",
-            "weather_agriculture": "/api/weather/agriculture/{region}",
-            "weather_alerts": "/api/weather/alerts/{region}",
-            "weather_recommendations": "/api/weather/recommendations/{region}",
-            "weather_refresh": "/api/weather/refresh/{region}",
-            "weather_create": "/api/weather/",
-            "ai_chat": "/api/ai/chat",
+            "crawler_latest_data": "/api/crawler/latest-crawled-data",
+            "crawler_summary":     "/api/crawler/summary",
+            "crawler_standard_price": "/api/crawler/standard-price?crop_name={crop_name}",
+            "weather_create":      "/api/weather/",
+            "price_qa":            "/api/chat/price-qa",
+            "weather_price_forecast":  "/api/pricing/weather-forecast?crop_name={crop_name}&region={region}",
+            "news_market_impact":      "/api/news/market-impact",
+            "news_china_trade":        "/api/news/china-trade",
+            "news_disasters":          "/api/news/disasters",
+            "news_combined_factor":    "/api/news/combined-factor",
+            "news_price_adjusted":     "/api/news/price-with-news",
             "docs": "/docs",
-            "auth_register": "/api/auth/register",
-            "auth_login": "/api/auth/login",
-            "auth_me": "/api/auth/me",
         },
     }
 

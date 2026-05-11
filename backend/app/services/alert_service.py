@@ -20,6 +20,11 @@ logger = logging.getLogger(__name__)
 
 
 class AlertService:
+
+    # ------------------------------------------------------------------ #
+    # API interface (dùng bởi alert.py endpoints)
+    # ------------------------------------------------------------------ #
+
     def create_price_alert(self, db: Session, request: AlertCreateRequest) -> dict:
         alert = create_alert(
             db,
@@ -36,8 +41,7 @@ class AlertService:
     def list_price_alerts(self, db: Session) -> list[dict]:
         return [
             self._to_response(
-                db,
-                alert,
+                db, alert,
                 "Canh bao dang hoat dong." if alert.is_active else "Canh bao da tat.",
             )
             for alert in get_alerts(db)
@@ -47,139 +51,14 @@ class AlertService:
         alert = get_alert_by_id(db, alert_id)
         if not alert:
             return None
-        message = "Canh bao dang hoat dong." if alert.is_active else "Canh bao da tat."
-        return self._to_response(db, alert, message)
+        status_msg = "Canh bao dang hoat dong." if alert.is_active else "Canh bao da tat."
+        return self._to_response(db, alert, status_msg)
 
     def deactivate_price_alert(self, db: Session, alert_id: int) -> dict | None:
         alert = deactivate_alert(db, alert_id)
         if not alert:
             return None
         return {"alert_id": alert.id, "message": "Da tat canh bao gia."}
-
-    def check_and_trigger_alerts(self, db: Session) -> List[Dict]:
-        try:
-            from app.models.alert import PriceAlert
-
-            active_alerts = db.query(PriceAlert).filter(PriceAlert.IsActive.is_(True)).all()
-            triggered = []
-            for alert in active_alerts:
-                result = self._evaluate_alert(db, alert)
-                if result:
-                    triggered.append(result)
-            return triggered
-        except Exception as exc:
-            logger.error("check_and_trigger_alerts error: %s", exc)
-            return []
-
-    def _evaluate_alert(self, db: Session, alert) -> Optional[Dict]:
-        try:
-            from app.models.crop import CropType
-            from app.models.price import MarketPrice
-
-            latest = (
-                db.query(MarketPrice)
-                .filter(
-                    MarketPrice.CropID == alert.CropID,
-                    MarketPrice.Region == alert.Region,
-                )
-                .order_by(desc(MarketPrice.PriceDate), desc(MarketPrice.UpdatedAt))
-                .first()
-            )
-            if not latest:
-                return None
-
-            current_price = float(latest.PricePerKg)
-            target_price = float(alert.TargetPrice)
-            condition = to_api_alert_condition(alert.AlertType)
-            triggered = (
-                (condition == "above" and current_price >= target_price)
-                or (condition == "below" and current_price <= target_price)
-            )
-            if not triggered:
-                return None
-
-            crop = db.query(CropType).filter(CropType.CropID == alert.CropID).first()
-            crop_name = crop.CropName if crop else get_alert_crop_name(db, alert) or "N/A"
-
-            notification = self._send_alert_notification(
-                db=db,
-                alert=alert,
-                crop_name=crop_name,
-                current_price=current_price,
-            )
-
-            alert.LastTriggered = datetime.now()
-            db.add(alert)
-            db.commit()
-
-            return {
-                "alert_id": alert.AlertID,
-                "crop_name": crop_name,
-                "region": alert.Region,
-                "current_price": current_price,
-                "target_price": target_price,
-                "condition": condition,
-                "triggered": True,
-                "notification": notification,
-            }
-        except Exception as exc:
-            db.rollback()
-            logger.error("_evaluate_alert error: %s", exc)
-            return None
-
-    @staticmethod
-    def _send_alert_notification(db: Session, alert, crop_name: str, current_price: float) -> dict | None:
-        try:
-            from app.models.alert import AlertNotification
-            from app.services.notification_service import notification_service
-
-            subject, plain, html = notification_service.build_price_alert_message(
-                crop_name=crop_name,
-                region=alert.Region,
-                current_price=current_price,
-                target_price=float(alert.TargetPrice),
-                condition=to_api_alert_condition(alert.AlertType),
-            )
-            receiver = get_alert_receiver(db, alert) or f"user_{alert.UserID}@agriai.vn"
-            result = notification_service.send(
-                channel=(alert.NotifyMethod or "email").lower(),
-                receiver=receiver,
-                subject=subject,
-                message=plain,
-                html_message=html,
-            )
-            row = AlertNotification(
-                AlertID=alert.AlertID,
-                CurrentPrice=current_price,
-                Message=plain,
-                NotifyMethod=alert.NotifyMethod,
-                SendStatus=result.get("status", "unknown"),
-                Channel=result.get("channel"),
-                Receiver=receiver,
-                Status=result.get("status"),
-                ProviderMessageID=result.get("message_id"),
-                ErrorMessage=result.get("error"),
-            )
-            db.add(row)
-            db.commit()
-            try:
-                from app.services.notification_center_service import notification_center_service
-
-                notification_center_service.create_price_alert_inbox(
-                    db,
-                    user_id=alert.UserID,
-                    crop_name=crop_name,
-                    region=alert.Region,
-                    message=plain,
-                    alert_id=alert.AlertID,
-                )
-            except Exception:
-                logger.exception("could not store price alert in notification inbox")
-            return result
-        except Exception as exc:
-            db.rollback()
-            logger.error("_send_alert_notification error: %s", exc)
-            return {"status": "failed", "error": str(exc)}
 
     @staticmethod
     def _to_response(db: Session, alert, message: str) -> dict:

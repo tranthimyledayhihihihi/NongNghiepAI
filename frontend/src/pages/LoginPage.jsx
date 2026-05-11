@@ -64,7 +64,7 @@ const LoginPage = ({ initialMode = 'login' }) => {
     setMessage('');
 
     const demoPayload = {
-      email: 'tranthimy2205@gmail.com',
+      email: 'admin@agriAI.vn',
       password: '123456',
     };
 

@@ -27,21 +27,15 @@ async def forecast_harvest(
 
 @router.post("/predict")
 async def predict_harvest(
-    crop_name: str,
-    planting_date: str,
-    region: str,
+    request: HarvestForecastRequest,
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_current_user),
 ):
-    try:
-        planting_dt = datetime.fromisoformat(planting_date)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail="planting_date must be ISO format") from exc
     return harvest_service.predict_harvest_date(
         db,
-        crop_name,
-        planting_dt,
-        region,
+        request.crop_name,
+        datetime.combine(request.planting_date, datetime.min.time()),
+        request.region,
         user_id=current_user.UserID if current_user else None,
     )
 

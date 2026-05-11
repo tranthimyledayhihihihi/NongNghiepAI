@@ -1,10 +1,15 @@
+"""
+Quality Service - merged Tien (repository + pricing) + Quang (AI detector + DB records)
+- API endpoint dùng: check_quality(db, *, image_path, crop_name, region)
+- Thử AI detector trước, fallback về mock_grade
+"""
 import json
 from datetime import datetime
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.repositories.common import to_api_grade, to_db_grade
+from app.repositories.common import to_api_grade
 from app.repositories.quality_repository import (
     create_quality_check,
     get_quality_check_by_id,
@@ -15,19 +20,20 @@ from app.services.pricing_service import pricing_service
 
 
 class QualityService:
+    """Service kiểm tra chất lượng nông sản qua ảnh."""
+
     @staticmethod
     def _get_detector():
+        """Lazy import AI detector (Quang), thử các fallback."""
         try:
-            from ai_models.quality_check.detector import quality_detector
+            from ai_models.quality_check.detector import QualityDetector
+            return QualityDetector()
+        except Exception:
+            return None
 
-            return quality_detector
-        except ImportError:
-            try:
-                from ai_models.yolo_inference import quality_detector
-
-                return quality_detector
-            except ImportError:
-                return None
+    # ------------------------------------------------------------------ #
+    # API interface
+    # ------------------------------------------------------------------ #
 
     def check_quality(
         self,
@@ -38,23 +44,23 @@ class QualityService:
         region: str,
         user_id: Optional[int] = None,
     ) -> dict:
+        """
+        Kiểm tra chất lượng nông sản:
+        1. Gọi AI detector (nếu có) hoặc mock_grade
+        2. Lấy pricing từ pricing_service
+        3. Lưu kết quả qua repository
+        4. Trả về kết quả đầy đủ
+        """
+        # 1. Phân tích ảnh
         detector = self._get_detector()
-        model_version = "mock-detector-v1"
-        inference_time_ms = None
-        bbox = []
-        image_width = None
-        image_height = None
         if detector:
             try:
-                analysis = detector.detect_quality(image_path)
+                analysis = detector.analyze_image(image_path, crop_name=crop_name)
                 grade = analysis.get("quality_grade", "grade_1")
                 confidence = analysis.get("confidence", 0.80)
                 defects = analysis.get("defects", [])
                 disease_detected = analysis.get("disease_detected", bool(defects))
                 damage_level = analysis.get("damage_level", self._damage_level(grade))
-                model_version = analysis.get("model_version", model_version)
-                inference_time_ms = analysis.get("inference_time_ms")
-                bbox = analysis.get("bbox", [])
             except Exception:
                 detector = None
 
@@ -63,14 +69,7 @@ class QualityService:
             disease_detected = bool(defects)
             damage_level = self._damage_level(grade)
 
-        try:
-            from PIL import Image
-
-            with Image.open(image_path) as image:
-                image_width, image_height = image.size
-        except Exception:
-            pass
-
+        # 2. Tính giá đề xuất qua pricing_service (bao gồm điều chỉnh thời tiết)
         pricing = pricing_service.suggest_price(
             db,
             PricingSuggestRequest(
@@ -81,6 +80,12 @@ class QualityService:
             ),
         )
 
+        # Dùng giá điều chỉnh thời tiết nếu có, fallback về giá gốc
+        final_suggested = pricing.get("weather_suggested_price", pricing["suggested_price"])
+        final_min       = pricing.get("weather_min_price", pricing["min_price"])
+        final_max       = pricing.get("weather_max_price", pricing["max_price"])
+
+        # 3. Lưu vào DB qua repository
         record = create_quality_check(
             db,
             crop_name=crop_name,
@@ -89,11 +94,11 @@ class QualityService:
             quality_grade=grade,
             disease_detected=disease_detected,
             damage_level=damage_level,
-            suggested_price=pricing["suggested_price"],
+            suggested_price=final_suggested,
             confidence=confidence,
-            user_id=user_id,
         )
 
+        # 4. Bổ sung lưu vào QualityRecord (Quang) nếu có crop + user
         self._save_quality_record_direct(
             db=db,
             crop_name=crop_name,
@@ -102,14 +107,8 @@ class QualityService:
             grade=grade,
             confidence=confidence,
             defects=defects,
-            defect_details={"defects": defects, "bbox": bbox},
-            model_version=model_version,
-            inference_time_ms=inference_time_ms,
-            image_width=image_width,
-            image_height=image_height,
-            suggested_price_source=pricing.get("source_name"),
-            min_price=pricing["min_price"],
-            max_price=pricing["max_price"],
+            min_price=final_min,
+            max_price=final_max,
             recommendations=self._recommendations(grade),
         )
 
@@ -120,22 +119,63 @@ class QualityService:
             "quality_grade": grade,
             "disease_detected": disease_detected,
             "damage_level": damage_level,
-            "suggested_price": pricing["suggested_price"],
+            "suggested_price": final_suggested,
             "confidence": confidence,
             "defects": defects,
-            "model_version": model_version,
-            "inference_time_ms": inference_time_ms,
-            "image_width": image_width,
-            "image_height": image_height,
-            "suggested_price_source": pricing.get("source_name"),
-            "price_is_mock": pricing.get("is_mock", False),
             "suggested_price_range": {
-                "min": pricing["min_price"],
-                "max": pricing["max_price"],
+                "min": final_min,
+                "max": final_max,
             },
+            # Thông tin thời tiết kèm theo
+            "weather_factor":      pricing.get("weather_factor", 1.0),
+            "weather_summary":     pricing.get("weather_summary", ""),
+            "weather_explanation": pricing.get("weather_explanation", ""),
+            "price_change_pct":    pricing.get("price_change_pct", 0.0),
             "recommendations": self._recommendations(grade),
             "checked_at": getattr(record, "checked_at", None) or datetime.now(),
         }
+
+    # ------------------------------------------------------------------ #
+    # Helpers
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _save_quality_record_direct(
+        db: Session,
+        crop_name: str,
+        user_id: Optional[int],
+        image_path: str,
+        grade: str,
+        confidence: float,
+        defects: list,
+        min_price: float,
+        max_price: float,
+        recommendations: list,
+    ):
+        """Lưu vào bảng QualityRecords trực tiếp (Quang) - best-effort."""
+        if not user_id:
+            return
+        try:
+            from app.models.crop import CropType, QualityRecord
+            crop = db.query(CropType).filter(CropType.CropName == crop_name).first()
+            if not crop:
+                return
+            record = QualityRecord(
+                UserID=user_id,
+                CropID=crop.CropID,
+                ImagePath=image_path,
+                AIGrade=grade,
+                ConfidenceScore=confidence,
+                DetectedIssues=json.dumps(defects, ensure_ascii=False),
+                SuggestedPriceMin=min_price,
+                SuggestedPriceMax=max_price,
+                Recommendation="\n".join(recommendations),
+            )
+            db.add(record)
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            print(f"Warning: cannot save QualityRecord: {exc}")
 
     def get_history(self, db: Session, user_id: int, limit: int = 50) -> list[dict]:
         return [
@@ -151,57 +191,8 @@ class QualityService:
         return self._record_to_dict(record, crop)
 
     @staticmethod
-    def _save_quality_record_direct(
-        db: Session,
-        crop_name: str,
-        user_id: Optional[int],
-        image_path: str,
-        grade: str,
-        confidence: float,
-        defects: list,
-        defect_details: dict,
-        model_version: str,
-        inference_time_ms: float | None,
-        image_width: int | None,
-        image_height: int | None,
-        suggested_price_source: str | None,
-        min_price: float,
-        max_price: float,
-        recommendations: list,
-    ) -> None:
-        if not user_id:
-            return
-        try:
-            from app.models.crop import CropType
-            from app.models.quality import QualityRecord
-
-            crop = db.query(CropType).filter(CropType.CropName == crop_name).first()
-            if not crop:
-                return
-            record = QualityRecord(
-                UserID=user_id,
-                CropID=crop.CropID,
-                ImagePath=image_path,
-                AIGrade=to_db_grade(grade),
-                ConfidenceScore=confidence,
-                DetectedIssues=json.dumps(defects, ensure_ascii=False),
-                DefectDetails=json.dumps(defect_details, ensure_ascii=False),
-                ModelVersion=model_version,
-                InferenceTimeMs=inference_time_ms,
-                ImageWidth=image_width,
-                ImageHeight=image_height,
-                SuggestedPriceSource=suggested_price_source,
-                SuggestedPriceMin=min_price,
-                SuggestedPriceMax=max_price,
-                Recommendation="\n".join(recommendations),
-            )
-            db.add(record)
-            db.commit()
-        except Exception:
-            db.rollback()
-
-    @staticmethod
     def _mock_grade(image_path: str) -> tuple[str, float, list[str]]:
+        """Phân loại dựa trên tên file (fallback khi không có AI)."""
         lowered = image_path.lower()
         if "bad" in lowered or "grade3" in lowered or "grade_3" in lowered:
             return "grade_3", 0.68, ["surface_damage"]
@@ -211,14 +202,9 @@ class QualityService:
 
     @staticmethod
     def _damage_level(grade: str) -> str:
-        return {
-            "grade_1": "low",
-            "Loại 1": "low",
-            "grade_2": "medium",
-            "Loại 2": "medium",
-            "grade_3": "high",
-            "Loại 3": "high",
-        }.get(grade, "low")
+        return {"grade_1": "low", "Loại 1": "low",
+                "grade_2": "medium", "Loại 2": "medium",
+                "grade_3": "high", "Loại 3": "high"}.get(grade, "low")
 
     @staticmethod
     def _recommendations(grade: str) -> list[str]:
@@ -236,28 +222,25 @@ class QualityService:
         suggested_price = round((suggested_min + suggested_max) / 2, 2) if suggested_min or suggested_max else 0
         grade = to_api_grade(record.quality_grade)
         return {
-            "record_id": record.id,
-            "schedule_id": record.schedule_id,
-            "user_id": record.user_id,
-            "crop_id": crop.id,
-            "crop_name": crop.name,
+            "record_id": record.RecordID,
+            "schedule_id": record.ScheduleID,
+            "user_id": record.UserID,
+            "crop_id": crop.CropID,
+            "crop_name": crop.CropName,
             "image_path": record.image_path,
             "quality_grade": grade,
             "disease_detected": bool(issues.get("disease_detected", False)),
             "damage_level": issues.get("damage_level") or QualityService._damage_level(grade),
             "suggested_price": suggested_price,
-            "confidence": float(record.confidence_score or 0),
+            "confidence": float(record.ConfidenceScore or 0),
             "defects": issues.get("defects", []),
-            "model_version": getattr(record, "model_version", None),
-            "inference_time_ms": getattr(record, "inference_time_ms", None),
-            "suggested_price_source": getattr(record, "suggested_price_source", None),
             "suggested_price_range": {
                 "min": suggested_min,
                 "max": suggested_max,
             },
-            "recommendation": record.recommendation,
+            "recommendation": record.Recommendation,
             "recommendations": QualityService._recommendations(grade),
-            "checked_at": record.checked_at,
+            "checked_at": record.CheckDate,
         }
 
     @staticmethod

@@ -1,23 +1,16 @@
-import csv
-import io
-
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.schemas.price_schema import (
     PriceForecastRequest,
     PriceForecastResponse,
-    PriceImportItem,
-    PriceImportRequest,
-    PriceImportResponse,
     PriceRequest,
     PriceResponse,
     PricingSuggestRequest,
     PricingSuggestResponse,
 )
 from app.services.pricing_service import pricing_service
-from app.tasks.price_tasks import refresh_market_prices_task
 
 router = APIRouter(prefix="/api/pricing", tags=["pricing"])
 
@@ -61,44 +54,42 @@ async def get_price_history(crop_name: str, region: str, days: int = 30, db: Ses
     }
 
 
-@router.post("/import", response_model=PriceImportResponse)
-async def import_prices(request: PriceImportRequest, db: Session = Depends(get_db)):
-    return pricing_service.import_prices(db, request.records)
+@router.get("/weather-forecast")
+async def weather_price_forecast(
+    crop_name: str,
+    region: str,
+    quality_grade: str = "grade_1",
+    db: Session = Depends(get_db),
+):
+    """
+    Dự báo giá điều chỉnh theo thời tiết 7 ngày tới.
+    Trả về giá gốc, hệ số thời tiết, giá đề xuất sau điều chỉnh, và chi tiết từng ngày.
+    """
+    from app.services.weather_pricing_service import get_weather_adjusted_pricing
 
+    current = pricing_service.get_current_price(
+        db, crop_name, region, quality_grade, include_weather=False
+    )
+    base_price = float(current["current_price"])
 
-@router.post("/import-csv", response_model=PriceImportResponse)
-async def import_prices_csv(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    content = await file.read()
-    try:
-        text = content.decode("utf-8-sig")
-    except UnicodeDecodeError as exc:
-        raise HTTPException(status_code=400, detail="CSV must be UTF-8 encoded") from exc
+    weather_info = get_weather_adjusted_pricing(db, crop_name, region, base_price)
+    multiplier = pricing_service.quality_multipliers.get(quality_grade, 1.0)
 
-    reader = csv.DictReader(io.StringIO(text))
-    records = []
-    for row in reader:
-        try:
-            records.append(
-                PriceImportItem(
-                    crop_name=row.get("crop_name") or row.get("crop") or row.get("CropName"),
-                    region=row.get("region") or row.get("Region"),
-                    price=float(row.get("price") or row.get("price_per_kg") or row.get("PricePerKg")),
-                    quality_grade=row.get("quality_grade") or row.get("QualityGrade") or "grade_1",
-                    source_name=row.get("source_name") or row.get("SourceName") or "manual_csv",
-                    source_url=row.get("source_url") or row.get("SourceURL") or None,
-                    price_date=row.get("price_date") or row.get("PriceDate") or None,
-                    market_type=row.get("market_type") or row.get("MarketType") or None,
-                )
-            )
-        except (TypeError, ValueError) as exc:
-            raise HTTPException(status_code=400, detail=f"Invalid CSV row: {row}") from exc
-
-    return pricing_service.import_prices(db, records)
-
-
-@router.post("/refresh")
-async def refresh_market_prices(source_name: str | None = None, crop_filter: str | None = None):
-    return refresh_market_prices_task(source_name=source_name, crop_filter=crop_filter)
+    return {
+        "crop_name":   crop_name,
+        "region":      region,
+        "quality_grade": quality_grade,
+        "base_price":  round(base_price * multiplier, 2),
+        "weather_adjusted_price": round(weather_info["adjusted_price"] * multiplier, 2),
+        "weather_factor":         weather_info["weather_factor"],
+        "price_change_pct":       weather_info["price_change_pct"],
+        "weather_summary":        weather_info["weather_summary"],
+        "weather_explanation":    weather_info["weather_explanation"],
+        "crop_category":          weather_info["crop_category"],
+        "forecast_days":          weather_info["forecast_days"],
+        "forecast":               weather_info["forecast"],
+        "unit": "VND/kg",
+    }
 
 
 @router.get("/compare-regions/{crop_name}")

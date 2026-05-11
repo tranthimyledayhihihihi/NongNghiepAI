@@ -19,8 +19,8 @@ class PriceForecastService:
     def _get_model():
         """Lazy import AI price forecast model (Quang)."""
         try:
-            from ai_models.price_forecast.price_model import price_forecast_model
-            return price_forecast_model
+            from ai_models.price_forecast.predictor import PricePredictor
+            return PricePredictor()
         except ImportError:
             return None
 
@@ -39,31 +39,33 @@ class PriceForecastService:
         region = request.region
         forecast_days = request.forecast_days
 
+        # Tải lịch sử giá từ DB để sử dụng cho cả AI model hoặc fallback
+        price_history = self._load_price_history(db, crop_name, region, days=60)
+
         # 1. Thử AI model
         model = self._get_model()
-        if model:
+        if model and price_history:
             try:
-                raw = model.predict(crop_name=crop_name, region=region, days=forecast_days)
-                predicted_prices = self._normalize_forecast_data(raw.get("forecast_data", []))
-                trend = raw.get("trend", self._calc_trend([p["predicted_price"] for p in predicted_prices]))
-                return {
-                    "crop_name": crop_name,
-                    "region": region,
-                    "forecast_days": forecast_days,
-                    "predicted_prices": predicted_prices,
-                    "trend": trend,
-                    "best_selling_time": self._find_best_selling_time(predicted_prices),
-                    "warning": self._build_warning(trend, [p["predicted_price"] for p in predicted_prices]),
-                    "recommendation": raw.get("recommendation", self._get_recommendation(trend)),
-                }
+                predicted_prices = model.predict(historical_data=price_history, days=forecast_days)
+                if predicted_prices:
+                    trend = self._calc_trend([p["predicted_price"] for p in predicted_prices])
+                    return {
+                        "crop_name": crop_name,
+                        "region": region,
+                        "forecast_days": forecast_days,
+                        "predicted_prices": predicted_prices,
+                        "trend": trend,
+                        "best_selling_time": self._find_best_selling_time(predicted_prices),
+                        "warning": self._build_warning(trend, [p["predicted_price"] for p in predicted_prices]),
+                        "recommendation": self._get_recommendation(trend),
+                    }
             except Exception:
                 pass
 
         # 2. Fallback: lịch sử giá từ DB + moving average
-        price_history = self._load_price_history(db, crop_name, region, days=60)
         if price_history:
             raw = self._fallback_forecast(price_history, forecast_days)
-            predicted_prices = self._normalize_forecast_data(raw.get("forecast_data", []))
+            predicted_prices = raw.get("forecast_data", [])
             trend = raw.get("trend", "stable")
             return {
                 "crop_name": crop_name,
@@ -105,30 +107,16 @@ class PriceForecastService:
     # Helpers
     # ------------------------------------------------------------------ #
 
-    @staticmethod
-    def _normalize_forecast_data(forecast_data: List[Dict]) -> List[Dict]:
-        normalized = []
-        for item in forecast_data:
-            predicted = float(item["predicted_price"])
-            normalized.append(
-                {
-                    "date": item["date"],
-                    "predicted_price": predicted,
-                    "min_price": float(item.get("min_price", item.get("confidence_lower", predicted * 0.92))),
-                    "max_price": float(item.get("max_price", item.get("confidence_upper", predicted * 1.08))),
-                }
-            )
-        return normalized
-
     def _load_price_history(self, db: Session, crop_name: str, region: str, days: int = 60) -> List[Dict]:
-        """Lấy lịch sử giá từ DB (Quang)."""
+        """Lấy lịch sử giá: ưu tiên PriceHistory, fallback sang MarketPrices (dữ liệu cào)."""
         try:
             from app.models.crop import CropType
-            from app.models.price import PriceHistory
+            from app.models.price import MarketPrice, PriceHistory
             crop = db.query(CropType).filter(CropType.CropName == crop_name).first()
             if not crop:
                 return []
             start = (datetime.now() - timedelta(days=days)).date()
+
             rows = (
                 db.query(PriceHistory)
                 .filter(
@@ -139,7 +127,21 @@ class PriceForecastService:
                 .order_by(PriceHistory.RecordDate)
                 .all()
             )
-            return [{"date": r.RecordDate.isoformat(), "price": float(r.AvgPrice)} for r in rows]
+            if rows:
+                return [{"date": r.RecordDate.isoformat(), "price": float(r.AvgPrice)} for r in rows]
+
+            # Fallback: dùng MarketPrices (dữ liệu cào từ spider)
+            market_rows = (
+                db.query(MarketPrice)
+                .filter(
+                    MarketPrice.CropID == crop.CropID,
+                    MarketPrice.Region.ilike(f"%{region}%"),
+                    MarketPrice.PriceDate >= start,
+                )
+                .order_by(MarketPrice.PriceDate)
+                .all()
+            )
+            return [{"date": r.PriceDate.isoformat(), "price": float(r.PricePerKg)} for r in market_rows]
         except Exception:
             return []
 
@@ -162,8 +164,8 @@ class PriceForecastService:
             forecast_data.append({
                 "date": (datetime.now() + timedelta(days=i)).strftime("%Y-%m-%d"),
                 "predicted_price": round(current),
-                "confidence_lower": round(current * 0.92),
-                "confidence_upper": round(current * 1.08),
+                "min_price": round(current * 0.92),
+                "max_price": round(current * 1.08),
             })
 
         trend = PriceForecastService._calc_trend([f["predicted_price"] for f in forecast_data])

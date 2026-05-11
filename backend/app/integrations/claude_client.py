@@ -1,73 +1,42 @@
-import httpx
+import os
+import logging
+from anthropic import AsyncAnthropic
+from dotenv import load_dotenv
 
-from app.core.config import settings
+logger = logging.getLogger(__name__)
 
+load_dotenv()  # Đảm bảo đọc biến môi trường từ file .env vào hệ thống
 
-class AIClient:
-    def complete(self, messages: list[dict], system_prompt: str | None = None) -> dict:
-        provider = settings.AI_PROVIDER.lower()
-        if provider == "openai":
-            return self._complete_openai(messages, system_prompt)
-        return self._complete_anthropic(messages, system_prompt)
-
-    def _complete_anthropic(self, messages: list[dict], system_prompt: str | None = None) -> dict:
-        api_key = settings.CLAUDE_API_KEY or settings.AI_API_KEY
+class ClaudeClient:
+    def __init__(self):
+        api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
-            raise RuntimeError("CLAUDE_API_KEY or AI_API_KEY is not configured")
-        payload = {
-            "model": settings.AI_MODEL_NAME,
-            "max_tokens": 900,
-            "messages": messages,
-        }
-        if system_prompt:
-            payload["system"] = system_prompt
-        response = httpx.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json=payload,
-            timeout=settings.AI_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-        data = response.json()
-        text = "\n".join(part.get("text", "") for part in data.get("content", []) if part.get("type") == "text")
-        return {
-            "answer": text.strip(),
-            "provider": "anthropic",
-            "model": data.get("model") or settings.AI_MODEL_NAME,
-            "token_usage": data.get("usage"),
-            "is_mock": False,
-        }
+            logger.warning("ANTHROPIC_API_KEY is not set. Claude AI will not work.")
+            self.client = None
+        else:
+            self.client = AsyncAnthropic(api_key=api_key)
+        # Sử dụng model haiku cho tốc độ phản hồi nhanh, tiết kiệm chi phí cho MVP
+        self.model = "claude-3-haiku-20240307"
 
-    def _complete_openai(self, messages: list[dict], system_prompt: str | None = None) -> dict:
-        if not settings.AI_API_KEY:
-            raise RuntimeError("AI_API_KEY is not configured")
-        openai_messages = []
-        if system_prompt:
-            openai_messages.append({"role": "system", "content": system_prompt})
-        openai_messages.extend(messages)
-        response = httpx.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {settings.AI_API_KEY}", "content-type": "application/json"},
-            json={"model": settings.AI_MODEL_NAME, "messages": openai_messages, "temperature": 0.2},
-            timeout=settings.AI_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-        data = response.json()
-        choice = data.get("choices", [{}])[0]
-        return {
-            "answer": (choice.get("message") or {}).get("content", "").strip(),
-            "provider": "openai",
-            "model": data.get("model") or settings.AI_MODEL_NAME,
-            "token_usage": data.get("usage"),
-            "is_mock": False,
-        }
+    async def get_farming_advice(self, question: str, context_data: str = "") -> str:
+        if not self.client:
+            return f"[Chế độ Test] Đây là câu trả lời giả lập từ AI cho câu hỏi: '{question}'. Để dùng AI thật, bạn cần thêm ANTHROPIC_API_KEY vào file .env!"
+            
+        prompt = f"Bạn là một chuyên gia nông nghiệp AI.\n\nDữ liệu bối cảnh: {context_data}\n\nCâu hỏi của nông dân: {question}\n\nHãy đưa ra lời khuyên ngắn gọn, dễ hiểu và thực tế."
+        
+        try:
+            response = await self.client.messages.create(
+                model=self.model,
+                max_tokens=1024,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return response.content[0].text
+        except Exception as e:
+            logger.error(f"Claude API error: {e}")
+            error_msg = str(e)
+            if "credit balance is too low" in error_msg:
+                return f"[Hết Tiền API] Tài khoản Claude của bạn chưa được nạp tiền. Đây là câu trả lời giả lập cho: '{question}'"
+            return f"Lỗi từ Claude API (Chi tiết): {error_msg}"
 
 
-ai_client = AIClient()
-claude_client = ai_client
-
-__all__ = ["ai_client", "claude_client", "AIClient"]
+ai_client = ClaudeClient()

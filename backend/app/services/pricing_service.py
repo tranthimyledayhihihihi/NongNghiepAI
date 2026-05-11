@@ -3,7 +3,7 @@ Pricing Service - merged Tien (repository + schema) + Quang (DB queries + mock d
 - API endpoints dùng: get_current_price, suggest_price, forecast_price, get_price_history
 - Internal: analyze_price_trend (dùng bởi market_service, price_forecast_service)
 """
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from unicodedata import category, normalize
 
 from sqlalchemy import desc
@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session
 from app.core.redis_client import redis_client
 from app.repositories.price_repository import (
     create_pricing_request,
-    bulk_upsert_market_prices,
     get_latest_price,
     get_latest_prices_by_crop,
     get_price_history,
@@ -21,9 +20,12 @@ from app.repositories.price_repository import (
 from app.schemas.price_schema import PricingSuggestRequest
 
 GRADE_MULTIPLIERS = {
-    "Loại 1": 1.0, "grade_1": 1.0,
-    "Loại 2": 0.75, "grade_2": 0.75,
-    "Loại 3": 0.45, "grade_3": 0.45,
+    # ASCII (DB constraint values)
+    "Loai 1": 1.0,  "Loai 2": 0.75,  "Loai 3": 0.45,
+    # Legacy Vietnamese keys (giữ để tương thích ngược)
+    "Loại 1": 1.0,  "Loại 2": 0.75,  "Loại 3": 0.45,
+    # English API keys
+    "grade_1": 1.0, "grade_2": 0.75, "grade_3": 0.45,
 }
 
 
@@ -41,18 +43,42 @@ class PricingService:
     """Service xử lý định giá nông sản."""
 
     quality_multipliers = {
-        "grade_1": 1.0, "loai_1": 1.0,
-        "grade_2": 0.82, "loai_2": 0.82,
-        "grade_3": 0.58, "loai_3": 0.58,
+        # English API keys
+        "grade_1": 1.0,  "grade_2": 0.82,  "grade_3": 0.58,
+        # ASCII DB keys
+        "Loai 1": 1.0,   "Loai 2": 0.82,   "Loai 3": 0.58,
+        # Legacy Vietnamese (tương thích ngược)
+        "loai_1": 1.0,   "loai_2": 0.82,   "loai_3": 0.58,
+        "Loại 1": 1.0,   "Loại 2": 0.82,   "Loại 3": 0.58,
     }
 
     crop_base_prices = {
+        # Rau củ
         "ca chua": 22000,
         "dua chuot": 18000,
         "rau muong": 9000,
         "cai xanh": 13000,
         "ot": 30000,
+        "khoai lang": 18000,
+        "khoai tay": 20000,
+        # Lúa gạo
         "lua": 8500,
+        "ngo": 6500,
+        # Trái cây
+        "sau rieng": 75000,
+        "xoai": 25000,
+        "thanh long": 20000,
+        "chuoi": 12000,
+        "cam": 30000,
+        "buoi": 22000,
+        "mit": 15000,
+        "dua hau": 8000,
+        # Công nghiệp
+        "ca phe": 110000,
+        "ho tieu": 75000,
+        "tieu": 75000,
+        "dieu": 45000,
+        "dau nanh": 18000,
     }
 
     # ------------------------------------------------------------------ #
@@ -65,31 +91,21 @@ class PricingService:
         crop_name: str,
         region: str,
         quality_grade: str = "grade_1",
+        include_weather: bool = True,
     ) -> dict:
+        """Lấy giá hiện tại + điều chỉnh theo thời tiết 7 ngày tới. Cache Redis 1 giờ."""
         cache_key = f"price:{crop_name}:{region}:{quality_grade}"
         cached = redis_client.get(cache_key)
         if cached:
-            cached["cache_status"] = "hit"
             return cached
 
         latest_price = get_latest_price(db, crop_name, region, quality_grade)
         if latest_price:
             current_price = float(latest_price.price)
             last_updated = latest_price.collected_at
-            price_date = latest_price.price_date
-            source_name = latest_price.source_name or "database"
-            source_url = latest_price.source_url
-            cache_status = "from_db"
-            is_mock = False
         else:
-            fallback = self._get_price_fallback(db, crop_name, region, quality_grade)
-            current_price = fallback["current_price"]
-            last_updated = fallback["last_updated"]
-            price_date = fallback["price_date"]
-            source_name = fallback["source_name"]
-            source_url = fallback["source_url"]
-            cache_status = fallback["cache_status"]
-            is_mock = fallback["is_mock"]
+            current_price = self._get_price_from_db(db, crop_name, region, quality_grade)
+            last_updated = datetime.now()
 
         result = {
             "crop_name": crop_name,
@@ -98,25 +114,51 @@ class PricingService:
             "quality_grade": quality_grade,
             "price_trend": self.analyze_price_trend(db, crop_name, region),
             "last_updated": last_updated,
-            "source_name": source_name,
-            "source_url": source_url,
-            "price_date": price_date,
-            "cache_status": cache_status,
-            "is_mock": is_mock,
-            "data_age_minutes": self._age_minutes(last_updated),
         }
-        redis_client.set(cache_key, self._cache_payload(result), expire=3600)
+
+        # Bổ sung điều chỉnh thời tiết
+        if include_weather:
+            try:
+                from app.services.weather_pricing_service import get_weather_adjusted_pricing
+                weather_info = get_weather_adjusted_pricing(
+                    db, crop_name, region, current_price
+                )
+                result["weather_adjusted_price"] = weather_info["adjusted_price"]
+                result["weather_factor"]          = weather_info["weather_factor"]
+                result["weather_summary"]         = weather_info["weather_summary"]
+                result["weather_explanation"]     = weather_info["weather_explanation"]
+                result["price_change_pct"]        = weather_info["price_change_pct"]
+            except Exception:
+                pass
+
+        redis_client.set(
+            cache_key,
+            {**result, "last_updated": result["last_updated"].isoformat() if hasattr(result["last_updated"], "isoformat") else result["last_updated"]},
+            expire=3600,
+        )
         return result
 
     def suggest_price(self, db: Session, request: PricingSuggestRequest) -> dict:
-        """Đề xuất giá bán (min/suggested/max) dựa trên giá hiện tại và số lượng."""
-        current = self.get_current_price(db, request.crop_name, request.region, request.quality_grade)
+        """Đề xuất giá bán (min/suggested/max) dựa trên giá thị trường + thời tiết 7 ngày tới."""
+        current = self.get_current_price(
+            db, request.crop_name, request.region, request.quality_grade,
+            include_weather=True,
+        )
         base_price = float(current["current_price"])
         discount = quantity_discount(request.quantity)
         multiplier = GRADE_MULTIPLIERS.get(request.quality_grade, 0.75)
+
+        # Giá cơ sở (không thời tiết)
         suggested_price = round(base_price * multiplier * discount, 2)
         min_price = round(suggested_price * 0.92, 2)
         max_price = round(suggested_price * 1.08, 2)
+
+        # Giá điều chỉnh theo thời tiết
+        weather_factor = current.get("weather_factor", 1.0)
+        weather_suggested = round(suggested_price * weather_factor, 2)
+        weather_min = round(min_price * weather_factor, 2)
+        weather_max = round(max_price * weather_factor, 2)
+
         nearby_prices = self._nearby_region_prices(db, request.crop_name, request.region)
 
         create_pricing_request(
@@ -125,43 +167,30 @@ class PricingService:
             region=request.region,
             quantity=request.quantity,
             quality_grade=request.quality_grade,
-            suggested_price=suggested_price,
-            min_price=min_price,
-            max_price=max_price,
+            suggested_price=weather_suggested,
+            min_price=weather_min,
+            max_price=weather_max,
         )
         return {
             "crop_name": request.crop_name,
             "region": request.region,
             "quantity": request.quantity,
             "quality_grade": request.quality_grade,
-            "min_price": min_price,
+            # Giá gốc (không tính thời tiết)
+            "min_price":       min_price,
             "suggested_price": suggested_price,
-            "max_price": max_price,
+            "max_price":       max_price,
+            # Giá điều chỉnh theo thời tiết (khuyến nghị dùng)
+            "weather_min_price":       weather_min,
+            "weather_suggested_price": weather_suggested,
+            "weather_max_price":       weather_max,
+            "weather_factor":          weather_factor,
+            "weather_summary":         current.get("weather_summary", ""),
+            "weather_explanation":     current.get("weather_explanation", ""),
+            "price_change_pct":        current.get("price_change_pct", 0.0),
             "unit": "VND/kg",
             "nearby_region_prices": nearby_prices,
-            "message": "Gia de xuat dua tren du lieu thi truong hien tai.",
-            "source_name": current.get("source_name"),
-            "source_url": current.get("source_url"),
-            "price_date": current.get("price_date"),
-            "cache_status": current.get("cache_status", "unknown"),
-            "is_mock": current.get("is_mock", False),
-            "last_updated": current.get("last_updated"),
-        }
-
-    def import_prices(self, db: Session, records: list) -> dict:
-        normalized_records = [
-            record.model_dump() if hasattr(record, "model_dump") else dict(record)
-            for record in records
-        ]
-        result = bulk_upsert_market_prices(db, normalized_records)
-        for record in normalized_records:
-            redis_client.delete(
-                f"price:{record.get('crop_name')}:{record.get('region')}:{record.get('quality_grade', 'grade_1')}"
-            )
-        return {
-            "status": "success" if not result["errors"] else "partial_success",
-            "records_received": len(normalized_records),
-            **result,
+            "message": "Gia de xuat da duoc dieu chinh theo du bao thoi tiet 7 ngay toi.",
         }
 
     def forecast_price(self, crop_name: str, region: str, days: int = 7) -> dict:
@@ -195,9 +224,6 @@ class PricingService:
                     "avg_price": float(item.avg_price),
                     "min_price": float(item.min_price or item.avg_price),
                     "max_price": float(item.max_price or item.avg_price),
-                    "source_count": int(item.volume or 0),
-                    "cache_status": "from_db",
-                    "is_mock": False,
                 }
                 for item in history
             ]
@@ -210,9 +236,6 @@ class PricingService:
                 "avg_price": round(base_price * (1 + ((days - i) % 5 - 2) * 0.01), 2),
                 "min_price": round(base_price * 0.94, 2),
                 "max_price": round(base_price * 1.06, 2),
-                "source_count": 0,
-                "cache_status": "mock",
-                "is_mock": True,
             }
             for i in range(days, 0, -1)
         ]
@@ -243,76 +266,6 @@ class PricingService:
     # ------------------------------------------------------------------ #
     # Helpers - kết hợp cả Tien và Quang
     # ------------------------------------------------------------------ #
-
-    def _get_price_fallback(self, db: Session, crop_name: str, region: str, quality_grade: str) -> dict:
-        now = datetime.now()
-        try:
-            from app.models.crop import CropType
-            from app.models.price import MarketPrice
-
-            crop = db.query(CropType).filter(CropType.CropName == crop_name).first()
-            if crop:
-                row = (
-                    db.query(MarketPrice)
-                    .filter(MarketPrice.CropID == crop.CropID, MarketPrice.Region == region)
-                    .order_by(desc(MarketPrice.PriceDate), desc(MarketPrice.UpdatedAt))
-                    .first()
-                )
-                if row:
-                    multiplier = self.quality_multipliers.get(quality_grade, 1.0)
-                    return {
-                        "current_price": round(float(row.PricePerKg) * multiplier, 2),
-                        "last_updated": row.UpdatedAt or now,
-                        "price_date": row.PriceDate,
-                        "source_name": row.SourceName or "database",
-                        "source_url": row.SourceURL,
-                        "cache_status": "from_db",
-                        "is_mock": False,
-                    }
-                if crop.TypicalPriceMin and crop.TypicalPriceMax:
-                    base = (float(crop.TypicalPriceMin) + float(crop.TypicalPriceMax)) / 2
-                    return {
-                        "current_price": round(base, 2),
-                        "last_updated": getattr(crop, "CreatedAt", None) or now,
-                        "price_date": date.today(),
-                        "source_name": "CropTypes typical price",
-                        "source_url": None,
-                        "cache_status": "from_db",
-                        "is_mock": False,
-                    }
-        except Exception:
-            pass
-
-        return {
-            "current_price": self._mock_price(crop_name, region, quality_grade),
-            "last_updated": now,
-            "price_date": date.today(),
-            "source_name": "Mock Pricing",
-            "source_url": None,
-            "cache_status": "mock",
-            "is_mock": True,
-        }
-
-    @staticmethod
-    def _cache_payload(result: dict) -> dict:
-        payload = result.copy()
-        payload["cache_status"] = "hit"
-        for key in ("last_updated", "price_date"):
-            value = payload.get(key)
-            if hasattr(value, "isoformat"):
-                payload[key] = value.isoformat()
-        return payload
-
-    @staticmethod
-    def _age_minutes(value) -> int | None:
-        if value is None:
-            return None
-        if isinstance(value, str):
-            try:
-                value = datetime.fromisoformat(value)
-            except ValueError:
-                return None
-        return max(int((datetime.now() - value.replace(tzinfo=None)).total_seconds() // 60), 0)
 
     def _get_price_from_db(self, db: Session, crop_name: str, region: str, quality_grade: str) -> float:
         """Lấy giá từ DB trực tiếp (Quang) rồi fallback mock."""
@@ -371,9 +324,6 @@ class PricingService:
                 "price": float(item.price),
                 "unit": getattr(item, "unit", "VND/kg"),
                 "collected_at": item.collected_at.isoformat(),
-                "source_name": getattr(item, "source_name", None) or "database",
-                "source_url": getattr(item, "source_url", None),
-                "is_mock": False,
             })
         if result:
             return result
@@ -386,9 +336,6 @@ class PricingService:
                 "price": self._mock_price(crop_name, r, "grade_1"),
                 "unit": "VND/kg",
                 "collected_at": datetime.now().isoformat(),
-                "source_name": "Mock Pricing",
-                "source_url": None,
-                "is_mock": True,
             }
             for r in fallback_regions if r != region
         ][:3]

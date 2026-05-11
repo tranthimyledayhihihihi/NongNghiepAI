@@ -91,6 +91,9 @@ const Dashboard = () => {
   }, [user?.region]);
 
   const displayedCrop = dashboardSummary?.featured_crop || featuredCrop;
+  const displayedRegionalPrices = dashboardSummary?.regional_prices?.length
+    ? dashboardSummary.regional_prices
+    : regionalPrices;
   const displayedForecast = priceTrend?.forecast?.length
     ? priceTrend.forecast.slice(0, 3).map((item) => {
         const itemDate = new Date(item.date);
@@ -221,7 +224,7 @@ const Dashboard = () => {
             </div>
 
             <div className="space-y-2">
-              {regionalPrices.map((region, idx) => (
+              {displayedRegionalPrices.map((region, idx) => (
                 <div key={idx} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg">
                   <div className="flex items-center">
                     <div className={`w-3 h-3 rounded-full mr-3 ${idx === 0 ? 'bg-emerald-500' : idx === 1 ? 'bg-emerald-400' : 'bg-emerald-300'
