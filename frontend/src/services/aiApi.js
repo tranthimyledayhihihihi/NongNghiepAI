@@ -12,4 +12,9 @@ export const aiApi = {
     const response = await aiAxios.post('/api/chat/price-qa', { question });
     return response.data;
   },
+
+  getHistory: async (limit = 20) => {
+    const response = await api.get(`/api/chat/history?limit=${limit}`);
+    return response.data;
+  },
 };

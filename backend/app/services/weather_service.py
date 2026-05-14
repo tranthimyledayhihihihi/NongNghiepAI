@@ -8,8 +8,11 @@ from datetime import date, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
+from app.integrations.weather_client import WeatherClient
 from app.repositories.weather_repository import create_weather_data, get_latest_weather, get_weather_forecast
 from app.schemas.weather_schema import WeatherCreateRequest
+
+_weather_client = WeatherClient()
 
 # Bảng chuyển đổi tên ASCII → tên tiếng Việt chuẩn lưu trong DB
 _REGION_NORMALIZE = {
@@ -58,8 +61,50 @@ class WeatherService:
     # ------------------------------------------------------------------ #
 
     def get_current_weather(self, db: Session, region: str, force_refresh: bool = False) -> dict:
-        """Lấy thời tiết hiện tại từ DB (Open-Meteo đã cào) → fallback mock."""
+        """Lấy thời tiết hiện tại: Live API (Open-Meteo) → fallback DB → fallback mock."""
         region = _normalize_region(region)
+
+        # ── 1. Gọi live API để lấy nhiệt độ thực tế theo giờ ──────────────
+        try:
+            live = _weather_client.get_current(region)
+            now = datetime.now()
+            temp = live.get("temperature")
+            temp_min = live.get("temp_min")
+            temp_max = live.get("temp_max")
+            rain = live.get("rainfall") or 0.0
+            hum = live.get("humidity") or 70.0
+            return {
+                "region":           region,
+                "temperature":      temp,
+                "temp_min":         temp_min,
+                "temp_max":         temp_max,
+                "rainfall":         rain,
+                "humidity":         hum,
+                "condition":        live.get("condition"),
+                "wind_speed":       live.get("wind_speed"),
+                "uv_index":         live.get("uv_index"),
+                "pressure":         live.get("pressure"),
+                "weather_code":     live.get("weather_code"),
+                "latitude":         live.get("latitude"),
+                "longitude":        live.get("longitude"),
+                "recorded_at":      live.get("source_updated_at") or now,
+                "source":           "Open-Meteo",
+                "source_name":      "Open-Meteo",
+                "source_url":       "https://open-meteo.com",
+                "is_realtime":      True,
+                "is_mock":          False,
+                "last_updated":     now,
+                "data_age_minutes": 0,
+                "cache_status":     "live",
+                "agriculture_insights": [],
+                "warnings":         self._analyze_warnings(
+                    temp_max or 30, temp_min or 20, rain, hum
+                ),
+            }
+        except Exception:
+            pass  # API lỗi → thử DB
+
+        # ── 2. Fallback: đọc từ DB (crawler đã cào) ────────────────────────
         weather = get_latest_weather(db, region)
         if weather:
             temp_min = float(weather.TempMin) if weather.TempMin is not None else None
@@ -72,40 +117,41 @@ class WeatherService:
             elif temp_min is not None:
                 temp_avg = temp_min
 
-            recorded = datetime.combine(weather.RecordDate, datetime.min.time()) if weather.RecordDate else datetime.now()
+            recorded = weather.CreatedAt if weather.CreatedAt else (
+                datetime.combine(weather.RecordDate, datetime.min.time()) if weather.RecordDate else datetime.now()
+            )
             age_min = int((datetime.now() - recorded).total_seconds() / 60)
-
             return {
-                "region":         weather.Region,
-                "temperature":    temp_avg,
-                "temp_min":       temp_min,
-                "temp_max":       temp_max,
-                "rainfall":       float(weather.Rainfall) if weather.Rainfall is not None else None,
-                "humidity":       float(weather.Humidity) if weather.Humidity is not None else None,
-                "condition":      weather.WeatherDesc,
-                "wind_speed":     float(weather.WindSpeed) if weather.WindSpeed is not None else None,
-                "uv_index":       float(weather.UVIndex) if weather.UVIndex is not None else None,
-                "pressure":       float(weather.Pressure) if weather.Pressure is not None else None,
-                "weather_code":   weather.WeatherCode,
-                "latitude":       float(weather.Latitude) if weather.Latitude is not None else None,
-                "longitude":      float(weather.Longitude) if weather.Longitude is not None else None,
-                "recorded_at":    recorded,
-                "source":         "Open-Meteo",
-                "source_name":    weather.SourceName or "Open-Meteo",
-                "source_url":     "https://open-meteo.com",
-                "is_realtime":    True,
-                "is_mock":        False,
-                "last_updated":   recorded,
+                "region":           weather.Region,
+                "temperature":      temp_avg,
+                "temp_min":         temp_min,
+                "temp_max":         temp_max,
+                "rainfall":         float(weather.Rainfall) if weather.Rainfall is not None else None,
+                "humidity":         float(weather.Humidity) if weather.Humidity is not None else None,
+                "condition":        weather.WeatherDesc,
+                "wind_speed":       float(weather.WindSpeed) if weather.WindSpeed is not None else None,
+                "uv_index":         float(weather.UVIndex) if weather.UVIndex is not None else None,
+                "pressure":         float(weather.Pressure) if weather.Pressure is not None else None,
+                "weather_code":     weather.WeatherCode,
+                "latitude":         float(weather.Latitude) if weather.Latitude is not None else None,
+                "longitude":        float(weather.Longitude) if weather.Longitude is not None else None,
+                "recorded_at":      recorded,
+                "source":           "Open-Meteo",
+                "source_name":      weather.SourceName or "Open-Meteo",
+                "source_url":       "https://open-meteo.com",
+                "is_realtime":      False,
+                "is_mock":          False,
+                "last_updated":     recorded,
                 "data_age_minutes": age_min,
-                "cache_status":   "hit",
+                "cache_status":     "db",
                 "agriculture_insights": [],
-                "warnings":       self._analyze_warnings(
+                "warnings":         self._analyze_warnings(
                     temp_max or 30, temp_min or 20,
                     float(weather.Rainfall or 0), float(weather.Humidity or 70)
                 ),
             }
 
-        # Fallback mock khi chưa có dữ liệu Open-Meteo
+        # ── 3. Fallback mock khi không có gì ───────────────────────────────
         mock = MOCK_WEATHER.get(region, MOCK_WEATHER["default"])
         return {
             "region":           region,
@@ -236,9 +282,13 @@ class WeatherService:
         return result
 
     def get_hourly_forecast(self, db: Session, region: str, hours: int = 24) -> list[dict]:
-        """Dự báo theo giờ dựa trên thời tiết hiện tại."""
-        current = self.get_current_weather(db, region)
-        return self._build_hourly(current)[:hours]
+        """Dự báo theo giờ: Live API → fallback mock."""
+        norm = _normalize_region(region)
+        try:
+            return _weather_client.get_hourly_forecast(norm, hours)
+        except Exception:
+            current = self.get_current_weather(db, norm)
+            return self._build_hourly(current)[:hours]
 
     def get_harvest_weather_warning(self, db: Session, region: str) -> str | None:
         """Trả về chuỗi cảnh báo thời tiết ảnh hưởng đến thu hoạch."""

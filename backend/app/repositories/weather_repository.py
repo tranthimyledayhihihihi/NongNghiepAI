@@ -30,9 +30,13 @@ def create_weather_data(db: Session, **data) -> WeatherData:
 
 def get_latest_weather(db: Session, region: str) -> WeatherData | None:
     try:
+        today = date.today()
         return (
             db.query(WeatherData)
-            .filter(WeatherData.Region == region)
+            .filter(
+                WeatherData.Region == region,
+                WeatherData.RecordDate <= today,
+            )
             .order_by(desc(WeatherData.RecordDate), desc(WeatherData.CreatedAt))
             .first()
         )

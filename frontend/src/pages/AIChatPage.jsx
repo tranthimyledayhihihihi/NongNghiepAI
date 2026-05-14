@@ -1,5 +1,4 @@
 import {
-  AlertCircle,
   Bot,
   Clock,
   Image as ImageIcon,
@@ -11,13 +10,13 @@ import {
   RefreshCw,
   Send,
   Sparkles,
-  TrendingUp,
   User,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import DataSourceBadge from '../components/DataSourceBadge';
+import { useAuth } from '../contexts/AuthContext';
 import { aiApi } from '../services/aiApi';
 
 const initialMessages = [
@@ -57,35 +56,16 @@ const initialMessages = [
   },
 ];
 
-const chatHistory = [
-  {
-    id: 1,
-    title: 'Tư vấn sâu bệnh lúa',
-    subtitle: 'Bệnh đạo ôn lá',
-    description: 'Dựa trên ảnh ruộng lúa 40 ngày tuổi...',
-    time: '10:45',
-    icon: Leaf,
-    color: 'text-green-700 bg-green-50',
-  },
-  {
-    id: 2,
-    title: 'Dự báo giá cà phê',
-    subtitle: 'Thị trường Tây Nguyên',
-    description: 'Giá dự báo tăng trong tuần tới...',
-    time: '08:12',
-    icon: TrendingUp,
-    color: 'text-amber-700 bg-amber-50',
-  },
-  {
-    id: 3,
-    title: 'Kỹ thuật bón phân',
-    subtitle: 'Quy trình 4 đợt',
-    description: 'Bón phân đạm cần lưu ý giai đoạn sinh trưởng...',
-    time: 'Hôm qua',
-    icon: AlertCircle,
-    color: 'text-blue-700 bg-blue-50',
-  },
-];
+function formatHistoryTime(isoString) {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  const now = new Date();
+  const diffDays = Math.floor((now - d) / 86400000);
+  if (diffDays === 0) return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+  if (diffDays === 1) return 'Hôm qua';
+  if (diffDays < 7) return `${diffDays} ngày trước`;
+  return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+}
 
 const quickSuggestions = [
   'Lập kế hoạch canh tác cho vụ tới',
@@ -112,10 +92,6 @@ const capabilities = [
   },
 ];
 
-const analysisHistory = [
-  { id: 1, date: '14/05', title: 'Chẩn đoán bệnh đạo ôn', time: '4 hôm trước' },
-  { id: 2, date: '12/05', title: 'Kiểm tra dinh dưỡng lá', time: '6 ngày trước' },
-];
 
 const MessageAvatar = ({ type }) => (
   <div
@@ -128,12 +104,32 @@ const MessageAvatar = ({ type }) => (
 );
 
 const AIChatPage = () => {
+  const { isAuthenticated } = useAuth();
   const [messages, setMessages] = useState(initialMessages);
   const [inputMessage, setInputMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [chatHistory, setChatHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  const loadHistory = useCallback(async () => {
+    if (!isAuthenticated) return;
+    setHistoryLoading(true);
+    try {
+      const data = await aiApi.getHistory(20);
+      setChatHistory(data.history || []);
+    } catch {
+      // silent — history is non-critical
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory]);
 
   const todayLabel = useMemo(
     () => new Date().toLocaleDateString('vi-VN', { day: '2-digit', month: 'long', year: 'numeric' }),
@@ -178,6 +174,7 @@ const AIChatPage = () => {
         sessionId: 'frontend-session',
       });
       setMessages((current) => [...current, createBotResponse(data)]);
+      loadHistory();
     } catch {
       setMessages((current) => [...current, createBotResponse()]);
     } finally {
@@ -220,48 +217,65 @@ const AIChatPage = () => {
     <>
       <div className="mb-5 flex items-center justify-between">
         <h2 className="font-bold text-gray-900">Lịch sử chat</h2>
-        <button type="button" className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+        <button
+          type="button"
+          onClick={loadHistory}
+          className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          title="Tải lại lịch sử"
+        >
           <MoreVertical className="h-5 w-5" />
         </button>
       </div>
 
-      <div className="mb-5 grid grid-cols-2 gap-2">
-        <button type="button" className="rounded-lg bg-green-700 px-3 py-2 text-sm font-medium text-white">
-          Lịch sử
-        </button>
-        <button type="button" className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100">
-          Gợi ý
-        </button>
-      </div>
+      <div className="space-y-2">
+        {historyLoading && (
+          <div className="py-6 text-center text-sm text-gray-400">Đang tải lịch sử...</div>
+        )}
 
-      <div className="space-y-3">
-        {chatHistory.map((chat) => {
-          const Icon = chat.icon;
-          return (
-            <button
-              key={chat.id}
-              type="button"
-              onClick={() => setHistoryOpen(false)}
-              className="w-full rounded-lg p-3 text-left transition hover:bg-gray-50"
-            >
-              <div className="flex items-start gap-3">
-                <div className={`rounded-lg p-2 ${chat.color}`}>
-                  <Icon className="h-5 w-5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-semibold text-gray-900">{chat.title}</div>
-                  <div className="mt-1 text-xs text-gray-600">{chat.subtitle}</div>
-                  <div className="mt-1 truncate text-xs text-gray-500">{chat.description}</div>
-                  <div className="mt-2 text-xs text-gray-400">{chat.time}</div>
-                </div>
+        {!historyLoading && !isAuthenticated && (
+          <div className="rounded-lg bg-gray-50 px-3 py-4 text-center text-xs text-gray-500">
+            Đăng nhập để xem lịch sử hội thoại của bạn.
+          </div>
+        )}
+
+        {!historyLoading && isAuthenticated && chatHistory.length === 0 && (
+          <div className="rounded-lg bg-gray-50 px-3 py-4 text-center text-xs text-gray-500">
+            Chưa có lịch sử. Hãy bắt đầu hỏi AgriBot!
+          </div>
+        )}
+
+        {!historyLoading && chatHistory.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => setHistoryOpen(false)}
+            className="w-full rounded-lg p-3 text-left transition hover:bg-gray-50"
+          >
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg bg-green-50 p-2 text-green-700">
+                <Leaf className="h-4 w-4" />
               </div>
-            </button>
-          );
-        })}
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-semibold text-gray-900">
+                  {item.user_message.length > 50
+                    ? `${item.user_message.slice(0, 50)}…`
+                    : item.user_message}
+                </div>
+                {item.ai_response && (
+                  <div className="mt-1 truncate text-xs text-gray-500">
+                    {item.ai_response.replace(/[#*`]/g, '').slice(0, 70)}…
+                  </div>
+                )}
+                <div className="mt-1 text-xs text-gray-400">{formatHistoryTime(item.created_at)}</div>
+              </div>
+            </div>
+          </button>
+        ))}
       </div>
 
       <button
         type="button"
+        onClick={() => { setMessages(initialMessages); setHistoryOpen(false); }}
         className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-green-700 py-3 font-medium text-white hover:bg-green-800"
       >
         <Plus className="h-5 w-5" />
@@ -510,13 +524,20 @@ const AIChatPage = () => {
 
         <div className="mt-6 space-y-3">
           <h3 className="text-sm font-bold uppercase tracking-wide text-gray-900">Phân tích gần đây</h3>
-          {analysisHistory.map((item) => (
+          {chatHistory.slice(0, 3).map((item) => (
             <div key={item.id} className="rounded-lg bg-gray-50 p-3">
-              <div className="text-xs font-semibold text-gray-500">{item.date}</div>
-              <div className="mt-1 text-sm font-semibold text-gray-900">{item.title}</div>
-              <div className="mt-1 text-xs text-gray-500">{item.time}</div>
+              <div className="text-xs font-semibold text-gray-500">
+                {item.created_at ? new Date(item.created_at).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }) : ''}
+              </div>
+              <div className="mt-1 truncate text-sm font-semibold text-gray-900">
+                {item.user_message.length > 45 ? `${item.user_message.slice(0, 45)}…` : item.user_message}
+              </div>
+              <div className="mt-1 text-xs text-gray-500">{formatHistoryTime(item.created_at)}</div>
             </div>
           ))}
+          {chatHistory.length === 0 && !historyLoading && (
+            <div className="text-xs text-gray-400">Chưa có phân tích nào.</div>
+          )}
         </div>
       </aside>
     </div>

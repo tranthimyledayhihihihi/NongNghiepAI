@@ -1,12 +1,28 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, model_validator
 from sqlalchemy.orm import Session
 from app.integrations.gemini_client import GeminiClient
 from app.core.database import get_db
+from app.api.auth import get_optional_current_user, get_current_user
+from app.models.user import User
 
 router = APIRouter(prefix="/api/chat", tags=["AI Chatbot"])
 
 gemini_client = GeminiClient()
+
+
+def _save_conversation(db: Session, user_id: int | None, question: str, answer: str) -> None:
+    try:
+        from app.models.conversation import AIConversation
+        db.add(AIConversation(
+            UserID=user_id,
+            UserMessage=question,
+            AIResponse=answer,
+            Provider="gemini",
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
 
 
 class ChatRequest(BaseModel):
@@ -48,7 +64,11 @@ def _question_contains(question: str, keywords: list[str]) -> bool:
     return any(k in q for k in keywords)
 
 @router.post("", response_model=ChatResponse)
-async def ask_farming_advice(request: ChatRequest, db: Session = Depends(get_db)):
+async def ask_farming_advice(
+    request: ChatRequest,
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
+):
     context_parts = []
     if request.context_data:
         context_parts.append(request.context_data)
@@ -132,6 +152,7 @@ async def ask_farming_advice(request: ChatRequest, db: Session = Depends(get_db)
             question=q,
             context_data=combined_context
         )
+        _save_conversation(db, current_user.UserID if current_user else None, q, answer)
         return ChatResponse(answer=answer)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi khi kết nối AI: {str(e)}")
@@ -216,3 +237,32 @@ async def price_qa(request: PriceQARequest, db: Session = Depends(get_db)):
         sources=sources,
         db_prices=db_prices,
     )
+
+
+@router.get("/history")
+def get_chat_history(
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.models.conversation import AIConversation
+    rows = (
+        db.query(AIConversation)
+        .filter(AIConversation.UserID == current_user.UserID)
+        .order_by(AIConversation.CreatedAt.desc())
+        .limit(limit)
+        .all()
+    )
+    return {
+        "total": len(rows),
+        "history": [
+            {
+                "id": r.ConvID,
+                "user_message": r.UserMessage,
+                "ai_response": r.AIResponse,
+                "topic": r.Topic,
+                "created_at": r.CreatedAt.isoformat() if r.CreatedAt else None,
+            }
+            for r in rows
+        ],
+    }
