@@ -32,9 +32,12 @@ class GeminiClient:
         else:
             self.client = genai.Client(api_key=api_key)
             self.model_fallbacks = [
-                'gemini-2.0-flash-lite',  # free tier quota cao nhất, ổn định
+                'gemini-2.5-flash-lite',  # free tier quota cao, nhanh
+                'gemini-2.0-flash-lite',
                 'gemini-2.0-flash',
                 'gemini-2.5-flash',
+                'gemini-3-flash-preview',
+                'gemini-3.1-flash-lite',
             ]
             logger.info("Gemini client configured successfully.")
 
