@@ -63,6 +63,52 @@ def _question_contains(question: str, keywords: list[str]) -> bool:
     q = question.lower()
     return any(k in q for k in keywords)
 
+# Bảng mapping từ khoá vùng → tên vùng chính xác trong DB
+_REGION_KEYWORDS: dict[str, str] = {
+    "đà nẵng": "Đà Nẵng", "da nang": "Đà Nẵng",
+    "hà nội": "Hà Nội", "ha noi": "Hà Nội", "hà nôi": "Hà Nội",
+    "hồ chí minh": "TP.HCM", "ho chi minh": "TP.HCM",
+    "tp.hcm": "TP.HCM", "tphcm": "TP.HCM", "hcm": "TP.HCM", "sài gòn": "TP.HCM",
+    "cần thơ": "Cần Thơ", "can tho": "Cần Thơ",
+    "gia lai": "Gia Lai",
+    "đắk lắk": "Đắk Lắk", "dak lak": "Đắk Lắk", "đắk lak": "Đắk Lắk",
+    "đắk nông": "Đắk Nông", "dak nong": "Đắk Nông",
+    "bình phước": "Bình Phước", "binh phuoc": "Bình Phước",
+    "tiền giang": "Tiền Giang", "tien giang": "Tiền Giang",
+    "đồng nai": "Đồng Nai", "dong nai": "Đồng Nai",
+    "lâm đồng": "Lâm Đồng", "lam dong": "Lâm Đồng",
+    "đà lạt": "Đà Lạt", "da lat": "Đà Lạt",
+    "an giang": "An Giang",
+    "bắc giang": "Bắc Giang", "bac giang": "Bắc Giang",
+    "bến tre": "Bến Tre", "ben tre": "Bến Tre",
+    "bình định": "Bình Định", "binh dinh": "Bình Định",
+    "bình dương": "Bình Dương", "binh duong": "Bình Dương",
+    "bình thuận": "Bình Thuận", "binh thuan": "Bình Thuận",
+    "đồng tháp": "Đồng Tháp", "dong thap": "Đồng Tháp",
+    "hà giang": "Hà Giang", "ha giang": "Hà Giang",
+    "hải dương": "Hải Dương", "hai duong": "Hải Dương",
+    "hậu giang": "Hậu Giang", "hau giang": "Hậu Giang",
+    "hưng yên": "Hưng Yên", "hung yen": "Hưng Yên",
+    "khánh hòa": "Khánh Hòa", "khanh hoa": "Khánh Hòa",
+    "kiên giang": "Kiên Giang", "kien giang": "Kiên Giang",
+    "kon tum": "Kon Tum",
+    "long an": "Long An",
+    "nghệ an": "Nghệ An", "nghe an": "Nghệ An",
+    "quảng ngãi": "Quảng Ngãi", "quang ngai": "Quảng Ngãi",
+    "sóc trăng": "Sóc Trăng", "soc trang": "Sóc Trăng",
+    "sơn la": "Sơn La", "son la": "Sơn La",
+    "tây ninh": "Tây Ninh", "tay ninh": "Tây Ninh",
+    "vĩnh long": "Vĩnh Long", "vinh long": "Vĩnh Long",
+}
+DEFAULT_PRICE_REGION = "Đà Nẵng"
+
+def _detect_region(question: str) -> str:
+    q = question.lower()
+    for key, region in _REGION_KEYWORDS.items():
+        if key in q:
+            return region
+    return DEFAULT_PRICE_REGION
+
 @router.post("", response_model=ChatResponse)
 async def ask_farming_advice(
     request: ChatRequest,
@@ -164,76 +210,111 @@ async def price_qa(
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_current_user),
 ):
-    """
-    Hỏi-đáp định giá nông sản với Tavily Search + dữ liệu DB thực tế.
-
-    Quy trình:
-    1. Truy vấn Tavily để lấy giá mới nhất từ web (real-time)
-    2. Lấy giá từ DB hệ thống để đối chiếu
-    3. Tổng hợp câu trả lời đầy đủ có nguồn trích dẫn
-    """
+    from sqlalchemy import text
     q = request.question
+    region = _detect_region(q)
 
-    # ── Bước 1: Lấy giá từ DB để làm context ──────────────────────────────
-    db_context = ""
+    # ── Bước 1: Giá mới nhất theo vùng (fallback toàn quốc nếu không có) ──
     db_prices = []
     try:
-        from sqlalchemy import text
         rows = db.execute(text("""
             SELECT TOP 15 c.CropName, m.Region, m.PricePerKg, m.SourceName, m.PriceDate
             FROM MarketPrices m
             JOIN CropTypes c ON m.CropID = c.CropID
+            WHERE m.Region = :region
             ORDER BY m.PriceDate DESC
-        """)).fetchall()
-        if rows:
-            lines = ["Giá trong hệ thống (cập nhật gần nhất):"]
-            for r in rows:
-                line = f"- {r[0]} tại {r[1]}: {float(r[2]):,.0f} VNĐ/kg (nguồn: {r[3]}, ngày {r[4]})"
-                lines.append(line)
-                db_prices.append({
-                    "crop_name": r[0], "region": r[1],
-                    "price": float(r[2]), "source": r[3],
-                    "date": str(r[4]),
-                })
-            db_context = "\n".join(lines)
+        """), {"region": region}).fetchall()
+        if not rows:
+            rows = db.execute(text("""
+                SELECT TOP 15 c.CropName, m.Region, m.PricePerKg, m.SourceName, m.PriceDate
+                FROM MarketPrices m
+                JOIN CropTypes c ON m.CropID = c.CropID
+                ORDER BY m.PriceDate DESC
+            """)).fetchall()
+        for r in rows:
+            db_prices.append({
+                "crop_name": r[0], "region": r[1],
+                "price": float(r[2]), "source": r[3], "date": str(r[4]),
+            })
     except Exception:
         pass
 
-    # ── Bước 2: Tavily Search Q&A ──────────────────────────────────────────
+    # ── Bước 2: Lịch sử 7 ngày theo vùng ─────────────────────────────────
+    price_history: list[tuple] = []
+    try:
+        hist = db.execute(text("""
+            SELECT TOP 50 c.CropName, ph.Region, ph.AvgPrice, ph.MinPrice, ph.MaxPrice, ph.RecordDate
+            FROM PriceHistory ph
+            JOIN CropTypes c ON ph.CropID = c.CropID
+            WHERE ph.Region = :region
+              AND ph.RecordDate >= DATEADD(day, -7, GETDATE())
+            ORDER BY ph.RecordDate DESC
+        """), {"region": region}).fetchall()
+        if not hist:
+            hist = db.execute(text("""
+                SELECT TOP 50 c.CropName, ph.Region, ph.AvgPrice, ph.MinPrice, ph.MaxPrice, ph.RecordDate
+                FROM PriceHistory ph
+                JOIN CropTypes c ON ph.CropID = c.CropID
+                WHERE ph.RecordDate >= DATEADD(day, -7, GETDATE())
+                ORDER BY ph.RecordDate DESC
+            """)).fetchall()
+        price_history = list(hist)
+    except Exception:
+        pass
+
+    # ── Xây context gọn cho AI ─────────────────────────────────────────────
+    ctx_parts: list[str] = []
+    if db_prices:
+        lines = [f"**Giá mới nhất tại {region}:**"]
+        for p in db_prices:
+            lines.append(f"- {p['crop_name']} ({p['region']}): {p['price']:,.0f} VNĐ/kg — {p['date']}")
+        ctx_parts.append("\n".join(lines))
+    if price_history:
+        lines = [f"**Lịch sử giá 7 ngày tại {region}:**"]
+        for h in price_history:
+            lines.append(
+                f"- {h[0]} ({h[1]}) ngày {h[5]}: "
+                f"TB {float(h[2]):,.0f} | Min {float(h[3]):,.0f} | Max {float(h[4]):,.0f} VNĐ/kg"
+            )
+        ctx_parts.append("\n".join(lines))
+    db_context = "\n\n".join(ctx_parts)
+
+    # ── Bước 3: Tavily Search ──────────────────────────────────────────────
+    tavily_answer = ""
+    sources: list = []
+    full_answer = ""
     try:
         from app.integrations.tavily_client import ask_price_qa
         import asyncio
-        result = await asyncio.to_thread(ask_price_qa, q, db_context)
+        result = await asyncio.to_thread(ask_price_qa, f"{q} tại {region}", db_context)
         tavily_answer = result.get("tavily_answer", "")
         sources = result.get("sources", [])
         full_answer = result.get("answer", "")
-    except Exception as e:
-        tavily_answer = ""
-        sources = []
-        full_answer = f"Không tìm được dữ liệu từ Tavily: {e}"
+    except Exception:
+        pass
 
-    # ── Bước 3: Nếu Tavily không trả lời được, dùng Gemini + context DB ───
-    _AI_BUSY = "Xin lỗi, hệ thống AI đang bận. Vui lòng thử lại sau ít phút."
-    if not tavily_answer and db_context:
+    # ── Bước 4: Gemini với prompt ngắn gọn về giá ─────────────────────────
+    if not tavily_answer:
         try:
-            full_answer = await gemini_client.get_farming_advice(
-                question=q,
-                context_data=db_context,
-            )
+            full_answer = await gemini_client.get_price_answer(q, region, db_context)
         except Exception:
             pass
 
-    # ── Bước 4: Fallback từ DB khi tất cả AI đều fail ─────────────────────
-    if not full_answer or full_answer == _AI_BUSY or full_answer.startswith("Không tìm được"):
+    # ── Bước 5: Fallback thuần DB nếu AI fail ─────────────────────────────
+    _is_ai_fail = (
+        not full_answer
+        or full_answer.startswith("Xin lỗi")
+        or full_answer.startswith("Lỗi AI")
+        or "đang bận" in full_answer
+    )
+    if _is_ai_fail:
         if db_prices:
-            lines = ["**Dữ liệu giá nông sản mới nhất trong hệ thống:**\n"]
+            lines = [f"**Giá nông sản tại {region}** *(AI tạm bận — dữ liệu thô từ hệ thống)*\n"]
             for p in db_prices:
-                lines.append(f"- **{p['crop_name']}** tại {p['region']}: **{p['price']:,.0f} VNĐ/kg** (nguồn: {p['source']}, ngày {p['date']})")
-            lines.append("\n---")
-            lines.append("*Lưu ý: Hệ thống AI tạm thời quá tải. Dữ liệu trên được lấy trực tiếp từ cơ sở dữ liệu của hệ thống.*")
+                lines.append(f"- **{p['crop_name']}**: {p['price']:,.0f} VNĐ/kg — {p['date']}")
             full_answer = "\n".join(lines)
         else:
-            full_answer = "Hiện không có dữ liệu về nông sản này trong hệ thống. Vui lòng thử lại sau hoặc đặt câu hỏi về hồ tiêu, sầu riêng."
+            full_answer = f"Chưa có dữ liệu giá tại {region}. Vui lòng hỏi về hồ tiêu, sầu riêng hoặc chọn vùng khác."
 
     _save_conversation(db, current_user.UserID if current_user else None, q, full_answer)
 

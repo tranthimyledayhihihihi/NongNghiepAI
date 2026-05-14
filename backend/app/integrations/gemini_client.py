@@ -38,6 +38,46 @@ class GeminiClient:
             ]
             logger.info("Gemini client configured successfully.")
 
+    async def get_price_answer(self, question: str, region: str, context_data: str = "") -> str:
+        """Trả lời ngắn gọn về giá nông sản — không lải nhải."""
+        if not self.client:
+            return f"[Test] Câu trả lời giả lập cho: '{question}'"
+
+        system_instruction = (
+            f"Bạn là hệ thống thông tin giá nông sản tự động tại Việt Nam.\n"
+            f"Vùng mặc định: {region}.\n"
+            "QUY TẮC NGHIÊM NGẶT:\n"
+            "- Trả lời TỐI ĐA 10 dòng, KHÔNG có lời dẫn dài.\n"
+            "- Bắt đầu ngay bằng số liệu giá cụ thể (VNĐ/kg).\n"
+            "- Dùng bảng Markdown hoặc bullet ngắn.\n"
+            "- Ghi rõ vùng địa lý và ngày cập nhật.\n"
+            "- Nếu có lịch sử 7 ngày: nêu xu hướng (tăng/giảm/ổn định) + % thay đổi.\n"
+            "- Nếu không có dữ liệu vùng yêu cầu: nêu rõ và cho giá vùng gần nhất.\n"
+            "- KHÔNG giải thích nguyên nhân, KHÔNG khuyến nghị dài."
+        )
+        prompt = (
+            f"Dữ liệu thực tế:\n{context_data or 'Không có dữ liệu.'}\n\n"
+            f"Câu hỏi: {question}\n\n"
+            "Trả lời ngắn gọn với số liệu cụ thể."
+        )
+
+        for model_name in self.model_fallbacks:
+            try:
+                response = await self.client.aio.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(system_instruction=system_instruction),
+                )
+                return response.text or ""
+            except Exception as e:
+                error_msg = str(e)
+                if any(k in error_msg for k in ("429", "RESOURCE_EXHAUSTED", "503", "UNAVAILABLE", "quota", "404", "NOT_FOUND")):
+                    logger.warning(f"[price/{model_name}] {error_msg[:60]}..., chuyển tiếp...")
+                    continue
+                return f"Lỗi AI: {error_msg}"
+
+        return "Xin lỗi, hệ thống AI đang bận. Vui lòng thử lại sau ít phút."
+
     async def get_farming_advice(self, question: str, context_data: str = "") -> str:
         if not self.client:
             return f"[Chế độ Test] Đây là câu trả lời giả lập từ AI cho câu hỏi: '{question}'. Để dùng AI thật, bạn cần thêm GEMINI_API_KEY vào file .env!"
