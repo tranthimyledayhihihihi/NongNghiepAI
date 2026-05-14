@@ -1,14 +1,15 @@
+import axios from 'axios';
 import api from './api';
 
+const aiAxios = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
+  timeout: 90000,
+  headers: { 'Content-Type': 'application/json' },
+});
+
 export const aiApi = {
-  chat: async ({ question, cropName, region, userId, sessionId }) => {
-    const response = await api.post('/api/chat', {
-      question,
-      crop_name: cropName,
-      region,
-      user_id: userId,
-      session_id: sessionId,
-    });
+  chat: async ({ question }) => {
+    const response = await aiAxios.post('/api/chat/price-qa', { question });
     return response.data;
   },
 };

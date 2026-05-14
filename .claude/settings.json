@@ -34,7 +34,20 @@
       "PowerShell(Invoke-RestMethod -Uri \"http://127.0.0.1:5000/health\" -Method GET -ErrorAction SilentlyContinue)",
       "PowerShell($body = [System.Text.Encoding]::UTF8.GetBytes\\('{\"question\":\"thoi tiet xau\"}'\\); $req = [System.Net.HttpWebRequest]::Create\\(\"http://127.0.0.1:5000/api/chat\"\\); $req.Method = \"POST\"; $req.ContentType = \"application/json; charset=utf-8\"; $req.ContentLength = $body.Length; $stream = $req.GetRequestStream\\(\\); $stream.Write\\($body, 0, $body.Length\\); $stream.Close\\(\\); $resp = $req.GetResponse\\(\\); $reader = New-Object System.IO.StreamReader\\($resp.GetResponseStream\\(\\)\\); $reader.ReadToEnd\\(\\))",
       "PowerShell(taskkill /PID 34396 /F)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(npm install *)",
+      "Bash(python -m pytest tests/test_api.py::test_weather_current tests/test_api.py::test_weather_agriculture_module -v)",
+      "Bash(python -m pytest tests/test_api.py -v)",
+      "Bash(python -c \"from app.integrations.tavily_client import search_prices, ask_price_qa; print\\('OK'\\)\")",
+      "Bash(python -c \"from tavily import TavilyClient; print\\('OK'\\)\")",
+      "Bash(venv\\\\Scripts\\\\pip show *)",
+      "Bash(python -c \"import tavily; print\\(dir\\(tavily\\)\\)\")",
+      "Bash(python -c \"import app.integrations.tavily_client as m; print\\('import OK'\\); print\\('is_available:', m._is_available\\(\\)\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(venv\\\\Scripts\\\\pip install *)",
+      "Bash(git check-ignore *)"
     ],
     "additionalDirectories": [
       "d:\\HocTap\\Nam3\\CDNNLT\\NongNghiepAI\\backend"

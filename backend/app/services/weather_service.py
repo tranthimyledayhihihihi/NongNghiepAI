@@ -320,6 +320,10 @@ class WeatherService:
         ]
 
         return {
+            "module_name": "Thời tiết nông vụ thông minh",
+            "region": _normalize_region(region),
+            "crop_name": crop_name,
+            "growth_stage": growth_stage,
             "current": current,
             "forecast": forecast,
             "hourly_forecast": hourly,
@@ -327,6 +331,8 @@ class WeatherService:
             "activity_recommendations": activity_recs,
             "ai_recommendation": ai_rec,
             "data_flow": data_flow,
+            "source_summary": {"source": "Open-Meteo", "url": "https://open-meteo.com"},
+            "generated_at": datetime.now(),
         }
 
     # ------------------------------------------------------------------ #
@@ -384,37 +390,39 @@ class WeatherService:
                     "wind_speed": round(wind, 1) if wind is not None else None,
                     "recommendation": " · ".join(rec_parts),
                 })
-            return result
 
-        # Fallback mock
-        base = MOCK_WEATHER.get(region, MOCK_WEATHER["default"])
-        for i in range(days):
-            dt = (date.today() + timedelta(days=i)).isoformat()
-            rain = max(0.0, base["rainfall"] + random.uniform(-5, 10))
-            temp_max = round(base["temp_max"] + random.uniform(-1, 2), 1)
-            temp_min = round(base["temp_min"] + random.uniform(-1, 1), 1)
-            hum = round(min(100.0, max(30.0, base["humidity"] + random.uniform(-5, 5))), 1)
-            rain_prob = min(100, int(rain / 0.3))
+        # Pad với mock khi DB có ít hơn days ngày
+        if len(result) < days:
+            base = MOCK_WEATHER.get(region, MOCK_WEATHER["default"])
+            last_date = date.fromisoformat(result[-1]["date"]) if result else date.today() - timedelta(days=1)
+            for i in range(days - len(result)):
+                dt = (last_date + timedelta(days=i + 1)).isoformat()
+                rain = max(0.0, base["rainfall"] + random.uniform(-5, 10))
+                temp_max = round(base["temp_max"] + random.uniform(-1, 2), 1)
+                temp_min = round(base["temp_min"] + random.uniform(-1, 1), 1)
+                hum = round(min(100.0, max(30.0, base["humidity"] + random.uniform(-5, 5))), 1)
+                rain_prob = min(100, int(rain / 0.3))
 
-            rec_parts = []
-            if rain > advice["spray_rain_limit"]:
-                rec_parts.append("Không phun thuốc")
-            if temp_max > advice["water_temp_limit"]:
-                rec_parts.append("Tăng lượng tưới")
-            if not rec_parts:
-                rec_parts.append("Thời tiết thuận lợi canh tác")
+                rec_parts = []
+                if rain > advice["spray_rain_limit"]:
+                    rec_parts.append("Không phun thuốc")
+                if temp_max > advice["water_temp_limit"]:
+                    rec_parts.append("Tăng lượng tưới")
+                if not rec_parts:
+                    rec_parts.append("Thời tiết thuận lợi canh tác")
 
-            result.append({
-                "date": dt,
-                "day_label": self._DAY_LABELS[i] if i < len(self._DAY_LABELS) else "",
-                "temp_min": temp_min,
-                "temp_max": temp_max,
-                "rainfall": round(rain, 1),
-                "rain_probability": rain_prob,
-                "humidity": hum,
-                "wind_speed": None,
-                "recommendation": " · ".join(rec_parts),
-            })
+                idx = len(result)
+                result.append({
+                    "date": dt,
+                    "day_label": self._DAY_LABELS[idx] if idx < len(self._DAY_LABELS) else "",
+                    "temp_min": temp_min,
+                    "temp_max": temp_max,
+                    "rainfall": round(rain, 1),
+                    "rain_probability": rain_prob,
+                    "humidity": hum,
+                    "wind_speed": None,
+                    "recommendation": " · ".join(rec_parts),
+                })
         return result
 
     def _build_hourly(self, current: dict) -> list[dict]:

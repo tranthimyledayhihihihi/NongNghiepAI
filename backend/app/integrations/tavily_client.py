@@ -43,8 +43,11 @@ def _is_available() -> bool:
 
 
 def _get_client():
+    key = _get_api_key()
+    if not key:
+        raise RuntimeError("TAVILY_API_KEY chưa được cấu hình")
     from tavily import TavilyClient  # lazy import — không crash nếu chưa cài
-    return TavilyClient(api_key=_get_api_key())
+    return TavilyClient(api_key=key)
 
 
 # ─── 1. Cào giá từ Tavily ──────────────────────────────────────────────────
@@ -72,6 +75,7 @@ def search_prices(max_queries: int = 4) -> List[Dict]:
                 max_results=5,
                 include_answer=False,
             )
+            before = len(raw_items)
             for result in resp.get("results", []):
                 content = result.get("content", "")
                 url = result.get("url", "")
@@ -85,7 +89,7 @@ def search_prices(max_queries: int = 4) -> List[Dict]:
                         "region":        _guess_region(url + " " + content[:300]),
                         "date":          today,
                     })
-            logger.info(f"[Tavily] '{query}': {len(raw_items)} kết quả thô")
+            logger.info(f"[Tavily] '{query}': {len(raw_items) - before} kết quả thô")
         except Exception as e:
             logger.debug(f"[Tavily] Lỗi query '{query}': {e}")
 
@@ -110,12 +114,12 @@ def _guess_region(text: str) -> str:
     for hint, region in _hints.items():
         if hint in text_lower:
             return region
-    return "TP.HCM"
+    return None
 
 
 # ─── 2. Hỏi-đáp định giá (Price Q&A) ─────────────────────────────────────
 
-class TavilyClient:
+class TavilySearchClient:
     """Wrapper class cho backward-compatibility — bọc các module-level functions."""
 
     def search_prices(self, max_queries: int = 4) -> List[Dict]:

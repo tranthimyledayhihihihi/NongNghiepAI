@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import DataSourceBadge from '../components/DataSourceBadge';
 import { aiApi } from '../services/aiApi';
 
@@ -358,7 +359,13 @@ const AIChatPage = () => {
                     {message.image && (
                       <img src={message.image} alt="Ảnh đã gửi" className="mb-3 max-h-72 w-full rounded-lg object-cover" />
                     )}
-                    <p>{message.content}</p>
+                    {message.type === 'bot' ? (
+                      <div className="prose prose-sm max-w-none prose-headings:font-bold prose-headings:text-gray-900 prose-h1:text-base prose-h2:text-sm prose-h3:text-sm prose-p:text-gray-700 prose-p:leading-6 prose-strong:text-gray-900 prose-ul:my-2 prose-ul:space-y-1 prose-ol:my-2 prose-ol:space-y-1 prose-li:text-gray-700 prose-li:leading-6">
+                        <ReactMarkdown>{message.content}</ReactMarkdown>
+                      </div>
+                    ) : (
+                      <p>{message.content}</p>
+                    )}
                     {message.source && (
                       <div className="mt-3">
                         <DataSourceBadge data={message.source} />

@@ -188,6 +188,7 @@ async def price_qa(request: PriceQARequest, db: Session = Depends(get_db)):
         full_answer = f"Không tìm được dữ liệu từ Tavily: {e}"
 
     # ── Bước 3: Nếu Tavily không trả lời được, dùng Gemini + context DB ───
+    _AI_BUSY = "Xin lỗi, hệ thống AI đang bận. Vui lòng thử lại sau ít phút."
     if not tavily_answer and db_context:
         try:
             full_answer = await gemini_client.get_farming_advice(
@@ -196,6 +197,18 @@ async def price_qa(request: PriceQARequest, db: Session = Depends(get_db)):
             )
         except Exception:
             pass
+
+    # ── Bước 4: Fallback từ DB khi tất cả AI đều fail ─────────────────────
+    if not full_answer or full_answer == _AI_BUSY or full_answer.startswith("Không tìm được"):
+        if db_prices:
+            lines = ["**Dữ liệu giá nông sản mới nhất trong hệ thống:**\n"]
+            for p in db_prices:
+                lines.append(f"- **{p['crop_name']}** tại {p['region']}: **{p['price']:,.0f} VNĐ/kg** (nguồn: {p['source']}, ngày {p['date']})")
+            lines.append("\n---")
+            lines.append("*Lưu ý: Hệ thống AI tạm thời quá tải. Dữ liệu trên được lấy trực tiếp từ cơ sở dữ liệu của hệ thống.*")
+            full_answer = "\n".join(lines)
+        else:
+            full_answer = "Hiện không có dữ liệu về nông sản này trong hệ thống. Vui lòng thử lại sau hoặc đặt câu hỏi về hồ tiêu, sầu riêng."
 
     return PriceQAResponse(
         answer=full_answer,
