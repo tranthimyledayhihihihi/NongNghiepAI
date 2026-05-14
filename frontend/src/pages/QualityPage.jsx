@@ -182,14 +182,22 @@ const QualityPage = () => {
 
               {/* Price */}
               <div className="p-4 border border-gray-200 rounded-xl">
-                <p className="text-xs font-medium text-gray-500 mb-1">Giá đề xuất tại {result.region}</p>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-medium text-gray-500">Giá đề xuất tại {result.region}</p>
+                  {result.quality_multiplier != null && result.quality_multiplier < 1 && (
+                    <span className="text-xs px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full font-medium">
+                      Giảm {Math.round((1 - result.quality_multiplier) * 100)}% do chất lượng
+                    </span>
+                  )}
+                </div>
                 <p className="text-xl font-bold text-gray-900">
                   {result.suggested_price_range.min.toLocaleString('vi-VN')} —{' '}
                   {result.suggested_price_range.max.toLocaleString('vi-VN')} đ/kg
                 </p>
-                {result.weather_summary && (
-                  <p className="text-xs text-gray-400 mt-1">{result.weather_summary}</p>
-                )}
+                <p className="text-xs text-gray-400 mt-1">
+                  {result.price_source === 'market_db' ? 'Nguồn: giá thị trường thực tế' : 'Nguồn: ước tính'}
+                  {result.weather_summary ? ` · ${result.weather_summary}` : ''}
+                </p>
               </div>
 
               {/* Defects */}

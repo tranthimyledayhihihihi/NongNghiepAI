@@ -75,21 +75,27 @@ class QualityService:
         # Nếu người dùng không nhập crop_name, dùng kết quả nhận diện
         effective_crop = crop_name if crop_name and crop_name not in ("unknown", "") else detected_crop
 
-        # 2. Tính giá đề xuất qua pricing_service (bao gồm điều chỉnh thời tiết)
-        pricing = pricing_service.suggest_price(
-            db,
-            PricingSuggestRequest(
-                crop_name=effective_crop,
-                region=region,
-                quantity=1,
-                quality_grade=grade,
-            ),
-        )
+        # 2. Lấy giá thực từ DB/Tavily theo grade
+        price_info = self._fetch_real_price(db, effective_crop, region, grade)
 
-        # Dùng giá điều chỉnh thời tiết nếu có, fallback về giá gốc
-        final_suggested = pricing.get("weather_suggested_price", pricing["suggested_price"])
-        final_min       = pricing.get("weather_min_price", pricing["min_price"])
-        final_max       = pricing.get("weather_max_price", pricing["max_price"])
+        final_min       = price_info["min"]
+        final_max       = price_info["max"]
+        final_suggested = price_info["suggested"]
+
+        # Cũng gọi pricing_service để lấy weather_factor (bổ sung thông tin)
+        pricing = {}
+        try:
+            pricing = pricing_service.suggest_price(
+                db,
+                PricingSuggestRequest(
+                    crop_name=effective_crop,
+                    region=region,
+                    quantity=1,
+                    quality_grade=grade,
+                ),
+            )
+        except Exception:
+            pass
 
         # 3. Lưu vào DB qua repository
         record = create_quality_check(
@@ -136,6 +142,9 @@ class QualityService:
                 "min": final_min,
                 "max": final_max,
             },
+            # Nguồn giá và hệ số chất lượng
+            "price_source":        price_info.get("source", ""),
+            "quality_multiplier":  price_info.get("multiplier", 1.0),
             # Thông tin thời tiết kèm theo
             "weather_factor":      pricing.get("weather_factor", 1.0),
             "weather_summary":     pricing.get("weather_summary", ""),
@@ -165,17 +174,19 @@ class QualityService:
         """Lưu vào bảng QualityRecords trực tiếp (Quang) - best-effort."""
         if not user_id:
             return
+        _GRADE_MAP = {"grade_1": "Loai 1", "grade_2": "Loai 2", "grade_3": "Loai 3"}
+        db_grade = _GRADE_MAP.get(grade, "Loai 2")
         try:
             from app.models.quality import QualityRecord
             from app.models.crop import CropType
-            crop = db.query(CropType).filter(CropType.CropName == crop_name).first()
+            crop = db.query(CropType).filter(CropType.CropName.ilike(f"%{crop_name}%")).first()
             if not crop:
                 return
             record = QualityRecord(
                 UserID=user_id,
                 CropID=crop.CropID,
                 ImagePath=image_path,
-                AIGrade=grade,
+                AIGrade=db_grade,
                 ConfidenceScore=confidence,
                 DetectedIssues=json.dumps(defects, ensure_ascii=False),
                 SuggestedPriceMin=min_price,
@@ -201,6 +212,80 @@ class QualityService:
         record, crop = result
         return self._record_to_dict(record, crop)
 
+    # Hệ số giảm giá theo chất lượng
+    _GRADE_MULTIPLIER = {"grade_1": 1.0, "grade_2": 0.78, "grade_3": 0.45}
+
+    def _fetch_real_price(self, db: Session, crop_name: str, region: str, grade: str) -> dict:
+        """
+        Lấy giá thực từ MarketPrices DB cho crop_name.
+        Áp hệ số chất lượng: grade_1=100%, grade_2=78%, grade_3=45%.
+        Fallback về TypicalPrice nếu không có market data.
+        """
+        from app.models.crop import Crop
+        from app.models.price import MarketPrice
+
+        multiplier = self._GRADE_MULTIPLIER.get(grade, 0.78)
+
+        # Tìm crop trong DB (fuzzy match, không phân biệt hoa thường)
+        crop = (
+            db.query(Crop)
+            .filter(Crop.CropName.ilike(f"%{crop_name}%"))
+            .first()
+        )
+
+        base_price: float | None = None
+
+        if crop:
+            # Ưu tiên lấy giá theo vùng, fallback toàn quốc
+            mp = (
+                db.query(MarketPrice)
+                .filter(MarketPrice.CropID == crop.CropID, MarketPrice.Region == region)
+                .order_by(MarketPrice.PriceDate.desc())
+                .first()
+            )
+            if not mp:
+                mp = (
+                    db.query(MarketPrice)
+                    .filter(MarketPrice.CropID == crop.CropID)
+                    .order_by(MarketPrice.PriceDate.desc())
+                    .first()
+                )
+            if mp:
+                base_price = float(mp.PricePerKg)
+
+            # Fallback về typical price nếu không có market price
+            if base_price is None and crop.TypicalPriceMin and crop.TypicalPriceMax:
+                base_price = (float(crop.TypicalPriceMin) + float(crop.TypicalPriceMax)) / 2
+
+        # Nếu vẫn không tìm được, thử Tavily
+        if base_price is None:
+            try:
+                import asyncio
+                from app.integrations.tavily_client import ask_price_qa
+                result = asyncio.run(asyncio.to_thread(
+                    ask_price_qa,
+                    f"giá {crop_name} hiện nay tại {region} VNĐ/kg"
+                ))
+                import re
+                nums = re.findall(r'\d[\d\.]{2,8}', result.get("tavily_answer", ""))
+                if nums:
+                    base_price = float(nums[0].replace(".", ""))
+            except Exception:
+                base_price = 20_000  # fallback tuyệt đối
+
+        base_price = base_price or 20_000
+
+        suggested = round(base_price * multiplier)
+        spread = 0.08  # ±8%
+        return {
+            "suggested": suggested,
+            "min":       round(suggested * (1 - spread)),
+            "max":       round(suggested * (1 + spread)),
+            "base_price": base_price,
+            "multiplier": multiplier,
+            "source": "market_db" if crop else "tavily",
+        }
+
     @staticmethod
     def _mock_grade(image_path: str) -> tuple[str, float, list[str]]:
         """Phân loại dựa trên tên file (fallback khi không có AI)."""
@@ -219,11 +304,20 @@ class QualityService:
 
     @staticmethod
     def _recommendations(grade: str) -> list[str]:
-        if grade in ("grade_1", "Loại 1"):
-            return ["Uu tien ban kenh sieu thi, cua hang sach hoac xuat khau."]
-        if grade in ("grade_2", "Loại 2"):
-            return ["Phu hop cho cho dau moi hoac thuong lai dia phuong."]
-        return ["Nen ban nhanh hoac chuyen sang kenh che bien de giam hao hut."]
+        if grade in ("grade_1", "Loai 1", "Loại 1"):
+            return [
+                "Ưu tiên bán kênh siêu thị, cửa hàng sạch hoặc xuất khẩu.",
+                "Đóng gói đẹp để tăng giá trị thương phẩm.",
+            ]
+        if grade in ("grade_2", "Loai 2", "Loại 2"):
+            return [
+                "Phù hợp cho chợ đầu mối hoặc thương lái địa phương.",
+                "Giá bán thấp hơn ~22% so với loại 1.",
+            ]
+        return [
+            "Nên bán nhanh hoặc chuyển sang kênh chế biến để giảm hao hụt.",
+            "Giá bán chỉ đạt ~45% giá thị trường — cân nhắc làm nước ép, sấy khô.",
+        ]
 
     @staticmethod
     def _record_to_dict(record, crop) -> dict:
