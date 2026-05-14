@@ -166,7 +166,8 @@ class QualityService:
         if not user_id:
             return
         try:
-            from app.models.crop import CropType, QualityRecord
+            from app.models.quality import QualityRecord
+            from app.models.crop import CropType
             crop = db.query(CropType).filter(CropType.CropName == crop_name).first()
             if not crop:
                 return
