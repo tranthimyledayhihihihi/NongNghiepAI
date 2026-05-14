@@ -98,3 +98,21 @@ def test_chat_history_response_shape():
     assert "user_message" in item
     assert "ai_response" in item
     assert "created_at" in item
+
+
+# ── Slice 3: /price-qa cũng phải lưu lịch sử ────────────────────────────────
+
+def test_price_qa_saves_conversation_for_authenticated_user():
+    """POST /api/chat/price-qa với user đã đăng nhập phải lưu vào lịch sử."""
+    token = _register_and_login()
+    r = client.post("/api/chat/price-qa",
+                    json={"question": "Giá hồ tiêu hôm nay?"},
+                    headers=_auth(token))
+    assert r.status_code == 200
+
+    h = client.get("/api/chat/history", headers=_auth(token))
+    assert h.status_code == 200
+    history = h.json()["history"]
+    assert len(history) >= 1
+    assert any("hồ tiêu" in item["user_message"].lower() or "ho tieu" in item["user_message"].lower()
+               for item in history)

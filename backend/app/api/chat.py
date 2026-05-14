@@ -159,7 +159,11 @@ async def ask_farming_advice(
 
 
 @router.post("/price-qa", response_model=PriceQAResponse)
-async def price_qa(request: PriceQARequest, db: Session = Depends(get_db)):
+async def price_qa(
+    request: PriceQARequest,
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
+):
     """
     Hỏi-đáp định giá nông sản với Tavily Search + dữ liệu DB thực tế.
 
@@ -230,6 +234,8 @@ async def price_qa(request: PriceQARequest, db: Session = Depends(get_db)):
             full_answer = "\n".join(lines)
         else:
             full_answer = "Hiện không có dữ liệu về nông sản này trong hệ thống. Vui lòng thử lại sau hoặc đặt câu hỏi về hồ tiêu, sầu riêng."
+
+    _save_conversation(db, current_user.UserID if current_user else None, q, full_answer)
 
     return PriceQAResponse(
         answer=full_answer,
