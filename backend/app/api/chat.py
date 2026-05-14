@@ -262,21 +262,42 @@ async def price_qa(
     except Exception:
         pass
 
-    # ── Xây context gọn cho AI ─────────────────────────────────────────────
+    # ── Bước 3 extra: Luôn lấy top giá toàn quốc làm tham chiếu ──────────
+    national_prices: list[tuple] = []
+    try:
+        national_prices = db.execute(text("""
+            SELECT TOP 30 c.CropName, m.Region, m.PricePerKg, m.PriceDate
+            FROM MarketPrices m
+            JOIN CropTypes c ON m.CropID = c.CropID
+            ORDER BY m.PriceDate DESC
+        """)).fetchall()
+    except Exception:
+        pass
+
+    # ── Xây context cho AI: vùng cụ thể + toàn quốc tham chiếu ───────────
     ctx_parts: list[str] = []
+
     if db_prices:
-        lines = [f"**Giá mới nhất tại {region}:**"]
+        lines = [f"## Giá tại {region} (mới nhất):"]
         for p in db_prices:
             lines.append(f"- {p['crop_name']} ({p['region']}): {p['price']:,.0f} VNĐ/kg — {p['date']}")
         ctx_parts.append("\n".join(lines))
+
     if price_history:
-        lines = [f"**Lịch sử giá 7 ngày tại {region}:**"]
+        lines = [f"## Lịch sử giá 7 ngày tại {region}:"]
         for h in price_history:
             lines.append(
                 f"- {h[0]} ({h[1]}) ngày {h[5]}: "
                 f"TB {float(h[2]):,.0f} | Min {float(h[3]):,.0f} | Max {float(h[4]):,.0f} VNĐ/kg"
             )
         ctx_parts.append("\n".join(lines))
+
+    if national_prices:
+        lines = ["## Giá toàn quốc (tham chiếu khi vùng trên thiếu dữ liệu):"]
+        for r in national_prices:
+            lines.append(f"- {r[0]} tại {r[1]}: {float(r[2]):,.0f} VNĐ/kg — {r[3]}")
+        ctx_parts.append("\n".join(lines))
+
     db_context = "\n\n".join(ctx_parts)
 
     # ── Bước 3: Tavily Search ──────────────────────────────────────────────

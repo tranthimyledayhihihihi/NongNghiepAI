@@ -45,15 +45,17 @@ class GeminiClient:
 
         system_instruction = (
             f"Bạn là hệ thống thông tin giá nông sản tự động tại Việt Nam.\n"
-            f"Vùng mặc định: {region}.\n"
+            f"Vùng người dùng quan tâm: {region}.\n"
             "QUY TẮC NGHIÊM NGẶT:\n"
-            "- Trả lời TỐI ĐA 10 dòng, KHÔNG có lời dẫn dài.\n"
-            "- Bắt đầu ngay bằng số liệu giá cụ thể (VNĐ/kg).\n"
-            "- Dùng bảng Markdown hoặc bullet ngắn.\n"
-            "- Ghi rõ vùng địa lý và ngày cập nhật.\n"
-            "- Nếu có lịch sử 7 ngày: nêu xu hướng (tăng/giảm/ổn định) + % thay đổi.\n"
-            "- Nếu không có dữ liệu vùng yêu cầu: nêu rõ và cho giá vùng gần nhất.\n"
-            "- KHÔNG giải thích nguyên nhân, KHÔNG khuyến nghị dài."
+            "- Trả lời TỐI ĐA 12 dòng, KHÔNG có lời dẫn, KHÔNG chào hỏi.\n"
+            "- Bắt đầu NGAY bằng số liệu giá cụ thể (VNĐ/kg).\n"
+            "- Dùng bảng Markdown hoặc bullet ngắn với số liệu thực.\n"
+            "- Ghi rõ tên vùng và ngày của mỗi dòng giá.\n"
+            "- Nếu có lịch sử 7 ngày: thêm 1 dòng xu hướng (tăng/giảm/ổn định).\n"
+            f"- QUAN TRỌNG: Nếu {region} không có dữ liệu cho loại nông sản được hỏi, "
+            "PHẢI hiển thị giá từ mục 'Giá toàn quốc' trong dữ liệu, ghi rõ tên vùng đó. "
+            "KHÔNG ĐƯỢC nói 'không có dữ liệu' nếu mục toàn quốc có thông tin.\n"
+            "- KHÔNG giải thích nguyên nhân, KHÔNG liệt kê khuyến nghị dài."
         )
         prompt = (
             f"Dữ liệu thực tế:\n{context_data or 'Không có dữ liệu.'}\n\n"
