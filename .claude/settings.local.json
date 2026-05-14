@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"d:\\\\HocTap\\\\Nam3\\\\CDNNLT\\\\NongNghiepAI\" -Recurse -Depth 2)",
+      "Bash(Select-Object FullName)",
+      "Bash(Test-Path \"d:\\\\HocTap\\\\Nam3\\\\CDNNLT\\\\NongNghiepAI\\\\frontend\\\\.env\")",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://localhost:8000/health\" -TimeoutSec 5 -ErrorAction Stop; Write-Output \"STATUS: $\\($r.StatusCode\\)\"; Write-Output $r.Content } catch { Write-Output \"FAILED: $_\" })",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://localhost:8000/\" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop; Write-Output \"STATUS: $\\($r.StatusCode\\)\"; Write-Output $r.Content } catch [System.Net.WebException] { Write-Output \"WebException: $\\($_.Exception.Message\\)\" } catch { Write-Output \"FAILED: $\\($_.Exception.GetType\\(\\).Name\\) — $\\($_.Exception.Message\\)\" })",
+      "PowerShell(netstat -ano)",
+      "PowerShell(Get-Process -Id 6316)",
+      "Bash(curl -s --max-time 5 http://localhost:8000/)",
+      "Bash(curl -v --max-time 5 http://localhost:8000/health)",
+      "PowerShell(Get-Process | Where-Object { $_.MainWindowTitle -match \"python\" -or $_.ProcessName -match \"python\" } | Select-Object Id, ProcessName, CPU | Format-Table)",
+      "PowerShell(Get-WmiObject Win32_Process | Where-Object { $_.Name -match \"python\" } | Select-Object ProcessId, CommandLine | Format-List)",
+      "Bash(curl -s --max-time 5 http://localhost:8001/health)",
+      "Bash(curl -s --max-time 5 http://localhost:8001/api/crops)",
+      "Bash(curl -s --max-time 5 http://localhost:8001/db-test)"
+    ]
+  }
+}
