@@ -68,27 +68,31 @@ function formatHistoryTime(isoString) {
 }
 
 const quickSuggestions = [
-  'Lập kế hoạch canh tác cho vụ tới',
-  'Cảnh báo thời tiết xấu tuần này',
-  'Dự báo giá cà phê tại Tây Nguyên',
-  'Phân tích lịch bón phân cho lúa',
+  'Thời tiết và cảnh báo bão tuần này tại Đà Nẵng',
+  'Giá sầu riêng tại Đắk Lắk hôm nay',
+  'Cách xử lý đất phèn ĐBSCL',
+  'Xâm nhập mặn tháng này ảnh hưởng cây trồng thế nào',
+  'Sâu cuốn lá lúa: cách nhận biết và xử lý',
+  'Kỹ thuật trồng cà phê vụ mới',
+  'Xu hướng giá hồ tiêu tháng này',
+  'Lịch bón phân cho lúa hè thu',
 ];
 
 const capabilities = [
   {
     icon: Clock,
-    title: 'Hỗ trợ liên tục',
-    description: 'Gợi ý xử lý nhanh cho giá, thời tiết và mùa vụ.',
+    title: 'Giá & Thị trường',
+    description: 'Giá nông sản theo vùng, xu hướng 7 ngày, so sánh toàn quốc.',
   },
   {
     icon: Sparkles,
-    title: 'Phân tích theo ngữ cảnh',
-    description: 'Kết hợp cây trồng, khu vực và lịch canh tác.',
+    title: 'Thời tiết & Cảnh báo',
+    description: 'Dự báo thời tiết, cảnh báo bão lũ, khuyến cáo canh tác theo thời tiết.',
   },
   {
     icon: Leaf,
-    title: 'Tư vấn nông nghiệp',
-    description: 'Trả lời về sâu bệnh, dinh dưỡng và thu hoạch.',
+    title: 'Đất & Kỹ thuật',
+    description: 'Cải tạo đất phèn, đất mặn, sâu bệnh, kỹ thuật trồng trọt.',
   },
 ];
 

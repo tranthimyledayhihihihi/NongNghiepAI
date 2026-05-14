@@ -11,7 +11,7 @@ router = APIRouter(prefix="/api/chat", tags=["AI Chatbot"])
 gemini_client = GeminiClient()
 
 
-def _save_conversation(db: Session, user_id: int | None, question: str, answer: str) -> None:
+def _save_conversation(db: Session, user_id: int | None, question: str, answer: str, topic: str = "general") -> None:
     try:
         from app.models.conversation import AIConversation
         db.add(AIConversation(
@@ -19,6 +19,7 @@ def _save_conversation(db: Session, user_id: int | None, question: str, answer: 
             UserMessage=question,
             AIResponse=answer,
             Provider="gemini",
+            Topic=topic,
         ))
         db.commit()
     except Exception:
@@ -55,13 +56,95 @@ class PriceQAResponse(BaseModel):
     db_prices: list = []
 
 # Từ khoá kích hoạt RAG từng loại
-_PRICE_KEYWORDS = ["giá", "bao nhiêu", "thị trường", "mua", "bán", "đồng", "tiền", "xu hướng giá"]
-_CROP_KEYWORDS  = ["trồng", "chăm sóc", "thu hoạch", "sinh trưởng", "phát triển", "ra hoa", "đậu trái", "bón phân"]
-_PEST_KEYWORDS  = ["sâu", "bệnh", "nấm", "vi khuẩn", "virus", "héo", "vàng lá", "thối", "rệp", "nhện"]
+_PRICE_KEYWORDS       = ["giá", "bao nhiêu", "thị trường", "mua", "bán", "đồng", "tiền", "xu hướng giá"]
+_CROP_KEYWORDS        = ["trồng", "chăm sóc", "thu hoạch", "sinh trưởng", "phát triển", "ra hoa", "đậu trái", "bón phân", "gieo", "ươm", "canh tác", "mùa vụ"]
+_PEST_KEYWORDS        = ["sâu", "bệnh", "nấm", "vi khuẩn", "virus", "héo", "vàng lá", "thối", "rệp", "nhện", "côn trùng", "thuốc trừ", "thuốc bảo vệ", "phòng trừ"]
+_WEATHER_KEYWORDS     = ["thời tiết", "bão", "lũ", "lụt", "mưa", "hạn hán", "nhiệt độ", "độ ẩm", "gió", "dự báo", "áp thấp", "nắng nóng", "rét đậm", "sương muối", "ngập", "khô hạn", "lũ quét", "bão số"]
+_SALINITY_KEYWORDS    = ["độ mặn", "xâm nhập mặn", "đất mặn", "nước mặn", "nhiễm mặn", "mặn hóa", "mặn xâm"]
+_ACIDITY_KEYWORDS     = ["phèn", "đất phèn", "đất chua", "ph đất", "cải tạo đất", "vôi nông nghiệp", "bón vôi", "đất nhiễm phèn", "axit đất"]
 
 def _question_contains(question: str, keywords: list[str]) -> bool:
     q = question.lower()
     return any(k in q for k in keywords)
+
+
+def _detect_topic(question: str) -> str:
+    """Phát hiện chủ đề chính của câu hỏi."""
+    q = question.lower()
+    if any(k in q for k in _WEATHER_KEYWORDS):
+        return "weather"
+    if any(k in q for k in _SALINITY_KEYWORDS):
+        return "soil_salinity"
+    if any(k in q for k in _ACIDITY_KEYWORDS):
+        return "soil_acidity"
+    if any(k in q for k in _PEST_KEYWORDS):
+        return "pest"
+    if any(k in q for k in _CROP_KEYWORDS):
+        return "cultivation"
+    if any(k in q for k in _PRICE_KEYWORDS):
+        return "price"
+    return "general"
+
+
+_SALINITY_KNOWLEDGE = """## Kiến thức xử lý đất mặn (Saline Soil):
+- Đất mặn: ECe > 4 dS/m, phổ biến ĐBSCL khi nước biển xâm nhập tháng 1–4
+- Ngưỡng an toàn: Lúa ECe < 2 dS/m | Sầu riêng/Chôm chôm < 1 dS/m | Dừa < 6 dS/m
+- Nhận biết: Lá cây cháy mép, đất có váng muối trắng, cây chậm phát triển
+- Xử lý cấp bách: Đắp bờ ngăn nước mặn | Tưới rửa mặn bằng nước ngọt 3–4 lần liên tiếp
+- Cải tạo: Bón thạch cao (CaSO4) 500–1000 kg/ha | Trồng cây phân xanh cải tạo đất
+- Giống chịu mặn: Lúa OM9915, GKG9, Đài Thơm 8 | Ớt, cà tím, mè chịu mặn tương đối
+- Thời điểm nguy hiểm: tháng 2–4 mặn xâm nhập sâu nhất tại ĐBSCL"""
+
+_ACIDITY_KNOWLEDGE = """## Kiến thức xử lý đất phèn (Acid Sulfate Soil):
+- Đất phèn: pH < 4.5, có pyrite (FeS2) và jarosite vàng, phổ biến tứ giác Long Xuyên, Đồng Tháp
+- Nhận biết: đất vàng xám/xám đen | nước ruộng màu đỏ cam | lá cây vàng từ ngọn xuống
+- Không cày sâu khi đất phèn tiềm tàng | Xả phèn trước khi trồng 2–3 tuần
+- Bón vôi: CaCO3 (vôi nông nghiệp) 1–2 tấn/ha | Dolomite nếu thiếu Mg | Trộn đều tầng canh tác
+- pH mục tiêu: 5.5–6.5 cho lúa và rau màu | > 6.0 cho cây ăn trái
+- Phân bón phù hợp: Lân nung chảy (thermophosphate) thay super lân | Ưu tiên NPK cao P và K
+- Luân canh: Lúa → cải thiện hơn hoa màu liên tục | Cây tràm giúp ổn định đất phèn"""
+
+
+_WEATHER_COND_VI = {
+    "clear": "trời trong", "mostly_clear": "ít mây", "partly_cloudy": "mây rải rác",
+    "cloudy": "nhiều mây", "rainy": "có mưa", "heavy_rain": "mưa lớn",
+    "thunderstorm": "dông sấm sét", "foggy": "sương mù", "drizzle": "mưa phùn",
+    "rain_showers": "mưa rào", "sunny": "nắng đẹp",
+}
+
+
+def _build_weather_context(db: Session, region: str) -> str:
+    try:
+        from app.services.weather_service import weather_service
+        current = weather_service.get_current_weather(db, region)
+        cond = _WEATHER_COND_VI.get(str(current.get("condition", "")), str(current.get("condition", "chưa rõ")))
+        lines = [f"## Thời tiết tại {current.get('region', region)} (live):"]
+        temp = current.get("temperature")
+        if temp is not None:
+            lines.append(f"- Nhiệt độ: {temp}°C (thấp nhất {current.get('temp_min', 'N/A')}°C / cao nhất {current.get('temp_max', 'N/A')}°C)")
+        if current.get("humidity") is not None:
+            lines.append(f"- Độ ẩm: {current['humidity']}%")
+        rain = current.get("rainfall") or 0
+        lines.append(f"- Lượng mưa: {float(rain):.1f} mm/ngày")
+        if current.get("wind_speed"):
+            lines.append(f"- Gió: {float(current['wind_speed']):.0f} km/h")
+        lines.append(f"- Điều kiện: {cond}")
+        warnings = current.get("warnings") or []
+        if warnings:
+            lines.append("\n## Cảnh báo thời tiết:")
+            for w in warnings:
+                lines.append(f"- ⚠️ {w}")
+        forecast = weather_service.get_forecast(db, region, days=3)
+        if forecast:
+            lines.append(f"\n## Dự báo 3 ngày tới tại {region}:")
+            for f in forecast[:3]:
+                fc = _WEATHER_COND_VI.get(str(f.get("condition", "")), str(f.get("condition", "")))
+                fwarns = f.get("warnings") or []
+                ws = f" | ⚠️ {fwarns[0]}" if fwarns else ""
+                lines.append(f"- {f.get('date', 'N/A')}: {fc} | {f.get('temp_min', '?')}–{f.get('temp_max', '?')}°C | mưa {float(f.get('rainfall', 0)):.0f}mm{ws}")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"## Lưu ý: Không lấy được dữ liệu thời tiết tại {region}."
 
 # Bảng mapping từ khoá vùng → tên vùng chính xác trong DB
 _REGION_KEYWORDS: dict[str, str] = {
@@ -352,6 +435,123 @@ async def price_qa(
         sources=sources,
         db_prices=db_prices,
     )
+
+
+class AskResponse(BaseModel):
+    answer: str
+    topic: str = "general"
+    region: str = ""
+    sources: list = []
+
+
+@router.post("/ask", response_model=AskResponse)
+async def ask_agri(
+    request: ChatRequest,
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
+):
+    """Endpoint thống nhất: tự phát hiện chủ đề (giá, thời tiết, đất phèn/mặn, sâu bệnh, canh tác)."""
+    from datetime import date as _date, timedelta
+    from app.models.crop import Crop as _Crop
+    from app.models.price import MarketPrice as _MP, PriceHistory as _PH
+
+    q = request.question
+    topic = _detect_topic(q)
+    region = _detect_region(q)
+    _seven_ago = _date.today() - timedelta(days=7)
+    ctx_parts: list[str] = []
+    sources: list = []
+
+    # ── Context theo chủ đề ──────────────────────────────────────────────────
+    if topic == "weather":
+        ctx_parts.append(_build_weather_context(db, region))
+
+    elif topic == "soil_salinity":
+        ctx_parts.append(_SALINITY_KNOWLEDGE)
+
+    elif topic == "soil_acidity":
+        ctx_parts.append(_ACIDITY_KNOWLEDGE)
+
+    elif topic == "price":
+        try:
+            rows = (
+                db.query(_Crop.CropName, _MP)
+                .join(_MP, _Crop.CropID == _MP.CropID)
+                .filter(_MP.Region == region)
+                .order_by(_MP.PriceDate.desc())
+                .limit(15).all()
+            )
+            if not rows:
+                rows = (
+                    db.query(_Crop.CropName, _MP)
+                    .join(_MP, _Crop.CropID == _MP.CropID)
+                    .order_by(_MP.PriceDate.desc())
+                    .limit(15).all()
+                )
+            if rows:
+                lines = [f"## Giá tại {region}:"]
+                for name, mp in rows:
+                    lines.append(f"- {name} ({mp.Region}): {float(mp.PricePerKg):,.0f} VNĐ/kg — {mp.PriceDate}")
+                ctx_parts.append("\n".join(lines))
+            hist = (
+                db.query(_Crop.CropName, _PH)
+                .join(_PH, _Crop.CropID == _PH.CropID)
+                .filter(_PH.RecordDate >= _seven_ago)
+                .order_by(_PH.RecordDate.desc())
+                .limit(30).all()
+            )
+            if hist:
+                lines = ["## Lịch sử giá 7 ngày:"]
+                for name, ph in hist:
+                    lines.append(f"- {name} ({ph.Region}) ngày {ph.RecordDate}: TB {float(ph.AvgPrice):,.0f} VNĐ/kg")
+                ctx_parts.append("\n".join(lines))
+        except Exception as e:
+            pass
+
+    # Canh tác, sâu bệnh, general: bổ sung thông tin cây trồng từ DB
+    if topic in ("cultivation", "pest", "general"):
+        try:
+            crops = (
+                db.query(_Crop)
+                .order_by(_Crop.CropName)
+                .limit(15).all()
+            )
+            if crops:
+                lines = ["## Thông tin cây trồng:"]
+                for c in crops:
+                    days = f", chu kỳ {c.GrowthDurationDays} ngày" if c.GrowthDurationDays else ""
+                    season = f", mùa vụ: {c.HarvestSeason}" if c.HarvestSeason else ""
+                    price_range = (
+                        f", giá: {float(c.TypicalPriceMin):,.0f}–{float(c.TypicalPriceMax):,.0f} VNĐ/kg"
+                        if c.TypicalPriceMin and c.TypicalPriceMax else ""
+                    )
+                    lines.append(f"- {c.CropName}{days}{season}{price_range}")
+                ctx_parts.append("\n".join(lines))
+        except Exception:
+            pass
+
+    # ── Tavily cho thời tiết, đất, sâu bệnh (thông tin web thực tế) ─────────
+    if topic in ("weather", "soil_salinity", "soil_acidity", "pest"):
+        try:
+            import asyncio
+            from app.integrations.tavily_client import ask_agri_qa
+            result = await asyncio.to_thread(ask_agri_qa, q, "\n\n".join(ctx_parts))
+            if result.get("tavily_answer"):
+                ctx_parts.append(f"## Thông tin từ web:\n{result['tavily_answer']}")
+            sources = result.get("sources", [])
+        except Exception:
+            pass
+
+    context = "\n\n".join(ctx_parts)
+
+    # ── Gọi AI với system prompt theo chủ đề ────────────────────────────────
+    try:
+        answer = await gemini_client.get_agri_answer(q, topic, region, context)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi AI: {str(e)}")
+
+    _save_conversation(db, current_user.UserID if current_user else None, q, answer, topic)
+    return AskResponse(answer=answer, topic=topic, region=region, sources=sources)
 
 
 @router.get("/history")

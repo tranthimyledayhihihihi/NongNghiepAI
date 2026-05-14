@@ -2,7 +2,7 @@ import api from './api';
 
 export const aiApi = {
   chat: async ({ question }) => {
-    const response = await api.post('/api/chat/price-qa', { question }, { timeout: 90000 });
+    const response = await api.post('/api/chat/ask', { question }, { timeout: 90000 });
     return response.data;
   },
 

@@ -83,6 +83,76 @@ class GeminiClient:
 
         return "Xin lỗi, hệ thống AI đang bận. Vui lòng thử lại sau ít phút."
 
+    _TOPIC_PROMPTS: dict = {
+        "price": (
+            "Bạn là hệ thống thông tin giá nông sản tự động tại Việt Nam.\n"
+            "QUY TẮC: Tối đa 12 dòng. Bắt đầu NGAY bằng số liệu. Không chào hỏi.\n"
+            "Nếu vùng được hỏi không có dữ liệu, dùng dữ liệu vùng khác gần nhất. KHÔNG nói 'không có dữ liệu'."
+        ),
+        "weather": (
+            "Bạn là chuyên gia khí tượng nông nghiệp Việt Nam.\n"
+            "QUY TẮC: Tối đa 15 dòng. Ưu tiên cảnh báo nguy hiểm lên đầu. Ghi rõ vùng và ngày dự báo.\n"
+            "Đưa ra khuyến cáo CỤ THỂ cho nông dân: tránh trú bão, thu hoạch sớm, điều chỉnh tưới tiêu.\n"
+            "Phân tích tác động thời tiết lên cây trồng phổ biến tại vùng đó."
+        ),
+        "soil_salinity": (
+            "Bạn là chuyên gia đất đai nông nghiệp, chuyên về đất mặn và xâm nhập mặn ĐBSCL.\n"
+            "QUY TẮC: Tối đa 15 dòng. Đưa ra giải pháp THỰC TẾ với liều lượng và thời gian cụ thể.\n"
+            "Ưu tiên giải pháp tiết kiệm chi phí. Gợi ý giống cây chịu mặn phù hợp."
+        ),
+        "soil_acidity": (
+            "Bạn là chuyên gia đất đai nông nghiệp, chuyên về đất phèn ĐBSCL.\n"
+            "QUY TẮC: Tối đa 15 dòng. Đưa ra quy trình CẢI TẠO cụ thể: liều lượng vôi, thời gian xả phèn.\n"
+            "Gợi ý phân bón phù hợp đất phèn và cây trồng thích nghi."
+        ),
+        "pest": (
+            "Bạn là chuyên gia bảo vệ thực vật Việt Nam.\n"
+            "QUY TẮC: Tối đa 15 dòng. Cấu trúc: Chẩn đoán → Nguyên nhân → Giải pháp IPM → Phòng ngừa.\n"
+            "Ghi tên hoạt chất thuốc và liều lượng cụ thể. Ưu tiên phòng trừ sinh học."
+        ),
+        "cultivation": (
+            "Bạn là kỹ sư nông nghiệp tư vấn trồng trọt tại Việt Nam.\n"
+            "QUY TẮC: Tối đa 15 dòng. Cung cấp quy trình CỤ THỂ: mật độ gieo trồng, lượng phân, thời điểm.\n"
+            "Điều chỉnh khuyến cáo theo vùng và mùa vụ nếu có thông tin."
+        ),
+        "general": (
+            "Bạn là chuyên gia nông nghiệp tư vấn toàn diện tại Việt Nam.\n"
+            "QUY TẮC: Tối đa 15 dòng. Trả lời THỰC CHẤT với số liệu cụ thể. Không chào hỏi. Không giải thích dài dòng.\n"
+            "Ưu tiên thông tin thực tiễn, có thể áp dụng ngay."
+        ),
+    }
+
+    async def get_agri_answer(self, question: str, topic: str = "general", region: str = "", context_data: str = "") -> str:
+        """Trả lời nông nghiệp với system prompt phù hợp theo chủ đề."""
+        if not self.client:
+            return f"[Test] Câu trả lời giả lập cho: '{question}'"
+
+        sys_prompt = self._TOPIC_PROMPTS.get(topic, self._TOPIC_PROMPTS["general"])
+        if region:
+            sys_prompt += f"\nVùng người dùng quan tâm: {region}."
+
+        prompt = (
+            f"Dữ liệu thực tế:\n{context_data or 'Không có dữ liệu.'}\n\n"
+            f"Câu hỏi: {question}\n\nTrả lời ngắn gọn, cụ thể:"
+        )
+
+        for model_name in self.model_fallbacks:
+            try:
+                response = await self.client.aio.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(system_instruction=sys_prompt),
+                )
+                return response.text or ""
+            except Exception as e:
+                error_msg = str(e)
+                if any(k in error_msg for k in ("429", "RESOURCE_EXHAUSTED", "503", "UNAVAILABLE", "quota", "404", "NOT_FOUND")):
+                    logger.warning(f"[agri/{topic}/{model_name}] {error_msg[:60]}..., chuyển tiếp...")
+                    continue
+                return f"Lỗi AI: {error_msg}"
+
+        return "Xin lỗi, hệ thống AI đang bận. Vui lòng thử lại sau ít phút."
+
     async def get_farming_advice(self, question: str, context_data: str = "") -> str:
         if not self.client:
             return f"[Chế độ Test] Đây là câu trả lời giả lập từ AI cho câu hỏi: '{question}'. Để dùng AI thật, bạn cần thêm GEMINI_API_KEY vào file .env!"

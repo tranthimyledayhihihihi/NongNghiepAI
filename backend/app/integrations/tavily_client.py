@@ -119,6 +119,48 @@ def _guess_region(text: str) -> str:
 
 # ─── 2. Hỏi-đáp định giá (Price Q&A) ─────────────────────────────────────
 
+def ask_agri_qa(question: str, db_context: str = "") -> Dict:
+    """Q&A nông nghiệp tổng quát: thời tiết, đất, sâu bệnh, kỹ thuật."""
+    if not _is_available():
+        return {"answer": "", "sources": [], "tavily_answer": ""}
+
+    client = _get_client()
+    today = date.today().strftime("%d/%m/%Y")
+    enriched_q = f"{question} nông nghiệp Việt Nam {today}"
+
+    try:
+        resp = client.search(
+            query=enriched_q,
+            search_depth="basic",
+            max_results=4,
+            include_answer=True,
+            include_raw_content=False,
+        )
+    except Exception as e:
+        logger.warning(f"[Tavily agri QA] Lỗi: {e}")
+        return {"answer": "", "sources": [], "tavily_answer": ""}
+
+    tavily_answer = resp.get("answer") or ""
+    results = resp.get("results", [])
+    sources = [{"url": r.get("url", ""), "title": r.get("title", "")} for r in results]
+
+    parts = []
+    if tavily_answer:
+        parts.append(tavily_answer)
+    if db_context:
+        parts.append(db_context)
+    for r in results[:2]:
+        snippet = r.get("content", "")[:300]
+        if snippet:
+            parts.append(f"**{r.get('title', '')}**: {snippet}")
+
+    return {
+        "answer": "\n\n".join(parts),
+        "tavily_answer": tavily_answer,
+        "sources": sources,
+    }
+
+
 class TavilySearchClient:
     """Wrapper class cho backward-compatibility — bọc các module-level functions."""
 
