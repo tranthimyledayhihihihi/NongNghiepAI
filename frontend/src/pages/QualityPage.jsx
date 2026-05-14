@@ -3,20 +3,33 @@ import { useState } from 'react';
 import { getApiErrorMessage } from '../services/api';
 import { qualityApi } from '../services/qualityApi';
 
-const crops = ['ca chua', 'dua chuot', 'rau muong', 'cai xanh', 'ot', 'lua'];
-const regions = ['Ha Noi', 'TP.HCM', 'Da Nang', 'Can Tho', 'Hai Phong'];
+const regions = ['Hà Nội', 'TP.HCM', 'Đà Nẵng', 'Cần Thơ', 'Hải Phòng', 'Đắk Lắk', 'Tiền Giang'];
 
-const gradeLabels = {
-  grade_1: 'Loai 1 - Chat luong cao',
-  grade_2: 'Loai 2 - Chat luong trung binh',
-  grade_3: 'Loai 3 - Chat luong thap',
+const gradeConfig = {
+  grade_1: {
+    label: 'Loại 1 — Chất lượng cao',
+    color: 'text-green-700 bg-green-50 border-green-200',
+    icon: CheckCircle,
+    iconColor: 'text-green-600',
+  },
+  grade_2: {
+    label: 'Loại 2 — Chất lượng trung bình',
+    color: 'text-yellow-700 bg-yellow-50 border-yellow-200',
+    icon: AlertTriangle,
+    iconColor: 'text-yellow-600',
+  },
+  grade_3: {
+    label: 'Loại 3 — Chất lượng thấp',
+    color: 'text-red-700 bg-red-50 border-red-200',
+    icon: XCircle,
+    iconColor: 'text-red-600',
+  },
 };
 
 const QualityPage = () => {
   const [selectedFile, setSelectedFile] = useState(null);
   const [preview, setPreview] = useState(null);
-  const [cropName, setCropName] = useState('ca chua');
-  const [region, setRegion] = useState('Ha Noi');
+  const [region, setRegion] = useState('Đà Nẵng');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
@@ -33,18 +46,16 @@ const QualityPage = () => {
 
   const handleSubmit = async () => {
     if (!selectedFile) {
-      setError('Vui long chon anh');
+      setError('Vui lòng chọn ảnh');
       return;
     }
-
     setLoading(true);
     setError(null);
-
     try {
-      const data = await qualityApi.checkQuality(selectedFile, cropName, region);
+      const data = await qualityApi.checkQuality(selectedFile, '', region);
       setResult(data);
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Loi khi kiem tra chat luong'));
+      setError(getApiErrorMessage(err, 'Lỗi khi kiểm tra chất lượng'));
     } finally {
       setLoading(false);
     }
@@ -57,104 +68,58 @@ const QualityPage = () => {
     setError(null);
   };
 
-  const getGradeColor = (grade) => {
-    switch (grade) {
-      case 'grade_1':
-        return 'text-green-600 bg-green-50';
-      case 'grade_2':
-        return 'text-yellow-700 bg-yellow-50';
-      case 'grade_3':
-        return 'text-red-600 bg-red-50';
-      default:
-        return 'text-gray-600 bg-gray-50';
-    }
-  };
+  const grade = result ? (gradeConfig[result.quality_grade] ?? gradeConfig.grade_2) : null;
+  const GradeIcon = grade?.icon;
 
   return (
-    <div className="px-4 py-6">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">
-          Kiem tra chat luong nong san
-        </h1>
-        <p className="mt-2 text-gray-600">
-          Upload anh de frontend goi API /api/quality/check cua backend.
+    <div className="px-4 py-6 max-w-5xl mx-auto">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Kiểm định chất lượng nông sản</h1>
+        <p className="mt-1 text-gray-500 text-sm">
+          Chụp hoặc tải ảnh nông sản — AI tự nhận diện loại quả và đánh giá chất lượng
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-lg font-semibold mb-4">Upload anh</h2>
+        {/* ── Upload panel ── */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <h2 className="text-base font-semibold text-gray-800 mb-4">Tải ảnh lên</h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Loai nong san
-              </label>
-              <select
-                value={cropName}
-                onChange={(e) => setCropName(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-              >
-                {crops.map((crop) => (
-                  <option key={crop} value={crop}>
-                    {crop}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Khu vuc
-              </label>
-              <select
-                value={region}
-                onChange={(e) => setRegion(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-              >
-                {regions.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Khu vực (để tính giá)</label>
+            <select
+              value={region}
+              onChange={(e) => setRegion(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+            >
+              {regions.map((r) => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+            </select>
           </div>
 
-          <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+          <div className="border-2 border-dashed border-gray-300 rounded-xl min-h-48 flex items-center justify-center overflow-hidden">
             {preview ? (
-              <div className="space-y-4">
-                <img src={preview} alt="Preview" className="max-h-64 mx-auto rounded" />
-                <button onClick={clearImage} className="text-sm text-red-600 hover:text-red-700">
-                  Xoa anh
-                </button>
-              </div>
-            ) : (
-              <div>
-                <Upload className="mx-auto h-12 w-12 text-gray-400" />
-                <div className="mt-4">
-                  <label
-                    htmlFor="file-upload"
-                    className="cursor-pointer bg-white rounded-md font-medium text-primary-600 hover:text-primary-500"
-                  >
-                    <span>Chon anh</span>
-                    <input
-                      id="file-upload"
-                      name="file-upload"
-                      type="file"
-                      className="sr-only"
-                      accept="image/*"
-                      onChange={handleFileSelect}
-                    />
-                  </label>
-                  <p className="text-xs text-gray-500 mt-2">PNG, JPG, JPEG toi da 10MB</p>
+              <div className="w-full">
+                <img src={preview} alt="Preview" className="w-full max-h-72 object-contain rounded-xl" />
+                <div className="text-center py-2">
+                  <button onClick={clearImage} className="text-sm text-red-500 hover:text-red-600">
+                    Xóa ảnh
+                  </button>
                 </div>
               </div>
+            ) : (
+              <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center gap-3 p-8 w-full h-full">
+                <Upload className="h-10 w-10 text-gray-300" />
+                <span className="text-sm font-medium text-green-600 hover:text-green-700">Chọn ảnh</span>
+                <span className="text-xs text-gray-400">PNG, JPG, WEBP tối đa 10MB</span>
+                <input id="file-upload" type="file" className="sr-only" accept="image/*" onChange={handleFileSelect} />
+              </label>
             )}
           </div>
 
           {error && (
-            <div className="mt-4 p-4 bg-red-50 rounded-md">
+            <div className="mt-3 p-3 bg-red-50 rounded-lg border border-red-200">
               <p className="text-sm text-red-600">{error}</p>
             </div>
           )}
@@ -162,73 +127,108 @@ const QualityPage = () => {
           <button
             onClick={handleSubmit}
             disabled={!selectedFile || loading}
-            className="mt-4 w-full bg-primary-600 text-white py-2 px-4 rounded-md hover:bg-primary-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+            className="mt-4 w-full bg-green-600 text-white py-2.5 px-4 rounded-lg text-sm font-medium hover:bg-green-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
           >
-            {loading ? 'Dang phan tich...' : 'Kiem tra chat luong'}
+            {loading ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Đang phân tích...
+              </span>
+            ) : 'Kiểm tra chất lượng'}
           </button>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-lg font-semibold mb-4">Ket qua phan tich</h2>
+        {/* ── Result panel ── */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <h2 className="text-base font-semibold text-gray-800 mb-4">Kết quả phân tích</h2>
 
           {result ? (
             <div className="space-y-4">
-              <div className={`p-4 rounded-lg ${getGradeColor(result.quality_grade)}`}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">Phan loai</p>
-                    <p className="text-xl font-bold mt-1">
-                      {gradeLabels[result.quality_grade] || result.quality_grade}
-                    </p>
-                  </div>
-                  {result.quality_grade === 'grade_1' && <CheckCircle className="h-8 w-8" />}
-                  {result.quality_grade === 'grade_2' && <AlertTriangle className="h-8 w-8" />}
-                  {result.quality_grade === 'grade_3' && <XCircle className="h-8 w-8" />}
-                </div>
-                <p className="text-sm mt-2">
-                  Do tin cay: {(result.confidence * 100).toFixed(1)}%
-                </p>
-              </div>
-
-              <div className="border rounded-lg p-4">
-                <p className="text-sm font-medium text-gray-700">Gia de xuat</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">
-                  {result.suggested_price_range.min.toLocaleString()} -{' '}
-                  {result.suggested_price_range.max.toLocaleString()} d/kg
-                </p>
-              </div>
-
-              {result.defects?.length > 0 && (
-                <div className="border rounded-lg p-4">
-                  <p className="text-sm font-medium text-gray-700 mb-2">Khuyet tat phat hien</p>
-                  <ul className="list-disc list-inside space-y-1">
-                    {result.defects.map((defect) => (
-                      <li key={defect} className="text-sm text-gray-600">
-                        {defect}
-                      </li>
-                    ))}
-                  </ul>
+              {/* Non-produce warning */}
+              {result.is_produce === false && (
+                <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg text-sm text-orange-700">
+                  ⚠️ Ảnh không chứa nông sản — vui lòng tải ảnh quả/rau/củ
                 </div>
               )}
 
-              {result.recommendations?.length > 0 && (
-                <div className="border rounded-lg p-4">
-                  <p className="text-sm font-medium text-gray-700 mb-2">Khuyen nghi</p>
-                  <ul className="space-y-2">
-                    {result.recommendations.map((rec) => (
-                      <li key={rec} className="text-sm text-gray-600">
-                        {rec}
-                      </li>
+              {/* Detected crop */}
+              {result.detected_crop && (
+                <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-100 rounded-lg">
+                  <span className="text-2xl">🔍</span>
+                  <div>
+                    <p className="text-xs text-blue-500 font-medium">AI nhận diện</p>
+                    <p className="text-base font-bold text-blue-800 capitalize">{result.detected_crop}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Grade badge */}
+              <div className={`flex items-center justify-between p-4 rounded-xl border ${grade.color}`}>
+                <div>
+                  <p className="text-xs font-medium opacity-70">Phân loại</p>
+                  <p className="text-lg font-bold mt-0.5">{grade.label}</p>
+                  <p className="text-sm mt-1">Độ tin cậy: {(result.confidence * 100).toFixed(1)}%</p>
+                </div>
+                {GradeIcon && <GradeIcon className={`h-9 w-9 ${grade.iconColor}`} />}
+              </div>
+
+              {/* Color assessment */}
+              {result.color_assessment && (
+                <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
+                  <p className="text-xs font-medium text-gray-500 mb-1">Màu sắc & tình trạng</p>
+                  <p className="text-sm text-gray-800">{result.color_assessment}</p>
+                </div>
+              )}
+
+              {/* Price */}
+              <div className="p-4 border border-gray-200 rounded-xl">
+                <p className="text-xs font-medium text-gray-500 mb-1">Giá đề xuất tại {result.region}</p>
+                <p className="text-xl font-bold text-gray-900">
+                  {result.suggested_price_range.min.toLocaleString('vi-VN')} —{' '}
+                  {result.suggested_price_range.max.toLocaleString('vi-VN')} đ/kg
+                </p>
+                {result.weather_summary && (
+                  <p className="text-xs text-gray-400 mt-1">{result.weather_summary}</p>
+                )}
+              </div>
+
+              {/* Defects */}
+              {result.defects?.length > 0 && (
+                <div className="p-3 border border-gray-200 rounded-lg">
+                  <p className="text-xs font-medium text-gray-500 mb-2">Khuyết tật phát hiện</p>
+                  <div className="flex flex-wrap gap-2">
+                    {result.defects.map((d) => (
+                      <span key={d} className="px-2 py-0.5 bg-red-50 text-red-600 text-xs rounded-full border border-red-100">
+                        {d}
+                      </span>
                     ))}
-                  </ul>
+                  </div>
+                </div>
+              )}
+
+              {/* Reasoning */}
+              {result.reasoning && (
+                <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
+                  <p className="text-xs font-medium text-gray-500 mb-1">Lý do phân loại</p>
+                  <p className="text-sm text-gray-700">{result.reasoning}</p>
+                </div>
+              )}
+
+              {/* Recommendations */}
+              {result.recommendations?.length > 0 && (
+                <div className="p-3 border border-green-100 bg-green-50 rounded-lg">
+                  <p className="text-xs font-medium text-green-700 mb-1">Khuyến nghị</p>
+                  {result.recommendations.map((r) => (
+                    <p key={r} className="text-sm text-green-800">{r}</p>
+                  ))}
                 </div>
               )}
             </div>
           ) : (
-            <div className="text-center text-gray-500 py-12">
-              <Camera className="mx-auto h-12 w-12 text-gray-400" />
-              <p className="mt-4">Chua co ket qua phan tich</p>
-              <p className="text-sm mt-2">Upload anh de goi API backend</p>
+            <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+              <Camera className="h-12 w-12 text-gray-200" />
+              <p className="mt-4 text-sm">Chưa có kết quả</p>
+              <p className="text-xs mt-1">Tải ảnh nông sản để AI phân tích</p>
             </div>
           )}
         </div>

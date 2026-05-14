@@ -19,8 +19,8 @@ router = APIRouter(prefix="/api/quality", tags=["quality"])
 async def check_quality(
     image: UploadFile | None = File(None),
     file: UploadFile | None = File(None),
-    crop_name: str = Form("unknown"),
-    region: str = Form("unknown"),
+    crop_name: str = Form(""),
+    region: str = Form("Đà Nẵng"),
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_current_user),
 ):

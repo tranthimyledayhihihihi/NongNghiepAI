@@ -22,15 +22,6 @@ from app.services.pricing_service import pricing_service
 class QualityService:
     """Service kiểm tra chất lượng nông sản qua ảnh."""
 
-    @staticmethod
-    def _get_detector():
-        """Lazy import AI detector (Quang), thử các fallback."""
-        try:
-            from ai_models.quality_check.detector import QualityDetector
-            return QualityDetector()
-        except Exception:
-            return None
-
     # ------------------------------------------------------------------ #
     # API interface
     # ------------------------------------------------------------------ #
@@ -46,34 +37,49 @@ class QualityService:
     ) -> dict:
         """
         Kiểm tra chất lượng nông sản:
-        1. Gọi AI detector (nếu có) hoặc mock_grade
+        1. Gemini Vision phân tích ảnh thực tế (màu sắc, khuyết tật, loại nông sản)
         2. Lấy pricing từ pricing_service
         3. Lưu kết quả qua repository
         4. Trả về kết quả đầy đủ
         """
-        # 1. Phân tích ảnh
-        detector = self._get_detector()
-        if detector:
-            try:
-                analysis = detector.analyze_image(image_path, crop_name=crop_name)
-                grade = analysis.get("quality_grade", "grade_1")
-                confidence = analysis.get("confidence", 0.80)
-                defects = analysis.get("defects", [])
-                disease_detected = analysis.get("disease_detected", bool(defects))
-                damage_level = analysis.get("damage_level", self._damage_level(grade))
-            except Exception:
-                detector = None
+        # 1. Đọc ảnh và gọi Gemini Vision
+        from app.integrations.gemini_vision_quality import GeminiVisionAnalyzer
+        analyzer = GeminiVisionAnalyzer()
 
-        if not detector:
-            grade, confidence, defects = self._mock_grade(image_path)
-            disease_detected = bool(defects)
-            damage_level = self._damage_level(grade)
+        try:
+            with open(image_path, "rb") as f:
+                image_bytes = f.read()
+            vision_result = analyzer.analyze(image_bytes)
+        except Exception as e:
+            vision_result = {
+                "detected_crop": "không xác định",
+                "is_produce": False,
+                "color_assessment": f"Lỗi đọc ảnh: {e}",
+                "ripeness": "unknown",
+                "defects": [],
+                "quality_grade": "grade_2",
+                "confidence": 0.0,
+                "reasoning": str(e),
+            }
+
+        detected_crop = vision_result.get("detected_crop", "không xác định")
+        is_produce = vision_result.get("is_produce", False)
+        grade = vision_result.get("quality_grade", "grade_2")
+        confidence = vision_result.get("confidence", 0.0)
+        defects = vision_result.get("defects", [])
+        color_assessment = vision_result.get("color_assessment", "")
+        reasoning = vision_result.get("reasoning", "")
+        disease_detected = bool(defects)
+        damage_level = self._damage_level(grade)
+
+        # Nếu người dùng không nhập crop_name, dùng kết quả nhận diện
+        effective_crop = crop_name if crop_name and crop_name not in ("unknown", "") else detected_crop
 
         # 2. Tính giá đề xuất qua pricing_service (bao gồm điều chỉnh thời tiết)
         pricing = pricing_service.suggest_price(
             db,
             PricingSuggestRequest(
-                crop_name=crop_name,
+                crop_name=effective_crop,
                 region=region,
                 quantity=1,
                 quality_grade=grade,
@@ -88,7 +94,7 @@ class QualityService:
         # 3. Lưu vào DB qua repository
         record = create_quality_check(
             db,
-            crop_name=crop_name,
+            crop_name=effective_crop,
             region=region,
             image_path=image_path,
             quality_grade=grade,
@@ -101,7 +107,7 @@ class QualityService:
         # 4. Bổ sung lưu vào QualityRecord (Quang) nếu có crop + user
         self._save_quality_record_direct(
             db=db,
-            crop_name=crop_name,
+            crop_name=effective_crop,
             user_id=user_id,
             image_path=image_path,
             grade=grade,
@@ -113,7 +119,11 @@ class QualityService:
         )
 
         return {
-            "crop_name": crop_name,
+            "crop_name": effective_crop,
+            "detected_crop": detected_crop,
+            "is_produce": is_produce,
+            "color_assessment": color_assessment,
+            "reasoning": reasoning,
             "region": region,
             "image_path": image_path,
             "quality_grade": grade,

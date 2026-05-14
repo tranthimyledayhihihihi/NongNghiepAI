@@ -5,6 +5,10 @@ from pydantic import BaseModel, Field
 
 class QualityCheckResponse(BaseModel):
     crop_name: str
+    detected_crop: str = ""
+    is_produce: bool = True
+    color_assessment: str = ""
+    reasoning: str = ""
     region: str
     image_path: str | None = None
     quality_grade: str = Field(..., description="grade_1, grade_2, grade_3")
