@@ -114,6 +114,8 @@ const AIChatPage = () => {
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
 
+  const [activeHistoryId, setActiveHistoryId] = useState(null);
+
   const loadHistory = useCallback(async () => {
     if (!isAuthenticated) return;
     setHistoryLoading(true);
@@ -126,6 +128,28 @@ const AIChatPage = () => {
       setHistoryLoading(false);
     }
   }, [isAuthenticated]);
+
+  const loadConversation = useCallback((item) => {
+    const ts = item.created_at
+      ? new Date(item.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+      : '';
+    setMessages([
+      {
+        id: `hist-user-${item.id}`,
+        type: 'user',
+        content: item.user_message,
+        timestamp: ts,
+      },
+      {
+        id: `hist-bot-${item.id}`,
+        type: 'bot',
+        content: item.ai_response,
+        timestamp: ts,
+      },
+    ]);
+    setActiveHistoryId(item.id);
+    setHistoryOpen(false);
+  }, []);
 
   useEffect(() => {
     loadHistory();
@@ -244,38 +268,43 @@ const AIChatPage = () => {
           </div>
         )}
 
-        {!historyLoading && chatHistory.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => setHistoryOpen(false)}
-            className="w-full rounded-lg p-3 text-left transition hover:bg-gray-50"
-          >
-            <div className="flex items-start gap-3">
-              <div className="rounded-lg bg-green-50 p-2 text-green-700">
-                <Leaf className="h-4 w-4" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold text-gray-900">
-                  {item.user_message.length > 50
-                    ? `${item.user_message.slice(0, 50)}…`
-                    : item.user_message}
+        {!historyLoading && chatHistory.map((item) => {
+          const isActive = activeHistoryId === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => loadConversation(item)}
+              className={`w-full rounded-lg p-3 text-left transition hover:bg-green-50 ${
+                isActive ? 'bg-green-50 ring-1 ring-green-200' : ''
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <div className={`rounded-lg p-2 ${isActive ? 'bg-green-700 text-white' : 'bg-green-50 text-green-700'}`}>
+                  <Leaf className="h-4 w-4" />
                 </div>
-                {item.ai_response && (
-                  <div className="mt-1 truncate text-xs text-gray-500">
-                    {item.ai_response.replace(/[#*`]/g, '').slice(0, 70)}…
+                <div className="min-w-0 flex-1">
+                  <div className={`truncate text-sm font-semibold ${isActive ? 'text-green-800' : 'text-gray-900'}`}>
+                    {item.user_message.length > 50
+                      ? `${item.user_message.slice(0, 50)}…`
+                      : item.user_message}
                   </div>
-                )}
-                <div className="mt-1 text-xs text-gray-400">{formatHistoryTime(item.created_at)}</div>
+                  {item.ai_response && (
+                    <div className="mt-1 truncate text-xs text-gray-500">
+                      {item.ai_response.replace(/[#*`]/g, '').slice(0, 70)}…
+                    </div>
+                  )}
+                  <div className="mt-1 text-xs text-gray-400">{formatHistoryTime(item.created_at)}</div>
+                </div>
               </div>
-            </div>
-          </button>
-        ))}
+            </button>
+          );
+        })}
       </div>
 
       <button
         type="button"
-        onClick={() => { setMessages(initialMessages); setHistoryOpen(false); }}
+        onClick={() => { setMessages(initialMessages); setActiveHistoryId(null); setHistoryOpen(false); }}
         className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-green-700 py-3 font-medium text-white hover:bg-green-800"
       >
         <Plus className="h-5 w-5" />
