@@ -210,67 +210,74 @@ async def price_qa(
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_current_user),
 ):
-    from sqlalchemy import text
+    from datetime import date as _date, timedelta
+    from app.models.crop import Crop as _Crop
+    from app.models.price import MarketPrice as _MP, PriceHistory as _PH
+
     q = request.question
     region = _detect_region(q)
+    _seven_ago = _date.today() - timedelta(days=7)
 
-    # ── Bước 1: Giá mới nhất theo vùng (fallback toàn quốc nếu không có) ──
-    db_prices = []
+    def _mp_row(mp, name):
+        return {
+            "crop_name": name, "region": mp.Region,
+            "price": float(mp.PricePerKg),
+            "source": mp.SourceName or "",
+            "date": str(mp.PriceDate),
+        }
+
+    # ── Bước 1: Giá mới nhất theo vùng ────────────────────────────────────
+    db_prices: list[dict] = []
     try:
-        rows = db.execute(text("""
-            SELECT TOP 15 c.CropName, m.Region, m.PricePerKg, m.SourceName, m.PriceDate
-            FROM MarketPrices m
-            JOIN CropTypes c ON m.CropID = c.CropID
-            WHERE m.Region = :region
-            ORDER BY m.PriceDate DESC
-        """), {"region": region}).fetchall()
+        rows = (
+            db.query(_Crop.CropName, _MP)
+            .join(_MP, _Crop.CropID == _MP.CropID)
+            .filter(_MP.Region == region)
+            .order_by(_MP.PriceDate.desc())
+            .limit(15).all()
+        )
         if not rows:
-            rows = db.execute(text("""
-                SELECT TOP 15 c.CropName, m.Region, m.PricePerKg, m.SourceName, m.PriceDate
-                FROM MarketPrices m
-                JOIN CropTypes c ON m.CropID = c.CropID
-                ORDER BY m.PriceDate DESC
-            """)).fetchall()
-        for r in rows:
-            db_prices.append({
-                "crop_name": r[0], "region": r[1],
-                "price": float(r[2]), "source": r[3], "date": str(r[4]),
-            })
+            rows = (
+                db.query(_Crop.CropName, _MP)
+                .join(_MP, _Crop.CropID == _MP.CropID)
+                .order_by(_MP.PriceDate.desc())
+                .limit(15).all()
+            )
+        db_prices = [_mp_row(mp, name) for name, mp in rows]
     except Exception:
         pass
 
     # ── Bước 2: Lịch sử 7 ngày theo vùng ─────────────────────────────────
-    price_history: list[tuple] = []
+    price_history: list = []
     try:
-        hist = db.execute(text("""
-            SELECT TOP 50 c.CropName, ph.Region, ph.AvgPrice, ph.MinPrice, ph.MaxPrice, ph.RecordDate
-            FROM PriceHistory ph
-            JOIN CropTypes c ON ph.CropID = c.CropID
-            WHERE ph.Region = :region
-              AND ph.RecordDate >= DATEADD(day, -7, GETDATE())
-            ORDER BY ph.RecordDate DESC
-        """), {"region": region}).fetchall()
+        hist = (
+            db.query(_Crop.CropName, _PH)
+            .join(_PH, _Crop.CropID == _PH.CropID)
+            .filter(_PH.Region == region, _PH.RecordDate >= _seven_ago)
+            .order_by(_PH.RecordDate.desc())
+            .limit(50).all()
+        )
         if not hist:
-            hist = db.execute(text("""
-                SELECT TOP 50 c.CropName, ph.Region, ph.AvgPrice, ph.MinPrice, ph.MaxPrice, ph.RecordDate
-                FROM PriceHistory ph
-                JOIN CropTypes c ON ph.CropID = c.CropID
-                WHERE ph.RecordDate >= DATEADD(day, -7, GETDATE())
-                ORDER BY ph.RecordDate DESC
-            """)).fetchall()
-        price_history = list(hist)
+            hist = (
+                db.query(_Crop.CropName, _PH)
+                .join(_PH, _Crop.CropID == _PH.CropID)
+                .filter(_PH.RecordDate >= _seven_ago)
+                .order_by(_PH.RecordDate.desc())
+                .limit(50).all()
+            )
+        price_history = [(name, ph) for name, ph in hist]
     except Exception:
         pass
 
     # ── Bước 3 extra: Luôn lấy top giá toàn quốc làm tham chiếu ──────────
-    national_prices: list[tuple] = []
+    national_rows: list = []
     try:
-        national_prices = db.execute(text("""
-            SELECT TOP 30 c.CropName, m.Region, m.PricePerKg, m.PriceDate
-            FROM MarketPrices m
-            JOIN CropTypes c ON m.CropID = c.CropID
-            ORDER BY m.PriceDate DESC
-        """)).fetchall()
+        national_rows = (
+            db.query(_Crop.CropName, _MP)
+            .join(_MP, _Crop.CropID == _MP.CropID)
+            .order_by(_MP.PriceDate.desc())
+            .limit(30).all()
+        )
     except Exception:
         pass
 
@@ -285,17 +292,17 @@ async def price_qa(
 
     if price_history:
         lines = [f"## Lịch sử giá 7 ngày tại {region}:"]
-        for h in price_history:
+        for name, ph in price_history:
             lines.append(
-                f"- {h[0]} ({h[1]}) ngày {h[5]}: "
-                f"TB {float(h[2]):,.0f} | Min {float(h[3]):,.0f} | Max {float(h[4]):,.0f} VNĐ/kg"
+                f"- {name} ({ph.Region}) ngày {ph.RecordDate}: "
+                f"TB {float(ph.AvgPrice):,.0f} | Min {float(ph.MinPrice or 0):,.0f} | Max {float(ph.MaxPrice or 0):,.0f} VNĐ/kg"
             )
         ctx_parts.append("\n".join(lines))
 
-    if national_prices:
+    if national_rows:
         lines = ["## Giá toàn quốc (tham chiếu khi vùng trên thiếu dữ liệu):"]
-        for r in national_prices:
-            lines.append(f"- {r[0]} tại {r[1]}: {float(r[2]):,.0f} VNĐ/kg — {r[3]}")
+        for name, mp in national_rows:
+            lines.append(f"- {name} tại {mp.Region}: {float(mp.PricePerKg):,.0f} VNĐ/kg — {mp.PriceDate}")
         ctx_parts.append("\n".join(lines))
 
     db_context = "\n\n".join(ctx_parts)
