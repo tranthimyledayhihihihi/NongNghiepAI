@@ -2,11 +2,16 @@ import {
   AlertTriangle,
   Bot,
   CalendarDays,
+  ChevronDown,
+  ChevronLeft,
   CheckCircle2,
   Clock,
   CloudRain,
   CloudSun,
   Droplets,
+  Eye,
+  Gauge,
+  Leaf,
   Loader2,
   MapPin,
   RefreshCw,
@@ -16,6 +21,7 @@ import {
   Thermometer,
   Umbrella,
   Wind,
+  Zap,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import DataSourceBadge from '../components/DataSourceBadge';
@@ -38,6 +44,20 @@ const priorityStyles = {
   low: 'border-emerald-200 bg-emerald-50 text-emerald-800',
 };
 
+const CONDITION_EMOJI = {
+  clear: '☀️', mostly_clear: '🌤️', partly_cloudy: '⛅',
+  cloudy: '☁️', foggy: '🌫️', drizzle: '🌦️',
+  rainy: '🌧️', heavy_rain: '🌧️', rain_showers: '🌦️',
+  thunderstorm: '⛈️', unknown: '🌡️',
+};
+
+const CONDITION_LABELS = {
+  clear: 'Quang đãng', mostly_clear: 'Khá quang', partly_cloudy: 'Ít mây',
+  cloudy: 'Nhiều mây', foggy: 'Sương mù', drizzle: 'Mưa phùn',
+  rainy: 'Có mưa', heavy_rain: 'Mưa lớn', rain_showers: 'Mưa rào',
+  thunderstorm: 'Giông bão', unknown: '—',
+};
+
 const formatNumber = (value, suffix = '', digits = 1) => {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return 'N/A';
   return `${Number(value).toFixed(digits)}${suffix}`;
@@ -54,12 +74,30 @@ const formatDate = (value) => {
 
 const formatTime = (value) => {
   if (!value) return 'N/A';
-  return new Date(value).toLocaleTimeString('vi-VN', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const d = new Date(value);
+  if (isNaN(d)) return String(value).slice(11, 16);
+  return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
 };
 
+const uvLabel = (v) => {
+  if (v == null) return '';
+  if (v <= 2) return 'Thấp';
+  if (v <= 5) return 'Vừa';
+  if (v <= 7) return 'Cao';
+  if (v <= 10) return 'Rất cao';
+  return 'Cực cao';
+};
+
+const cloudLabel = (pct) => {
+  if (pct == null) return '';
+  if (pct <= 10) return 'Trời quang';
+  if (pct <= 30) return 'Ít mây';
+  if (pct <= 60) return 'Mây rải rác';
+  if (pct <= 85) return 'Nhiều mây';
+  return 'Trời âm u';
+};
+
+// ── Current weather metric card ────────────────────────────────────────────────
 const WeatherMetric = ({ icon: Icon, label, value, detail, tone = 'slate' }) => {
   const tones = {
     slate: 'bg-slate-50 text-slate-700 border-slate-200',
@@ -68,7 +106,6 @@ const WeatherMetric = ({ icon: Icon, label, value, detail, tone = 'slate' }) => 
     emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     rose: 'bg-rose-50 text-rose-700 border-rose-200',
   };
-
   return (
     <div className={`rounded-lg border p-4 ${tones[tone]}`}>
       <div className="flex items-center justify-between gap-3">
@@ -85,6 +122,212 @@ const WeatherMetric = ({ icon: Icon, label, value, detail, tone = 'slate' }) => 
   );
 };
 
+// ── Day card (clickable) ───────────────────────────────────────────────────────
+const DayCard = ({ day, selected, onClick }) => {
+  const emoji = CONDITION_EMOJI[day.condition] || '🌡️';
+  return (
+    <button
+      onClick={onClick}
+      className={`flex flex-col items-center gap-1 rounded-xl border px-3 py-3 text-center transition min-w-[80px] ${
+        selected
+          ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-200'
+          : 'border-gray-200 bg-white hover:border-emerald-300 hover:bg-emerald-50/50'
+      }`}
+    >
+      <span className="text-xs font-semibold text-gray-500">{formatDate(day.date)}</span>
+      <span className="text-2xl">{emoji}</span>
+      <span className="text-xs text-gray-700 font-medium">
+        {formatNumber(day.temp_max, '°', 0)} / {formatNumber(day.temp_min, '°', 0)}
+      </span>
+      <span className="text-xs text-blue-500">{formatNumber(day.rain_probability, '%', 0)} mưa</span>
+    </button>
+  );
+};
+
+// ── Hour pill ──────────────────────────────────────────────────────────────────
+const HourPill = ({ hour, selected, onClick }) => {
+  const emoji = CONDITION_EMOJI[hour.condition] || '🌡️';
+  return (
+    <button
+      onClick={onClick}
+      className={`flex flex-col items-center gap-0.5 rounded-xl border px-3 py-2 text-center transition min-w-[64px] ${
+        selected
+          ? 'border-sky-500 bg-sky-50 ring-2 ring-sky-200'
+          : 'border-gray-200 bg-white hover:border-sky-300 hover:bg-sky-50/50'
+      }`}
+    >
+      <span className="text-xs font-bold text-gray-700">{formatTime(hour.forecast_at || hour.time)}</span>
+      <span className="text-lg">{emoji}</span>
+      <span className="text-xs font-semibold text-gray-800">{formatNumber(hour.temperature, '°', 0)}</span>
+      <span className="text-xs text-blue-400">{formatNumber(hour.rain_probability, '%', 0)}</span>
+    </button>
+  );
+};
+
+// ── Helper: metric row inside a section ───────────────────────────────────────
+const MetricRow = ({ label, value, sub }) => (
+  <div className="flex items-start justify-between gap-3 py-2 border-b border-gray-100 last:border-0">
+    <span className="text-sm text-gray-500">{label}</span>
+    <div className="text-right">
+      <span className="text-sm font-semibold text-gray-900">{value}</span>
+      {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+    </div>
+  </div>
+);
+
+// ── Section card ───────────────────────────────────────────────────────────────
+const Section = ({ icon: Icon, title, iconColor, borderColor, children }) => (
+  <div className={`rounded-xl border ${borderColor} bg-white p-4`}>
+    <div className="flex items-center gap-2 mb-3">
+      <Icon className={`h-4 w-4 ${iconColor}`} />
+      <h3 className="text-sm font-bold text-gray-800">{title}</h3>
+    </div>
+    {children}
+  </div>
+);
+
+// ── UV scale bar ───────────────────────────────────────────────────────────────
+const UVBar = ({ value }) => {
+  if (value == null) return <p className="text-sm text-gray-400">Không có dữ liệu</p>;
+  const pct = Math.min((value / 12) * 100, 100);
+  const color = value <= 2 ? 'bg-green-500' : value <= 5 ? 'bg-yellow-400' : value <= 7 ? 'bg-orange-400' : value <= 10 ? 'bg-red-500' : 'bg-purple-600';
+  const label = value <= 2 ? 'Thấp' : value <= 5 ? 'Vừa' : value <= 7 ? 'Cao' : value <= 10 ? 'Rất cao' : 'Cực cao';
+  const advice = value <= 2 ? 'An toàn, không cần che chắn.' : value <= 5 ? 'Nên đội mũ khi làm ngoài trời.' : value <= 7 ? 'Hạn chế ra ngoài 10:00–14:00.' : 'Che phủ đầy đủ, tưới vào sáng sớm/chiều tối.';
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-2xl font-bold text-gray-900">{formatNumber(value, '', 1)}</span>
+        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full text-white ${color}`}>{label}</span>
+      </div>
+      <div className="w-full h-2 rounded-full bg-gray-100 overflow-hidden mb-2">
+        <div className={`h-full rounded-full ${color} transition-all`} style={{ width: `${pct}%` }} />
+      </div>
+      <p className="text-xs text-gray-500">{advice}</p>
+    </div>
+  );
+};
+
+// ── Crop impact rules ──────────────────────────────────────────────────────────
+const cropImpacts = (hour) => {
+  const items = [];
+  const h = hour.humidity ?? 0;
+  const rain = hour.rain_probability ?? 0;
+  const wind = hour.wind_speed ?? 0;
+  const uv = hour.uv_index ?? 0;
+  const temp = hour.temperature ?? 25;
+
+  if (h > 85) items.push({ level: 'high', text: 'Độ ẩm cao — nguy cơ nấm bệnh, đạo ôn. Không phun thuốc.' });
+  else if (h > 70) items.push({ level: 'medium', text: 'Độ ẩm trung bình — theo dõi bệnh hại lá.' });
+  else items.push({ level: 'ok', text: 'Độ ẩm phù hợp canh tác.' });
+
+  if (rain > 70) items.push({ level: 'high', text: 'Xác suất mưa cao — tránh bón phân, phun thuốc.' });
+  else if (rain > 40) items.push({ level: 'medium', text: 'Có thể có mưa — chuẩn bị thoát nước.' });
+  else items.push({ level: 'ok', text: 'Ít mưa — thích hợp phun thuốc, bón phân.' });
+
+  if (wind > 25) items.push({ level: 'high', text: `Gió ${formatNumber(wind, ' km/h', 0)} — không phun hóa chất, nguy cơ đổ cây.` });
+  else if (wind > 15) items.push({ level: 'medium', text: 'Gió vừa — phun thuốc cẩn thận, chọn vòi định hướng.' });
+
+  if (uv > 7) items.push({ level: 'medium', text: 'UV cao — che phủ cây non, tưới sáng sớm hoặc chiều tối.' });
+
+  if (temp > 37) items.push({ level: 'high', text: `Nhiệt độ ${formatNumber(temp, '°C')} — cây dễ stress nhiệt. Tăng tưới, che nắng.` });
+  else if (temp < 15) items.push({ level: 'medium', text: 'Nhiệt độ thấp — cây lúa và rau màu có thể bị lạnh cóng.' });
+
+  return items;
+};
+
+// ── Hour detail: 6 sections ────────────────────────────────────────────────────
+const HourDetail = ({ hour }) => {
+  if (!hour) return null;
+  const emoji = CONDITION_EMOJI[hour.condition] || '🌡️';
+  const timeStr = formatTime(hour.forecast_at || hour.time);
+  const visKm = hour.visibility != null ? formatNumber(hour.visibility / 1000, ' km', 1) : '—';
+  const visScore = hour.visibility != null
+    ? hour.visibility >= 10000 ? 'Rất tốt' : hour.visibility >= 5000 ? 'Tốt' : hour.visibility >= 2000 ? 'Trung bình' : 'Kém'
+    : '—';
+  const isThunderstorm = [95, 96, 99].includes(hour.weather_code) || hour.condition === 'thunderstorm';
+  const thunderRisk = isThunderstorm ? 'Đang xảy ra' : hour.condition === 'heavy_rain' ? 'Nguy cơ cao' : 'Không có';
+  const thunderColor = isThunderstorm ? 'text-red-600' : hour.condition === 'heavy_rain' ? 'text-orange-500' : 'text-green-600';
+  const impacts = cropImpacts(hour);
+  const levelColor = { high: 'text-red-600 bg-red-50 border-red-200', medium: 'text-orange-600 bg-orange-50 border-orange-200', ok: 'text-green-700 bg-green-50 border-green-200' };
+
+  return (
+    <div className="mt-3 rounded-2xl border border-sky-100 bg-gray-50 p-4 shadow-sm">
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-4 bg-white rounded-xl p-3 border border-gray-100">
+        <span className="text-4xl">{emoji}</span>
+        <div className="flex-1">
+          <p className="text-xs text-gray-400">{timeStr}</p>
+          <p className="text-base font-bold text-gray-900">{CONDITION_LABELS[hour.condition] || '—'}</p>
+        </div>
+        <div className="text-right">
+          <p className="text-2xl font-bold text-gray-900">{formatNumber(hour.temperature, '°C')}</p>
+          <p className="text-xs text-gray-400">Cảm giác {formatNumber(hour.apparent_temperature, '°C')}</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+        {/* 1. Độ trong khí quyển */}
+        <Section icon={Eye} title="Độ trong khí quyển" iconColor="text-indigo-500" borderColor="border-indigo-100">
+          <MetricRow label="Tầm nhìn" value={visKm} sub={visScore} />
+          <MetricRow label="Mây phủ" value={formatNumber(hour.cloud_cover, '%', 0)} sub={cloudLabel(hour.cloud_cover)} />
+          <MetricRow label="Điểm sương" value={formatNumber(hour.dew_point, '°C')} />
+        </Section>
+
+        {/* 2. Môi trường & Gió */}
+        <Section icon={Wind} title="Môi trường & Gió" iconColor="text-teal-500" borderColor="border-teal-100">
+          <MetricRow label="Nhiệt độ" value={formatNumber(hour.temperature, '°C')} sub={`Cảm giác ${formatNumber(hour.apparent_temperature, '°C')}`} />
+          <MetricRow label="Độ ẩm" value={formatNumber(hour.humidity, '%', 0)} />
+          <MetricRow label="Gió" value={formatNumber(hour.wind_speed, ' km/h', 0)} sub={hour.wind_gusts != null ? `Giật ${formatNumber(hour.wind_gusts, ' km/h', 0)}` : null} />
+          <MetricRow label="Áp suất" value={formatNumber(hour.pressure, ' hPa', 0)} />
+        </Section>
+
+        {/* 3. Mây và mưa */}
+        <Section icon={CloudRain} title="Mây và mưa" iconColor="text-blue-500" borderColor="border-blue-100">
+          <MetricRow label="Tình trạng" value={CONDITION_LABELS[hour.condition] || '—'} />
+          <MetricRow label="Lượng mưa" value={formatNumber(hour.rainfall, ' mm')} />
+          <MetricRow label="Xác suất mưa" value={formatNumber(hour.rain_probability, '%', 0)} />
+          <MetricRow label="Mây phủ" value={formatNumber(hour.cloud_cover, '%', 0)} sub={cloudLabel(hour.cloud_cover)} />
+        </Section>
+
+        {/* 4. Giông lốc */}
+        <Section icon={Zap} title="Giông lốc" iconColor={isThunderstorm ? 'text-red-500' : 'text-gray-400'} borderColor={isThunderstorm ? 'border-red-200' : 'border-gray-100'}>
+          <div className="flex items-center gap-2 mb-2">
+            <span className={`text-base font-bold ${thunderColor}`}>{thunderRisk}</span>
+            {isThunderstorm && <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold">⚠ Cảnh báo</span>}
+          </div>
+          {isThunderstorm ? (
+            <p className="text-xs text-red-600">Giông bão đang xảy ra — không làm việc ngoài trời, tránh cây cao, thu dọn dụng cụ.</p>
+          ) : hour.condition === 'heavy_rain' ? (
+            <p className="text-xs text-orange-600">Mưa lớn có thể kéo theo giông. Theo dõi sát, chuẩn bị thoát nước đồng ruộng.</p>
+          ) : (
+            <p className="text-xs text-gray-400">Không có nguy cơ giông lốc trong khung giờ này.</p>
+          )}
+        </Section>
+
+        {/* 5. Mức độ UV */}
+        <Section icon={Sun} title="Mức độ UV" iconColor="text-yellow-500" borderColor="border-yellow-100">
+          <UVBar value={hour.uv_index} />
+        </Section>
+
+        {/* 6. Ảnh hưởng đến cây trồng */}
+        <Section icon={Leaf} title="Ảnh hưởng đến cây trồng" iconColor="text-emerald-600" borderColor="border-emerald-100">
+          <div className="space-y-1.5">
+            {impacts.map((item, i) => (
+              <div key={i} className={`flex items-start gap-2 rounded-lg border px-2 py-1.5 text-xs ${levelColor[item.level]}`}>
+                <span className="mt-0.5 shrink-0">{item.level === 'high' ? '⚠' : item.level === 'medium' ? '●' : '✓'}</span>
+                <span>{item.text}</span>
+              </div>
+            ))}
+          </div>
+        </Section>
+
+      </div>
+    </div>
+  );
+};
+
+// ── Main page ──────────────────────────────────────────────────────────────────
 const ForecastPage = () => {
   const [region, setRegion] = useState('Ha Noi');
   const [cropName, setCropName] = useState('Lúa');
@@ -93,9 +336,18 @@ const ForecastPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // Drill-down state
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [selectedHour, setSelectedHour] = useState(null);
+  const [hourlyByDate, setHourlyByDate] = useState({});
+  const [loadingHourly, setLoadingHourly] = useState(false);
+
   const fetchWeather = useCallback(async () => {
     setLoading(true);
     setError('');
+    setSelectedDate(null);
+    setSelectedHour(null);
+    setHourlyByDate({});
     try {
       const result = await weatherApi.getAgricultureWeather({
         region,
@@ -112,15 +364,58 @@ const ForecastPage = () => {
     }
   }, [cropName, growthStage, region]);
 
-  useEffect(() => {
-    fetchWeather();
-  }, [fetchWeather]);
+  useEffect(() => { fetchWeather(); }, [fetchWeather]);
+
+  const handleDayClick = async (date) => {
+    if (selectedDate === date) {
+      setSelectedDate(null);
+      setSelectedHour(null);
+      return;
+    }
+    setSelectedDate(date);
+    setSelectedHour(null);
+
+    // Use hourly already fetched from agriculture endpoint if available
+    if (hourlyByDate[date]) return;
+
+    // Group existing hourly data first
+    if (data?.hourly_forecast?.length) {
+      const grouped = {};
+      for (const h of data.hourly_forecast) {
+        const d = h.date || (h.time || '').slice(0, 10);
+        if (!grouped[d]) grouped[d] = [];
+        grouped[d].push(h);
+      }
+      if (grouped[date]) {
+        setHourlyByDate(prev => ({ ...prev, ...grouped }));
+        return;
+      }
+    }
+
+    // Fetch full 7-day hourly if not cached
+    setLoadingHourly(true);
+    try {
+      const res = await weatherApi.getHourlyForecast(region, 168);
+      const grouped = {};
+      for (const h of res.forecast || []) {
+        const d = h.date || (h.time || '').slice(0, 10);
+        if (!grouped[d]) grouped[d] = [];
+        grouped[d].push(h);
+      }
+      setHourlyByDate(grouped);
+    } catch {
+      // silently ignore
+    } finally {
+      setLoadingHourly(false);
+    }
+  };
 
   const current = data?.current;
   const topActions = useMemo(
     () => (data?.activity_recommendations || []).filter((item) => item.action_type !== 'crop_stage'),
     [data]
   );
+  const hoursForDay = selectedDate ? (hourlyByDate[selectedDate] || []) : [];
 
   const handleSubmit = (event) => {
     event.preventDefault();
@@ -129,6 +424,7 @@ const ForecastPage = () => {
 
   return (
     <div className="space-y-6">
+      {/* ── Header ── */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">
@@ -151,48 +447,37 @@ const ForecastPage = () => {
         )}
       </div>
 
+      {/* ── Filter form ── */}
       <form onSubmit={handleSubmit} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <div className="grid gap-4 md:grid-cols-4">
           <label className="space-y-2">
             <span className="text-sm font-medium text-slate-700">Khu vực</span>
             <select
               value={region}
-              onChange={(event) => setRegion(event.target.value)}
+              onChange={(e) => setRegion(e.target.value)}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
             >
-              {regions.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
+              {regions.map((item) => <option key={item} value={item}>{item}</option>)}
             </select>
           </label>
           <label className="space-y-2">
             <span className="text-sm font-medium text-slate-700">Cây trồng</span>
             <select
               value={cropName}
-              onChange={(event) => setCropName(event.target.value)}
+              onChange={(e) => setCropName(e.target.value)}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
             >
-              {crops.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
+              {crops.map((item) => <option key={item} value={item}>{item}</option>)}
             </select>
           </label>
           <label className="space-y-2">
             <span className="text-sm font-medium text-slate-700">Giai đoạn</span>
             <select
               value={growthStage}
-              onChange={(event) => setGrowthStage(event.target.value)}
+              onChange={(e) => setGrowthStage(e.target.value)}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
             >
-              {stages.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
+              {stages.map((item) => <option key={item} value={item}>{item}</option>)}
             </select>
           </label>
           <div className="flex items-end">
@@ -209,9 +494,7 @@ const ForecastPage = () => {
       </form>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-          {error}
-        </div>
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div>
       )}
 
       {loading && !data && (
@@ -225,44 +508,21 @@ const ForecastPage = () => {
 
       {data && current && (
         <>
+          {/* ── Current metrics ── */}
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-            <WeatherMetric
-              icon={Thermometer}
-              label="Nhiệt độ"
-              value={formatNumber(current.temperature, '°C')}
-              detail={`${formatNumber(current.temp_min, '°C')} - ${formatNumber(current.temp_max, '°C')}`}
-              tone="rose"
-            />
-            <WeatherMetric
-              icon={Droplets}
-              label="Độ ẩm"
-              value={formatNumber(current.humidity, '%', 0)}
-              detail="Theo dõi nấm bệnh khi vượt 85%"
-              tone="sky"
-            />
-            <WeatherMetric
-              icon={CloudRain}
-              label="Mưa hiện tại"
-              value={formatNumber(current.rainfall, ' mm')}
-              detail="Ảnh hưởng tưới tiêu và phun thuốc"
-              tone="emerald"
-            />
-            <WeatherMetric
-              icon={Wind}
-              label="Gió"
-              value={formatNumber(current.wind_speed, ' km/h')}
-              detail="Không phun thuốc khi vượt 25 km/h"
-              tone="slate"
-            />
-            <WeatherMetric
-              icon={Sun}
-              label="UV"
-              value={formatNumber(current.uv_index, '', 1)}
-              detail="Che cây non khi UV cao"
-              tone="amber"
-            />
+            <WeatherMetric icon={Thermometer} label="Nhiệt độ" value={formatNumber(current.temperature, '°C')}
+              detail={`${formatNumber(current.temp_min, '°C')} - ${formatNumber(current.temp_max, '°C')}`} tone="rose" />
+            <WeatherMetric icon={Droplets} label="Độ ẩm" value={formatNumber(current.humidity, '%', 0)}
+              detail="Theo dõi nấm bệnh khi vượt 85%" tone="sky" />
+            <WeatherMetric icon={CloudRain} label="Mưa hiện tại" value={formatNumber(current.rainfall, ' mm')}
+              detail="Ảnh hưởng tưới tiêu và phun thuốc" tone="emerald" />
+            <WeatherMetric icon={Wind} label="Gió" value={formatNumber(current.wind_speed, ' km/h')}
+              detail="Không phun thuốc khi vượt 25 km/h" tone="slate" />
+            <WeatherMetric icon={Sun} label="UV" value={formatNumber(current.uv_index, '', 1)}
+              detail="Che cây non khi UV cao" tone="amber" />
           </div>
 
+          {/* ── AI recommendation + data flow ── */}
           <div className="grid gap-6 xl:grid-cols-3">
             <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2">
               <div className="flex items-center gap-2">
@@ -273,9 +533,7 @@ const ForecastPage = () => {
               <p className="mt-2 text-sm leading-6 text-slate-700">{data.ai_recommendation.risk_explanation}</p>
               <div className="mt-4 grid gap-3 md:grid-cols-2">
                 {data.ai_recommendation.action_plan.map((item) => (
-                  <div key={item} className="rounded-lg border border-indigo-100 bg-indigo-50 p-3 text-sm leading-6 text-indigo-900">
-                    {item}
-                  </div>
+                  <div key={item} className="rounded-lg border border-indigo-100 bg-indigo-50 p-3 text-sm leading-6 text-indigo-900">{item}</div>
                 ))}
               </div>
               {data.ai_recommendation.crop_note && (
@@ -306,6 +564,7 @@ const ForecastPage = () => {
             </section>
           </div>
 
+          {/* ── Alerts ── */}
           <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
@@ -330,9 +589,7 @@ const ForecastPage = () => {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <h3 className="font-bold">{alert.title}</h3>
-                      <span className="rounded-full bg-white/80 px-2 py-1 text-xs font-semibold">
-                        {alert.severity}
-                      </span>
+                      <span className="rounded-full bg-white/80 px-2 py-1 text-xs font-semibold">{alert.severity}</span>
                     </div>
                     <p className="mt-2 text-sm leading-6">{alert.message}</p>
                     <p className="mt-2 text-sm font-medium leading-6">{alert.recommendation}</p>
@@ -343,6 +600,7 @@ const ForecastPage = () => {
             )}
           </section>
 
+          {/* ── Activity schedule ── */}
           <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center gap-2">
               <Sprout className="h-5 w-5 text-emerald-700" />
@@ -363,12 +621,77 @@ const ForecastPage = () => {
             </div>
           </section>
 
+          {/* ── 7-day drill-down ── */}
           <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center gap-2">
               <CalendarDays className="h-5 w-5 text-sky-700" />
               <h2 className="text-lg font-bold text-slate-950">Dự báo 7 ngày</h2>
+              <span className="ml-auto text-xs text-slate-400">Nhấn vào ngày để xem từng giờ</span>
             </div>
-            <div className="overflow-x-auto">
+
+            {/* Day cards row */}
+            <div className="overflow-x-auto pb-2">
+              <div className="flex gap-2">
+                {data.forecast.map((day) => (
+                  <DayCard
+                    key={day.date}
+                    day={day}
+                    selected={selectedDate === day.date}
+                    onClick={() => handleDayClick(day.date)}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* 24h hourly drill-down */}
+            {selectedDate && (
+              <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <button
+                    onClick={() => { setSelectedDate(null); setSelectedHour(null); }}
+                    className="p-1 rounded hover:bg-gray-200 transition"
+                  >
+                    <ChevronLeft className="h-4 w-4 text-gray-500" />
+                  </button>
+                  <span className="font-semibold text-gray-800 text-sm">
+                    {formatDate(selectedDate)} — 24 giờ
+                  </span>
+                  {loadingHourly && <Loader2 className="h-4 w-4 animate-spin text-sky-500 ml-auto" />}
+                </div>
+
+                {hoursForDay.length > 0 ? (
+                  <div className="overflow-x-auto pb-1">
+                    <div className="flex gap-2">
+                      {hoursForDay.map((h) => {
+                        const key = h.forecast_at || h.time;
+                        return (
+                          <HourPill
+                            key={key}
+                            hour={h}
+                            selected={selectedHour === key}
+                            onClick={() => setSelectedHour(selectedHour === key ? null : key)}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  !loadingHourly && (
+                    <p className="text-sm text-gray-400 text-center py-4">Chưa có dữ liệu giờ cho ngày này</p>
+                  )
+                )}
+
+                {/* Hour detail */}
+                {selectedHour && (
+                  <HourDetail
+                    hour={hoursForDay.find((h) => (h.forecast_at || h.time) === selectedHour)}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Detailed table */}
+            <div className="mt-4 overflow-x-auto">
               <table className="min-w-full divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-50 text-left text-xs font-semibold uppercase text-slate-500">
                   <tr>
@@ -378,11 +701,16 @@ const ForecastPage = () => {
                     <th className="px-3 py-3">Độ ẩm</th>
                     <th className="px-3 py-3">Gió</th>
                     <th className="px-3 py-3">Khuyến nghị</th>
+                    <th className="px-3 py-3"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {data.forecast.map((item) => (
-                    <tr key={item.date} className="align-top">
+                    <tr
+                      key={item.date}
+                      onClick={() => handleDayClick(item.date)}
+                      className="align-top cursor-pointer hover:bg-emerald-50/40 transition"
+                    >
                       <td className="px-3 py-3 font-semibold text-slate-900">
                         {item.day_label || formatDate(item.date)}
                         <span className="block text-xs font-normal text-slate-500">{formatDate(item.date)}</span>
@@ -397,6 +725,9 @@ const ForecastPage = () => {
                       <td className="px-3 py-3 text-slate-700">{formatNumber(item.humidity, '%', 0)}</td>
                       <td className="px-3 py-3 text-slate-700">{formatNumber(item.wind_speed, ' km/h')}</td>
                       <td className="max-w-sm px-3 py-3 text-slate-700">{item.recommendation}</td>
+                      <td className="px-3 py-3">
+                        <ChevronDown className={`h-4 w-4 transition-transform ${selectedDate === item.date ? 'rotate-180 text-emerald-600' : 'text-gray-300'}`} />
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -404,6 +735,7 @@ const ForecastPage = () => {
             </div>
           </section>
 
+          {/* ── 24h mini cards + agriculture insights ── */}
           <div className="grid gap-6 xl:grid-cols-3">
             <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2">
               <div className="mb-4 flex items-center gap-2">
@@ -418,6 +750,7 @@ const ForecastPage = () => {
                       <Umbrella className="h-4 w-4 text-sky-700" />
                     </div>
                     <p className="mt-2 text-sm text-slate-600">{formatNumber(item.temperature, '°C')}</p>
+                    <p className="text-sm text-slate-600">{formatNumber(item.humidity, '%', 0)} ẩm</p>
                     <p className="text-sm text-slate-600">{formatNumber(item.rain_probability, '%', 0)} mưa</p>
                     <p className="mt-2 text-xs leading-5 text-slate-500">{item.recommendation}</p>
                   </article>

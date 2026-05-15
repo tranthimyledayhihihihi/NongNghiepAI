@@ -581,3 +581,39 @@ def get_chat_history(
             for r in rows
         ],
     }
+
+
+@router.delete("/history/{conv_id}", status_code=200)
+def delete_chat_message(
+    conv_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Xóa một tin nhắn khỏi lịch sử chat."""
+    from app.models.conversation import AIConversation
+    row = (
+        db.query(AIConversation)
+        .filter(AIConversation.ConvID == conv_id, AIConversation.UserID == current_user.UserID)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tin nhắn")
+    db.delete(row)
+    db.commit()
+    return {"deleted": conv_id}
+
+
+@router.delete("/history", status_code=200)
+def clear_chat_history(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Xóa toàn bộ lịch sử chat của người dùng."""
+    from app.models.conversation import AIConversation
+    count = (
+        db.query(AIConversation)
+        .filter(AIConversation.UserID == current_user.UserID)
+        .delete()
+    )
+    db.commit()
+    return {"deleted_count": count}

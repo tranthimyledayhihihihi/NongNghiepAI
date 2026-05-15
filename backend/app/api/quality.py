@@ -1,3 +1,4 @@
+import asyncio
 import shutil
 import uuid
 from pathlib import Path
@@ -38,7 +39,8 @@ async def check_quality(
     with file_path.open("wb") as buffer:
         shutil.copyfileobj(upload.file, buffer)
 
-    return quality_service.check_quality(
+    return await asyncio.to_thread(
+        quality_service.check_quality,
         db,
         image_path=str(file_path),
         crop_name=crop_name,

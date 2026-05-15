@@ -1,6 +1,5 @@
-from uuid import uuid4
-
 from app.integrations.email_client import email_client
+from app.integrations.sms_client import sms_client
 from app.integrations.zalo_client import zalo_client
 
 
@@ -19,12 +18,7 @@ class NotificationService:
         elif channel == "zalo":
             result = zalo_client.send(receiver, message)
         elif channel == "sms":
-            result = {
-                "receiver": receiver,
-                "status": "mock_sent",
-                "message_id": f"mock-sms-{uuid4()}",
-                "error": "SMS provider is not configured",
-            }
+            result = sms_client.send(receiver, message)
         else:
             result = {"receiver": receiver, "status": "failed", "message_id": None, "error": f"Unknown channel: {channel}"}
         return {"channel": channel, **result}

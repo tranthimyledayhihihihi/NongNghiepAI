@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     FROM_EMAIL: str = ""
     ZALO_OA_TOKEN: str = ""
     ZALO_API_BASE_URL: str = "https://openapi.zalo.me"
+    ESMS_API_KEY: str = ""
+    ESMS_SECRET_KEY: str = ""
+    ESMS_BRAND_NAME: str = "AgriAI"
+    ESMS_SMS_TYPE: int = 2
     PRICE_SOURCE_URLS_JSON: str = json.dumps(
         [
             {"name": "agro.gov.vn", "url": "https://agro.gov.vn/index.aspx"},

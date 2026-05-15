@@ -68,11 +68,17 @@ class WeatherHourlyItem(BaseModel):
     forecast_at: datetime | None = None
     region: str | None = None
     temperature: float | None = None
+    apparent_temperature: float | None = None
     rainfall: float | None = None
     rain_probability: float | None = None
     humidity: float | None = None
+    dew_point: float | None = None
     wind_speed: float | None = None
+    wind_gusts: float | None = None
     uv_index: float | None = None
+    visibility: float | None = None
+    cloud_cover: float | None = None
+    pressure: float | None = None
     condition: str | None = None
     weather_code: int | None = None
     recommendation: str | None = None

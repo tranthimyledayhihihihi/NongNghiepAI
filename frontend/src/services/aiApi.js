@@ -10,4 +10,14 @@ export const aiApi = {
     const response = await api.get(`/api/chat/history?limit=${limit}`);
     return response.data;
   },
+
+  deleteMessage: async (convId) => {
+    const response = await api.delete(`/api/chat/history/${convId}`);
+    return response.data;
+  },
+
+  clearHistory: async () => {
+    const response = await api.delete('/api/chat/history');
+    return response.data;
+  },
 };

@@ -1,6 +1,7 @@
 import {
   Bot,
   Clock,
+  Database,
   Image as ImageIcon,
   Leaf,
   Menu,
@@ -10,6 +11,7 @@ import {
   RefreshCw,
   Send,
   Sparkles,
+  Trash2,
   User,
   X,
 } from 'lucide-react';
@@ -119,6 +121,8 @@ const AIChatPage = () => {
   const fileInputRef = useRef(null);
 
   const [activeHistoryId, setActiveHistoryId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   const loadHistory = useCallback(async () => {
     if (!isAuthenticated) return;
@@ -153,6 +157,27 @@ const AIChatPage = () => {
     ]);
     setActiveHistoryId(item.id);
     setHistoryOpen(false);
+  }, []);
+
+  const deleteMessage = useCallback(async (id, e) => {
+    e.stopPropagation();
+    setDeletingId(id);
+    try {
+      await aiApi.deleteMessage(id);
+      setChatHistory((prev) => prev.filter((item) => item.id !== id));
+      if (activeHistoryId === id) { setMessages(initialMessages); setActiveHistoryId(null); }
+    } catch { /* silent */ }
+    finally { setDeletingId(null); }
+  }, [activeHistoryId]);
+
+  const clearAllHistory = useCallback(async () => {
+    setConfirmClear(false);
+    try {
+      await aiApi.clearHistory();
+      setChatHistory([]);
+      setMessages(initialMessages);
+      setActiveHistoryId(null);
+    } catch { /* silent */ }
   }, []);
 
   useEffect(() => {
@@ -243,65 +268,139 @@ const AIChatPage = () => {
 
   const HistoryList = () => (
     <>
-      <div className="mb-5 flex items-center justify-between">
+      {/* Header */}
+      <div className="mb-4 flex items-center justify-between">
         <h2 className="font-bold text-gray-900">Lịch sử chat</h2>
-        <button
-          type="button"
-          onClick={loadHistory}
-          className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-          title="Tải lại lịch sử"
-        >
-          <MoreVertical className="h-5 w-5" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={loadHistory}
+            className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            title="Tải lại"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </button>
+          {isAuthenticated && chatHistory.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setConfirmClear(true)}
+              className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500"
+              title="Xóa tất cả lịch sử"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="space-y-2">
+      {/* Storage info badge */}
+      {isAuthenticated && (
+        <div className="mb-3 flex items-center gap-1.5 rounded-lg bg-gray-50 px-2.5 py-2 text-xs text-gray-500 border border-gray-100">
+          <Database className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+          <span>Lưu trong <strong>SQL Server</strong> · bảng <code className="bg-gray-200 px-1 rounded text-gray-600">AIConversations</code></span>
+        </div>
+      )}
+
+      {/* Confirm clear dialog */}
+      {confirmClear && (
+        <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3">
+          <p className="text-xs font-semibold text-red-700 mb-2">Xóa toàn bộ lịch sử chat?</p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={clearAllHistory}
+              className="flex-1 rounded-lg bg-red-600 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
+            >
+              Xóa tất cả
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmClear(false)}
+              className="flex-1 rounded-lg border border-gray-300 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-100"
+            >
+              Hủy
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* List */}
+      <div className="space-y-1.5">
         {historyLoading && (
           <div className="py-6 text-center text-sm text-gray-400">Đang tải lịch sử...</div>
         )}
-
         {!historyLoading && !isAuthenticated && (
           <div className="rounded-lg bg-gray-50 px-3 py-4 text-center text-xs text-gray-500">
             Đăng nhập để xem lịch sử hội thoại của bạn.
           </div>
         )}
-
         {!historyLoading && isAuthenticated && chatHistory.length === 0 && (
           <div className="rounded-lg bg-gray-50 px-3 py-4 text-center text-xs text-gray-500">
             Chưa có lịch sử. Hãy bắt đầu hỏi AgriBot!
           </div>
         )}
-
         {!historyLoading && chatHistory.map((item) => {
           const isActive = activeHistoryId === item.id;
+          const isDeleting = deletingId === item.id;
+          const topicColors = {
+            weather: 'text-sky-600 bg-sky-50',
+            price: 'text-emerald-700 bg-emerald-50',
+            pest: 'text-orange-600 bg-orange-50',
+            cultivation: 'text-green-700 bg-green-50',
+            soil_salinity: 'text-blue-600 bg-blue-50',
+            soil_acidity: 'text-yellow-700 bg-yellow-50',
+          };
+          const topicLabel = {
+            weather: '🌤 Thời tiết', price: '💰 Giá', pest: '🐛 Sâu bệnh',
+            cultivation: '🌱 Canh tác', soil_salinity: '🌊 Đất mặn', soil_acidity: '⚗ Đất phèn',
+          };
           return (
-            <button
+            <div
               key={item.id}
-              type="button"
-              onClick={() => loadConversation(item)}
-              className={`w-full rounded-lg p-3 text-left transition hover:bg-green-50 ${
-                isActive ? 'bg-green-50 ring-1 ring-green-200' : ''
-              }`}
+              className={`group relative rounded-xl border transition ${
+                isActive ? 'border-green-200 bg-green-50' : 'border-transparent hover:border-gray-200 hover:bg-gray-50'
+              } ${isDeleting ? 'opacity-40' : ''}`}
             >
-              <div className="flex items-start gap-3">
-                <div className={`rounded-lg p-2 ${isActive ? 'bg-green-700 text-white' : 'bg-green-50 text-green-700'}`}>
-                  <Leaf className="h-4 w-4" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className={`truncate text-sm font-semibold ${isActive ? 'text-green-800' : 'text-gray-900'}`}>
-                    {item.user_message.length > 50
-                      ? `${item.user_message.slice(0, 50)}…`
-                      : item.user_message}
+              <button
+                type="button"
+                onClick={() => loadConversation(item)}
+                className="w-full p-3 text-left"
+              >
+                <div className="flex items-start gap-2.5">
+                  <div className={`mt-0.5 rounded-lg p-1.5 ${isActive ? 'bg-green-700 text-white' : 'bg-green-100 text-green-700'}`}>
+                    <Leaf className="h-3.5 w-3.5" />
                   </div>
-                  {item.ai_response && (
-                    <div className="mt-1 truncate text-xs text-gray-500">
-                      {item.ai_response.replace(/[#*`]/g, '').slice(0, 70)}…
+                  <div className="min-w-0 flex-1 pr-6">
+                    <div className={`truncate text-sm font-semibold ${isActive ? 'text-green-800' : 'text-gray-900'}`}>
+                      {item.user_message.length > 48 ? `${item.user_message.slice(0, 48)}…` : item.user_message}
                     </div>
-                  )}
-                  <div className="mt-1 text-xs text-gray-400">{formatHistoryTime(item.created_at)}</div>
+                    {item.ai_response && (
+                      <div className="mt-0.5 truncate text-xs text-gray-400">
+                        {item.ai_response.replace(/[#*`]/g, '').slice(0, 65)}…
+                      </div>
+                    )}
+                    <div className="mt-1.5 flex items-center gap-2">
+                      {item.topic && topicLabel[item.topic] && (
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${topicColors[item.topic] || 'bg-gray-100 text-gray-600'}`}>
+                          {topicLabel[item.topic]}
+                        </span>
+                      )}
+                      <span className="text-xs text-gray-400">{formatHistoryTime(item.created_at)}</span>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </button>
+              </button>
+              {/* Delete button */}
+              <button
+                type="button"
+                onClick={(e) => deleteMessage(item.id, e)}
+                disabled={isDeleting}
+                className="absolute right-2 top-2 rounded-lg p-1.5 text-gray-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
+                title="Xóa tin nhắn này"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
           );
         })}
       </div>
@@ -309,9 +408,9 @@ const AIChatPage = () => {
       <button
         type="button"
         onClick={() => { setMessages(initialMessages); setActiveHistoryId(null); setHistoryOpen(false); }}
-        className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-green-700 py-3 font-medium text-white hover:bg-green-800"
+        className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-green-700 py-2.5 text-sm font-semibold text-white hover:bg-green-800"
       >
-        <Plus className="h-5 w-5" />
+        <Plus className="h-4 w-4" />
         Cuộc hội thoại mới
       </button>
     </>

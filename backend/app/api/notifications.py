@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.auth import get_current_user
@@ -6,6 +7,7 @@ from app.api.response import api_response
 from app.core.database import get_db
 from app.models.user import User
 from app.services.notification_center_service import notification_center_service
+from app.services.notification_service import notification_service
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
@@ -61,3 +63,33 @@ async def delete_notification(
     if data is None:
         raise HTTPException(status_code=404, detail="notification not found")
     return api_response(data, message=data["message"])
+
+
+class TestNotificationRequest(BaseModel):
+    channel: str  # "email" | "zalo" | "sms"
+    receiver: str  # email address, Zalo user_id, or phone number
+
+
+@router.post("/test")
+async def send_test_notification(
+    body: TestNotificationRequest,
+    current_user: User = Depends(get_current_user),
+):
+    result = notification_service.send(
+        channel=body.channel,
+        receiver=body.receiver,
+        subject="[AgriAI] Thông báo thử nghiệm",
+        message=(
+            f"Xin chào {current_user.FullName or current_user.Username}!\n"
+            "Đây là tin nhắn thử nghiệm từ hệ thống AgriAI. "
+            "Kênh thông báo của bạn đang hoạt động tốt."
+        ),
+        html_message=(
+            "<html><body>"
+            f"<h2>Xin chào {current_user.FullName or current_user.Username}!</h2>"
+            "<p>Đây là tin nhắn thử nghiệm từ hệ thống <strong>AgriAI</strong>.</p>"
+            "<p>Kênh thông báo của bạn đang hoạt động tốt.</p>"
+            "</body></html>"
+        ),
+    )
+    return api_response(result, message="Đã gửi thử thông báo")
