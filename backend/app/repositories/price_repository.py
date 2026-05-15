@@ -29,9 +29,11 @@ def create_market_price(
         Region=region,
         PricePerKg=price,
         QualityGrade=to_db_grade(quality_grade),
-        MarketType="Bán lẻ",
+        MarketType=market_type,
         SourceName=source,
+        SourceURL=source_url,
         PriceDate=timestamp.date(),
+        CollectedAt=timestamp,
         UpdatedAt=timestamp,
     )
     try:
@@ -225,6 +227,12 @@ def bulk_upsert_market_prices(db: Session, records: list[dict]) -> dict:
             market_price.PricePerKg = float(record["price"])
             market_price.SourceName = source_name
             market_price.SourceURL = source_url
+            market_price.CollectedAt = timestamp
+            market_price.ConfidenceScore = record.get("confidence_score")
+            market_price.IsRealtime = bool(record.get("is_realtime", False))
+            market_price.IsScraped = bool(record.get("is_scraped", bool(source_url)))
+            market_price.RawPayloadHash = record.get("raw_payload_hash")
+            market_price.RawPayload = record.get("raw_payload")
             market_price.UpdatedAt = timestamp
             touched_history.add((crop.CropID, record["region"], record_date))
         except Exception as exc:

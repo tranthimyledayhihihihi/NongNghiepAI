@@ -396,6 +396,14 @@ class WeatherService:
         observation = get_latest_observation(db, normalized_region)
         daily_cache_ready = len(rows) >= forecast_days
 
+        if daily_cache_ready and not force_refresh and self._observation_is_fresh(observation):
+            return {
+                "cache_status": "hit",
+                "saved_daily_rows": 0,
+                "saved_observations": 0,
+                "deleted": {"weather_data": 0, "observations": 0},
+            }
+
         current = None
         current_error = None
         try:

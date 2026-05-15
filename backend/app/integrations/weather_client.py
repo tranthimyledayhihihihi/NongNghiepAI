@@ -268,6 +268,52 @@ class WeatherClient:
             )
         return result
 
+    def get_air_quality(self, region: str, hours: int = 24) -> dict:
+        coordinates = self._coordinates_for_region(region)
+        forecast_hours = min(max(hours, 1), 120)
+        params = {
+            "latitude": coordinates["latitude"],
+            "longitude": coordinates["longitude"],
+            "hourly": "pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone,uv_index",
+            "forecast_days": max(1, min((forecast_hours + 23) // 24, 5)),
+            "timezone": "Asia/Ho_Chi_Minh",
+        }
+        url = "https://air-quality-api.open-meteo.com/v1/air-quality"
+        payload = self._get_json(url, params)
+        hourly = payload.get("hourly") or {}
+        times = hourly.get("time") or []
+        start_at = datetime.now().replace(minute=0, second=0, microsecond=0)
+        selected_index = 0
+        selected_at = self._parse_datetime(times[0]) if times else None
+        for index, forecast_time in enumerate(times[:forecast_hours]):
+            forecast_at = self._parse_datetime(forecast_time)
+            if forecast_at and forecast_at >= start_at:
+                selected_index = index
+                selected_at = forecast_at
+                break
+
+        pm25 = self._at(hourly.get("pm2_5"), selected_index)
+        pm10 = self._at(hourly.get("pm10"), selected_index)
+        ozone = self._at(hourly.get("ozone"), selected_index)
+        uv_index = self._at(hourly.get("uv_index"), selected_index)
+        aqi = self._pm25_to_aqi(pm25)
+        return {
+            "region": region,
+            "aqi": aqi,
+            "pm25": pm25,
+            "pm10": pm10,
+            "o3": ozone,
+            "uv_index": uv_index,
+            "observed_at": selected_at or datetime.now(),
+            "source_name": "Open-Meteo Air Quality",
+            "source_url": url,
+            "is_realtime": True,
+            "is_mock": False,
+            "cache_status": "live",
+            "last_updated": selected_at or datetime.now(),
+            "recommendation": self._air_quality_recommendation(aqi, pm25, uv_index),
+        }
+
     def _get_json(self, url: str, params: dict[str, Any]) -> dict:
         last_error: Exception | None = None
         attempts = max(settings.WEATHER_RETRY_COUNT + 1, 1)
@@ -318,6 +364,40 @@ class WeatherClient:
             return round(float(value) / 3600, 1)
         except (TypeError, ValueError):
             return None
+
+    @staticmethod
+    def _pm25_to_aqi(value: Any) -> int | None:
+        if value is None:
+            return None
+        try:
+            pm25 = float(value)
+        except (TypeError, ValueError):
+            return None
+        if pm25 <= 12:
+            return round((50 / 12) * pm25)
+        if pm25 <= 35.4:
+            return round(51 + (49 / 23.4) * (pm25 - 12.1))
+        if pm25 <= 55.4:
+            return round(101 + (49 / 19.9) * (pm25 - 35.5))
+        if pm25 <= 150.4:
+            return round(151 + (49 / 94.9) * (pm25 - 55.5))
+        return min(300, round(201 + (99 / 99.5) * (pm25 - 150.5)))
+
+    @staticmethod
+    def _air_quality_recommendation(aqi: int | None, pm25: Any, uv_index: Any) -> str:
+        try:
+            uv = float(uv_index) if uv_index is not None else 0
+        except (TypeError, ValueError):
+            uv = 0
+        if aqi is not None and aqi >= 151:
+            return "Hạn chế phun thuốc và làm việc ngoài trời lâu; ưu tiên khung giờ sáng sớm."
+        if aqi is not None and aqi >= 101:
+            return "Không khí kém, nên giảm thời gian phơi/sấy ngoài trời và bảo hộ khi phun thuốc."
+        if uv >= 8:
+            return "UV cao, tránh phơi nông sản hoặc phun thuốc giữa trưa."
+        if pm25 is not None:
+            return "Chất lượng không khí phù hợp cho hoạt động đồng ruộng, vẫn cần theo dõi UV."
+        return "Chưa có đủ dữ liệu chất lượng không khí, dùng khuyến nghị thời tiết làm chính."
 
     @staticmethod
     def _parse_datetime(value: str | None) -> datetime | None:

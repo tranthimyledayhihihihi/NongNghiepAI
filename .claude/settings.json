@@ -30,9 +30,9 @@
       "PowerShell(Invoke-RestMethod -Uri \"http://localhost:8000/health\" -Method GET -ErrorAction SilentlyContinue 2>&1)",
       "Bash(venv\\\\Scripts\\\\python.exe -c \"from app.api import ai, alert, auth, chat, crawler, crops, dashboard, harvest, market, market_news, news, notifications, price_forecast, pricing, quality, reports, weather; from app.api import settings as settings_router; print\\('All imports OK'\\)\")",
       "PowerShell(Get-Process -Id 33964 -ErrorAction SilentlyContinue)",
-      "PowerShell(cd \"d:\\\\HocTap\\\\Nam3\\\\CDNNLT\\\\NongNghiepAI\\\\backend\"; $env:PYTHONUTF8=\"1\"; $env:PYTHONIOENCODING=\"utf-8\"; Start-Process -FilePath \".\\\\venv\\\\Scripts\\\\uvicorn.exe\" -ArgumentList \"app.main:app\",\"--host\",\"127.0.0.1\",\"--port\",\"5000\" -NoNewWindow -PassThru | Select-Object Id)",
-      "PowerShell(Invoke-RestMethod -Uri \"http://127.0.0.1:5000/health\" -Method GET -ErrorAction SilentlyContinue)",
-      "PowerShell($body = [System.Text.Encoding]::UTF8.GetBytes\\('{\"question\":\"thoi tiet xau\"}'\\); $req = [System.Net.HttpWebRequest]::Create\\(\"http://127.0.0.1:5000/api/chat\"\\); $req.Method = \"POST\"; $req.ContentType = \"application/json; charset=utf-8\"; $req.ContentLength = $body.Length; $stream = $req.GetRequestStream\\(\\); $stream.Write\\($body, 0, $body.Length\\); $stream.Close\\(\\); $resp = $req.GetResponse\\(\\); $reader = New-Object System.IO.StreamReader\\($resp.GetResponseStream\\(\\)\\); $reader.ReadToEnd\\(\\))",
+      "PowerShell(cd \"d:\\\\HocTap\\\\Nam3\\\\CDNNLT\\\\NongNghiepAI\\\\backend\"; $env:PYTHONUTF8=\"1\"; $env:PYTHONIOENCODING=\"utf-8\"; Start-Process -FilePath \".\\\\venv\\\\Scripts\\\\uvicorn.exe\" -ArgumentList \"app.main:app\",\"--host\",\"127.0.0.1\",\"--port\",\"8000\" -NoNewWindow -PassThru | Select-Object Id)",
+      "PowerShell(Invoke-RestMethod -Uri \"http://127.0.0.1:8000/health\" -Method GET -ErrorAction SilentlyContinue)",
+      "PowerShell($body = [System.Text.Encoding]::UTF8.GetBytes\\('{\"question\":\"thoi tiet xau\"}'\\); $req = [System.Net.HttpWebRequest]::Create\\(\"http://127.0.0.1:8000/api/chat\"\\); $req.Method = \"POST\"; $req.ContentType = \"application/json; charset=utf-8\"; $req.ContentLength = $body.Length; $stream = $req.GetRequestStream\\(\\); $stream.Write\\($body, 0, $body.Length\\); $stream.Close\\(\\); $resp = $req.GetResponse\\(\\); $reader = New-Object System.IO.StreamReader\\($resp.GetResponseStream\\(\\)\\); $reader.ReadToEnd\\(\\))",
       "PowerShell(taskkill /PID 34396 /F)",
       "Bash(git add *)"
     ],

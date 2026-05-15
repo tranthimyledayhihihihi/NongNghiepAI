@@ -21,7 +21,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.api import (
     ai, alert, auth, chat, crawler, crops, dashboard,
     harvest, market, market_news, news, notifications,
-    price_forecast, pricing, quality, reports, weather,
+    price_forecast, pricing, quality, weather,
 )
 from app.api import settings as settings_router
 from app.core.config import settings
@@ -82,7 +82,6 @@ app.include_router(crawler.router)
 app.include_router(news.router)
 app.include_router(dashboard.router)
 app.include_router(notifications.router)
-app.include_router(reports.router)
 app.include_router(settings_router.router)
 app.include_router(market_news.router)
 

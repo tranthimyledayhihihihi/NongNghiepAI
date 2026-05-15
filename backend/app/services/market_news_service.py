@@ -34,16 +34,19 @@ class MarketNewsService:
             return {**cached, "cache_status": "hit"}
 
         rows = list_market_news(db, limit=limit, crop_name=crop_name, region=region)
+        cache_status = "from_db"
+        if not rows and (crop_name or region):
+            rows = list_market_news(db, limit=limit)
+            cache_status = "fallback_filter"
         if not rows:
-            self.refresh_news()
-            rows = list_market_news(db, limit=limit, crop_name=crop_name, region=region)
+            cache_status = "empty"
 
         response = {
             "news": [self._to_dict(row) for row in rows],
             "source": "rss",
             "is_realtime": True,
             "is_mock": False,
-            "cache_status": "from_db",
+            "cache_status": cache_status,
         }
         if cache_key:
             redis_client.set(cache_key, response, expire=1800)

@@ -149,6 +149,23 @@ def _apply_lightweight_schema_upgrades() -> None:
             "SourceName": "VARCHAR(100) NULL",
             "SourceUpdatedAt": "DATETIME NULL",
         },
+        "MarketPrices": {
+            "SourceURL": "VARCHAR(500) NULL",
+            "CollectedAt": "DATETIME NULL",
+            "ConfidenceScore": "FLOAT NULL",
+            "IsRealtime": "BOOLEAN NOT NULL DEFAULT 0" if _is_sqlite() else "BIT NOT NULL DEFAULT 0",
+            "IsScraped": "BOOLEAN NOT NULL DEFAULT 0" if _is_sqlite() else "BIT NOT NULL DEFAULT 0",
+            "RawPayloadHash": "VARCHAR(128) NULL",
+            "RawPayload": "TEXT NULL" if _is_sqlite() else "NVARCHAR(MAX) NULL",
+        },
+        "WeatherObservations": {
+            "AQI": "FLOAT NULL",
+            "PM25": "FLOAT NULL",
+            "PM10": "FLOAT NULL",
+            "O3": "FLOAT NULL",
+            "RiskScore": "FLOAT NULL",
+            "SourceUpdatedAt": "DATETIME NULL",
+        },
         "AIConversations": {
             "ContextSnapshot": "TEXT NULL" if _is_sqlite() else "NVARCHAR(MAX) NULL",
             "Provider": "VARCHAR(50) NULL",

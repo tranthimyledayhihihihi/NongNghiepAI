@@ -8,11 +8,16 @@ from app.models.market_news import MarketNews
 def upsert_market_news(db: Session, records: list[dict]) -> dict:
     saved = 0
     updated = 0
+    seen_urls: set[str] = set()
     for record in records:
         try:
-            row = db.query(MarketNews).filter(MarketNews.SourceURL == record["source_url"]).first()
+            source_url = record.get("source_url")
+            if not source_url or source_url in seen_urls:
+                continue
+            seen_urls.add(source_url)
+            row = db.query(MarketNews).filter(MarketNews.SourceURL == source_url).first()
             if row is None:
-                row = MarketNews(SourceURL=record["source_url"])
+                row = MarketNews(SourceURL=source_url)
                 db.add(row)
                 saved += 1
             else:
