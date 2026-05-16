@@ -28,19 +28,49 @@ GRADE_DB_TO_API = {
 }
 
 ALERT_API_TO_DB = {
-    "above": "Trên",
-    "below": "Dưới",
-    "change": "Thay đổi",
-    "Trên": "Trên",
-    "Dưới": "Dưới",
-    "Thay đổi": "Thay đổi",
+    "above": "Tren",
+    "below": "Duoi",
+    "change": "Thay doi",
+    "Tren": "Tren",
+    "Duoi": "Duoi",
+    "Thay doi": "Thay doi",
+    "Trên": "Tren",
+    "Dưới": "Duoi",
+    "Thay đổi": "Thay doi",
 }
 
 ALERT_DB_TO_API = {
+    "Tren": "above",
+    "Duoi": "below",
+    "Thay doi": "change",
     "Trên": "above",
     "Dưới": "below",
     "Thay đổi": "change",
 }
+
+GRADE_API_TO_DB.update(
+    {
+        "grade_1": "Loai 1",
+        "grade_2": "Loai 2",
+        "grade_3": "Loai 3",
+        "loai_1": "Loai 1",
+        "loai_2": "Loai 2",
+        "loai_3": "Loai 3",
+        "loai 1": "Loai 1",
+        "loai 2": "Loai 2",
+        "loai 3": "Loai 3",
+        "loại 1": "Loai 1",
+        "loại 2": "Loai 2",
+        "loại 3": "Loai 3",
+    }
+)
+GRADE_DB_TO_API.update(
+    {
+        "Loai 1": "grade_1",
+        "Loai 2": "grade_2",
+        "Loai 3": "grade_3",
+    }
+)
 
 CHANNEL_API_TO_DB = {
     "retail": "Thương lái",
@@ -53,7 +83,7 @@ CHANNEL_API_TO_DB = {
 
 def to_db_grade(value: str | None) -> str:
     if not value:
-        return "Loại 1"
+        return "Loai 1"
     return GRADE_API_TO_DB.get(value.strip().lower(), value)
 
 

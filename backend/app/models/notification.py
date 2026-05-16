@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, Unicode, UnicodeText
 from sqlalchemy.orm import synonym
 from sqlalchemy.sql import func
 
@@ -11,8 +11,8 @@ class Notification(Base):
     NotificationID = Column("NotificationID", Integer, primary_key=True, index=True)
     UserID = Column("UserID", Integer, ForeignKey("Users.UserID"), nullable=False, index=True)
     Type = Column("Type", String(50), nullable=False, default="system", index=True)
-    Title = Column("Title", String(255), nullable=False)
-    Message = Column("Message", Text, nullable=False)
+    Title = Column("Title", Unicode(255), nullable=False)
+    Message = Column("Message", UnicodeText, nullable=False)
     Priority = Column("Priority", String(30), nullable=False, default="medium")
     IsRead = Column("IsRead", Boolean, nullable=False, default=False)
     IsDeleted = Column("IsDeleted", Boolean, nullable=False, default=False)
@@ -46,7 +46,7 @@ class NotificationDelivery(Base):
     Receiver = Column("Receiver", String(255), nullable=True)
     Status = Column("Status", String(30), nullable=False, default="pending")
     ProviderMessageID = Column("ProviderMessageID", String(100), nullable=True)
-    ErrorMessage = Column("ErrorMessage", Text, nullable=True)
+    ErrorMessage = Column("ErrorMessage", UnicodeText, nullable=True)
     SentAt = Column("SentAt", DateTime, server_default=func.now(), nullable=False)
 
     id = synonym("DeliveryID")

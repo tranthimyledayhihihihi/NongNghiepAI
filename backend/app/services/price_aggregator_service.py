@@ -72,9 +72,9 @@ class PriceAggregatorService:
                     "market_type": row.MarketType,
                     "source_name": row.SourceName or "Stooq commodity futures",
                     "source_url": row.SourceURL,
-                    "last_updated": row.CollectedAt or row.UpdatedAt,
-                    "cache_status": self.cache_status(row.CollectedAt or row.UpdatedAt),
-                    "is_realtime": bool(row.IsRealtime),
+                    "last_updated": row.UpdatedAt,
+                    "cache_status": self.cache_status(row.UpdatedAt),
+                    "is_realtime": False,
                     "is_mock": False,
                 }
             )

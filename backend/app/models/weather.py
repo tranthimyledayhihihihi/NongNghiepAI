@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, Unicode, UnicodeText, UniqueConstraint
 from sqlalchemy.orm import synonym
 from sqlalchemy.sql import func
 
@@ -9,14 +9,14 @@ class WeatherData(Base):
     __tablename__ = "WeatherData"
 
     WeatherID = Column("WeatherID", Integer, primary_key=True, index=True)
-    Region = Column("Region", String(100), nullable=False, index=True)
+    Region = Column("Region", Unicode(100), nullable=False, index=True)
     RecordDate = Column("RecordDate", Date, nullable=False, index=True)
     TempMin = Column("TempMin", Float, nullable=True)
     TempMax = Column("TempMax", Float, nullable=True)
     Humidity = Column("Humidity", Float, nullable=True)
     Rainfall = Column("Rainfall", Float, nullable=True)
     SunshineHours = Column("SunshineHours", Float, nullable=True)
-    WeatherDesc = Column("WeatherDesc", String(100), nullable=True)
+    WeatherDesc = Column("WeatherDesc", Unicode(100), nullable=True)
     Latitude = Column("Latitude", Float, nullable=True)
     Longitude = Column("Longitude", Float, nullable=True)
     WindSpeed = Column("WindSpeed", Float, nullable=True)
@@ -69,10 +69,10 @@ class WeatherLocation(Base):
     __tablename__ = "WeatherLocations"
 
     LocationID = Column("LocationID", Integer, primary_key=True, index=True)
-    Region = Column("Region", String(100), nullable=False, unique=True, index=True)
-    Province = Column("Province", String(100), nullable=True, index=True)
-    District = Column("District", String(100), nullable=True)
-    Ward = Column("Ward", String(100), nullable=True)
+    Region = Column("Region", Unicode(100), nullable=False, unique=True, index=True)
+    Province = Column("Province", Unicode(100), nullable=True, index=True)
+    District = Column("District", Unicode(100), nullable=True)
+    Ward = Column("Ward", Unicode(100), nullable=True)
     Latitude = Column("Latitude", Float, nullable=True)
     Longitude = Column("Longitude", Float, nullable=True)
     IsDefault = Column("IsDefault", Boolean, nullable=False, default=False)
@@ -94,7 +94,7 @@ class WeatherObservation(Base):
 
     ObservationID = Column("ObservationID", Integer, primary_key=True, index=True)
     LocationID = Column("LocationID", Integer, ForeignKey("WeatherLocations.LocationID"), nullable=True, index=True)
-    Region = Column("Region", String(100), nullable=False, index=True)
+    Region = Column("Region", Unicode(100), nullable=False, index=True)
     ObservedAt = Column("ObservedAt", DateTime, nullable=False, index=True)
     Temperature = Column("Temperature", Float, nullable=True)
     Humidity = Column("Humidity", Float, nullable=True)
@@ -103,7 +103,7 @@ class WeatherObservation(Base):
     UVIndex = Column("UVIndex", Float, nullable=True)
     Pressure = Column("Pressure", Float, nullable=True)
     WeatherCode = Column("WeatherCode", Integer, nullable=True)
-    WeatherDesc = Column("WeatherDesc", String(100), nullable=True)
+    WeatherDesc = Column("WeatherDesc", Unicode(100), nullable=True)
     SourceName = Column("SourceName", String(100), nullable=True)
     SourceUpdatedAt = Column("SourceUpdatedAt", DateTime, nullable=True)
     CreatedAt = Column("CreatedAt", DateTime, server_default=func.now(), nullable=False)
@@ -176,21 +176,27 @@ class WeatherAlert(Base):
     __tablename__ = "WeatherAlerts"
 
     AlertID = Column("AlertID", Integer, primary_key=True, index=True)
-    Region = Column("Region", String(100), nullable=False, index=True)
+    UserID = Column("UserID", Integer, ForeignKey("Users.UserID"), nullable=True, index=True)
+    Region = Column("Region", Unicode(100), nullable=False, index=True)
     AlertType = Column("AlertType", String(50), nullable=False, index=True)
     Severity = Column("Severity", String(20), nullable=False, default="medium", index=True)
-    Title = Column("Title", String(200), nullable=False)
-    Message = Column("Message", Text, nullable=False)
-    Recommendation = Column("Recommendation", Text, nullable=True)
+    Title = Column("Title", Unicode(200), nullable=False)
+    Message = Column("Message", UnicodeText, nullable=False)
+    Recommendation = Column("Recommendation", UnicodeText, nullable=True)
     TriggerValue = Column("TriggerValue", Float, nullable=True)
     TriggerUnit = Column("TriggerUnit", String(30), nullable=True)
     ForecastDate = Column("ForecastDate", Date, nullable=True, index=True)
     DedupKey = Column("DedupKey", String(255), nullable=True, unique=True, index=True)
     Source = Column("Source", String(50), nullable=False, default="rule")
+    NotifyMethod = Column("NotifyMethod", String(20), nullable=False, default="Email")
+    Receiver = Column("Receiver", String(255), nullable=True)
+    LastTriggered = Column("LastTriggered", DateTime, nullable=True)
+    LastValue = Column("LastValue", Float, nullable=True)
     IsActive = Column("IsActive", Boolean, nullable=False, default=True)
     CreatedAt = Column("CreatedAt", DateTime, server_default=func.now(), nullable=False)
 
     id = synonym("AlertID")
+    user_id = synonym("UserID")
     region = synonym("Region")
     alert_type = synonym("AlertType")
     severity = synonym("Severity")
@@ -202,6 +208,10 @@ class WeatherAlert(Base):
     forecast_date = synonym("ForecastDate")
     dedup_key = synonym("DedupKey")
     source = synonym("Source")
+    notify_method = synonym("NotifyMethod")
+    receiver = synonym("Receiver")
+    last_triggered_at = synonym("LastTriggered")
+    last_value = synonym("LastValue")
     is_active = synonym("IsActive")
     created_at = synonym("CreatedAt")
 

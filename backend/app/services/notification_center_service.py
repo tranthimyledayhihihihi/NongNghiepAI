@@ -23,12 +23,12 @@ class NotificationCenterService:
         self._seed_welcome_notifications(db, user)
         query = db.query(Notification).filter(
             Notification.UserID == user.UserID,
-            Notification.IsDeleted.is_(False),
+            Notification.IsDeleted == False,
         )
         if notification_type:
             query = query.filter(Notification.Type == notification_type)
         if unread_only:
-            query = query.filter(Notification.IsRead.is_(False))
+            query = query.filter(Notification.IsRead == False)
 
         total = query.count()
         rows = (
@@ -41,8 +41,8 @@ class NotificationCenterService:
             db.query(func.count(Notification.NotificationID))
             .filter(
                 Notification.UserID == user.UserID,
-                Notification.IsDeleted.is_(False),
-                Notification.IsRead.is_(False),
+                Notification.IsDeleted == False,
+                Notification.IsRead == False,
             )
             .scalar()
             or 0
@@ -52,6 +52,65 @@ class NotificationCenterService:
             "total": total,
             "unread_count": int(unread_count),
         }
+
+    def summary(self, db: Session, user: User) -> dict:
+        self._seed_welcome_notifications(db, user)
+        base = db.query(Notification).filter(
+            Notification.UserID == user.UserID,
+            Notification.IsDeleted == False,
+        )
+        total = base.count()
+        unread = base.filter(Notification.IsRead == False).count()
+        by_type = {
+            row[0]: int(row[1])
+            for row in (
+                db.query(Notification.Type, func.count(Notification.NotificationID))
+                .filter(Notification.UserID == user.UserID, Notification.IsDeleted == False)
+                .group_by(Notification.Type)
+                .all()
+            )
+        }
+        by_priority = {
+            row[0]: int(row[1])
+            for row in (
+                db.query(Notification.Priority, func.count(Notification.NotificationID))
+                .filter(Notification.UserID == user.UserID, Notification.IsDeleted == False)
+                .group_by(Notification.Priority)
+                .all()
+            )
+        }
+        delivery_failed = (
+            db.query(func.count(NotificationDelivery.DeliveryID))
+            .join(Notification, NotificationDelivery.NotificationID == Notification.NotificationID)
+            .filter(
+                Notification.UserID == user.UserID,
+                Notification.IsDeleted == False,
+                NotificationDelivery.Status.in_(["failed", "error"]),
+            )
+            .scalar()
+            or 0
+        )
+        return {
+            "total": int(total),
+            "unread": int(unread),
+            "by_type": by_type,
+            "by_priority": by_priority,
+            "delivery_failed": int(delivery_failed),
+            "high_priority": int(by_priority.get("high", 0)),
+            "updated_at": datetime.now(),
+        }
+
+    def get_detail(self, db: Session, user: User, notification_id: int) -> dict | None:
+        row = self._get_owned(db, user, notification_id)
+        if row is None:
+            return None
+        data = self._to_dict(row)
+        data["deliveries"] = [
+            self._delivery_to_dict(delivery)
+            for delivery in self._deliveries(db, notification_id)
+        ]
+        data["related_entity"] = self._related_entity(db, row)
+        return data
 
     def create_notification(self, db: Session, request: NotificationCreate) -> dict:
         row = Notification(
@@ -87,8 +146,8 @@ class NotificationCenterService:
             db.query(Notification)
             .filter(
                 Notification.UserID == user.UserID,
-                Notification.IsDeleted.is_(False),
-                Notification.IsRead.is_(False),
+                Notification.IsDeleted == False,
+                Notification.IsRead == False,
             )
             .all()
         )
@@ -107,6 +166,78 @@ class NotificationCenterService:
         db.add(row)
         db.commit()
         return {"notification_id": notification_id, "message": "notification deleted"}
+
+    def deliveries(self, db: Session, user: User, notification_id: int) -> list[dict] | None:
+        if self._get_owned(db, user, notification_id) is None:
+            return None
+        return [self._delivery_to_dict(row) for row in self._deliveries(db, notification_id)]
+
+    def bulk_update(
+        self,
+        db: Session,
+        user: User,
+        *,
+        action: str,
+        ids: list[int] | None = None,
+        notification_type: str | None = None,
+        unread_only: bool = False,
+    ) -> dict:
+        query = db.query(Notification).filter(
+            Notification.UserID == user.UserID,
+            Notification.IsDeleted == False,
+        )
+        if ids:
+            query = query.filter(Notification.NotificationID.in_(ids))
+        if notification_type:
+            query = query.filter(Notification.Type == notification_type)
+        if unread_only:
+            query = query.filter(Notification.IsRead == False)
+
+        rows = query.all()
+        now = datetime.now()
+        for row in rows:
+            if action in {"mark_read", "read"}:
+                row.IsRead = True
+                row.ReadAt = now
+            elif action in {"delete", "archive"}:
+                row.IsDeleted = True
+            db.add(row)
+        db.commit()
+        return {"updated": len(rows), "action": action, "message": "bulk update completed"}
+
+    def retry_delivery(self, db: Session, user: User, notification_id: int) -> dict | None:
+        row = self._get_owned(db, user, notification_id)
+        if row is None:
+            return None
+        from app.services.notification_service import notification_service
+
+        deliveries = [
+            delivery
+            for delivery in self._deliveries(db, notification_id)
+            if delivery.Channel != "app" and delivery.Status in {"failed", "pending", "error", "mock_sent"}
+        ]
+        results = []
+        for delivery in deliveries:
+            if not delivery.Receiver:
+                delivery.Status = "failed"
+                delivery.ErrorMessage = "Receiver is missing"
+                db.add(delivery)
+                results.append(self._delivery_to_dict(delivery))
+                continue
+            result = notification_service.send(
+                delivery.Channel,
+                delivery.Receiver,
+                row.Title,
+                row.Message,
+            )
+            delivery.Status = result.get("status") or "failed"
+            delivery.ProviderMessageID = result.get("message_id")
+            delivery.ErrorMessage = result.get("error")
+            delivery.SentAt = datetime.now()
+            db.add(delivery)
+            results.append(self._delivery_to_dict(delivery))
+        db.commit()
+        return {"notification_id": notification_id, "retried": len(results), "deliveries": results}
 
     def create_price_alert_inbox(
         self,
@@ -182,7 +313,7 @@ class NotificationCenterService:
             .filter(
                 Notification.NotificationID == notification_id,
                 Notification.UserID == user.UserID,
-                Notification.IsDeleted.is_(False),
+                Notification.IsDeleted == False,
             )
             .first()
         )
@@ -197,6 +328,54 @@ class NotificationCenterService:
         )
         db.add(delivery)
         db.commit()
+
+    @staticmethod
+    def _deliveries(db: Session, notification_id: int) -> list[NotificationDelivery]:
+        return (
+            db.query(NotificationDelivery)
+            .filter(NotificationDelivery.NotificationID == notification_id)
+            .order_by(NotificationDelivery.SentAt)
+            .all()
+        )
+
+    @staticmethod
+    def _delivery_to_dict(row: NotificationDelivery) -> dict:
+        return {
+            "delivery_id": row.DeliveryID,
+            "notification_id": row.NotificationID,
+            "channel": row.Channel,
+            "receiver": row.Receiver,
+            "status": row.Status,
+            "provider_message_id": row.ProviderMessageID,
+            "error_message": row.ErrorMessage,
+            "sent_at": row.SentAt,
+        }
+
+    @staticmethod
+    def _related_entity(db: Session, row: Notification) -> dict | None:
+        if row.RelatedEntityType != "price_alert" or not row.RelatedEntityID:
+            return None
+        try:
+            from app.models.alert import PriceAlert
+            from app.repositories.alert_repository import get_alert_crop_name
+            from app.repositories.common import to_api_alert_condition
+
+            alert = db.query(PriceAlert).filter(PriceAlert.AlertID == row.RelatedEntityID).first()
+            if not alert:
+                return None
+            return {
+                "type": "price_alert",
+                "id": alert.AlertID,
+                "crop_name": get_alert_crop_name(db, alert),
+                "region": alert.Region,
+                "target_price": float(alert.TargetPrice),
+                "condition": to_api_alert_condition(alert.AlertType),
+                "is_active": bool(alert.IsActive),
+                "last_triggered_at": alert.LastTriggered,
+            }
+        except SQLAlchemyError:
+            db.rollback()
+            return None
 
     @staticmethod
     def _to_dict(row: Notification) -> dict:

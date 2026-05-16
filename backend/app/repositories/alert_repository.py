@@ -5,6 +5,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.models.alert import PriceAlert
+from app.models.crop import Crop
+from app.models.user import User
 from app.repositories.common import ensure_crop, ensure_user, to_db_alert_condition
 
 _memory_alerts: list[PriceAlert] = []
@@ -32,9 +34,23 @@ def _store_in_memory(alert: PriceAlert, receiver: str | None = None) -> PriceAle
 
 def create_alert(db: Session, **data) -> PriceAlert:
     receiver = data.pop("receiver", None)
-    crop_name = data.pop("crop_name")
-    crop = ensure_crop(db, crop_name)
-    user = ensure_user(db, receiver=receiver, region=data.get("region"))
+    crop_name = data.pop("crop_name", None)
+    crop_id = data.pop("crop_id", None)
+    user_id = data.pop("user_id", None)
+    crop = db.query(Crop).filter(Crop.CropID == crop_id).first() if crop_id else None
+    if crop is None:
+        crop = ensure_crop(db, crop_name or "Nông sản")
+    user = db.query(User).filter(User.UserID == user_id).first() if user_id else None
+    if user is None:
+        user = ensure_user(db, receiver=receiver, region=data.get("region"))
+    if not receiver:
+        channel = (data.get("notification_channel") or "email").lower()
+        if channel == "sms":
+            receiver = user.PhoneNumber
+        elif channel == "zalo":
+            receiver = user.ZaloID or user.PhoneNumber
+        elif channel == "email":
+            receiver = user.Email
     alert = PriceAlert(
         UserID=user.UserID,
         CropID=crop.CropID,
@@ -42,6 +58,7 @@ def create_alert(db: Session, **data) -> PriceAlert:
         TargetPrice=data["target_price"],
         AlertType=to_db_alert_condition(data.get("condition")),
         NotifyMethod=NOTIFY_METHODS.get((data.get("notification_channel") or "email").lower(), "Email"),
+        Receiver=receiver,
         IsActive=data.get("is_active", True),
     )
     alert._crop_name = crop_name
@@ -56,11 +73,13 @@ def create_alert(db: Session, **data) -> PriceAlert:
     return alert
 
 
-def get_alerts(db: Session, active_only: bool = False) -> list[PriceAlert]:
+def get_alerts(db: Session, active_only: bool = False, user_id: int | None = None) -> list[PriceAlert]:
     try:
         query = db.query(PriceAlert)
         if active_only:
-            query = query.filter(PriceAlert.IsActive.is_(True))
+            query = query.filter(PriceAlert.IsActive == True)
+        if user_id:
+            query = query.filter(PriceAlert.UserID == user_id)
         return query.order_by(desc(PriceAlert.CreatedAt)).all()
     except SQLAlchemyError:
         db.rollback()
@@ -94,6 +113,8 @@ def deactivate_alert(db: Session, alert_id: int) -> PriceAlert | None:
 def get_alert_receiver(db: Session, alert: PriceAlert) -> str:
     if getattr(alert, "_receiver", None):
         return alert._receiver
+    if getattr(alert, "Receiver", None):
+        return alert.Receiver
     if alert.AlertID in _memory_receivers:
         return _memory_receivers[alert.AlertID]
     try:

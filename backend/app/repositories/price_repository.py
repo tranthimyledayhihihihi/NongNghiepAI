@@ -8,6 +8,32 @@ from app.models.price import MarketPrice, PriceHistory, PricingRequest
 from app.repositories.common import ensure_crop, ensure_user, to_db_grade
 
 
+ALLOWED_MARKET_TYPES = {"Ban le", "Cho dau moi", "Thuong lai", "Xuat khau"}
+
+
+def to_db_market_type(value: str | None) -> str:
+    if not value:
+        return "Ban le"
+    normalized = value.strip()
+    mapping = {
+        "retail": "Ban le",
+        "ban_le": "Ban le",
+        "ban le": "Ban le",
+        "bán lẻ": "Ban le",
+        "wholesale": "Cho dau moi",
+        "cho_dau_moi": "Cho dau moi",
+        "cho dau moi": "Cho dau moi",
+        "trader": "Thuong lai",
+        "thuong_lai": "Thuong lai",
+        "thuong lai": "Thuong lai",
+        "export": "Xuat khau",
+        "xuat_khau": "Xuat khau",
+        "xuat khau": "Xuat khau",
+        "global_futures_reference": "Xuat khau",
+    }
+    return mapping.get(normalized.lower(), normalized if normalized in ALLOWED_MARKET_TYPES else "Ban le")
+
+
 def create_market_price(
     db: Session,
     *,
@@ -29,7 +55,7 @@ def create_market_price(
         Region=region,
         PricePerKg=price,
         QualityGrade=to_db_grade(quality_grade),
-        MarketType="Bán lẻ",
+        MarketType=to_db_market_type(market_type),
         SourceName=source,
         PriceDate=timestamp.date(),
         UpdatedAt=timestamp,
@@ -193,7 +219,7 @@ def bulk_upsert_market_prices(db: Session, records: list[dict]) -> dict:
             quality_grade = to_db_grade(record.get("quality_grade"))
             source_name = record.get("source_name") or record.get("source") or "manual"
             source_url = record.get("source_url")
-            market_type = record.get("market_type") or "BĂ¡n láº»"
+            market_type = to_db_market_type(record.get("market_type"))
             timestamp = record.get("collected_at") or datetime.now()
 
             query = db.query(MarketPrice).filter(

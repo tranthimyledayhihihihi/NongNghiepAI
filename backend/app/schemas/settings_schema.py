@@ -7,7 +7,9 @@ class SettingsProfile(BaseModel):
     full_name: str | None = Field(default=None, max_length=100)
     email: str | None = Field(default=None, max_length=100)
     phone_number: str | None = Field(default=None, max_length=20)
+    zalo_user_id: str | None = Field(default=None, max_length=100)
     region: str | None = Field(default=None, max_length=100)
+    region_key: str | None = Field(default=None, max_length=100)
 
 
 class UserSettingsUpdate(SettingsProfile):
@@ -29,7 +31,9 @@ class UserSettingsRead(BaseModel):
     full_name: str
     email: str | None = None
     phone_number: str | None = None
+    zalo_user_id: str | None = None
     region: str | None = None
+    region_key: str | None = None
     language: str
     unit: str
     theme: str

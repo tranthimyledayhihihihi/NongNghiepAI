@@ -20,7 +20,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.api import (
     ai, alert, auth, chat, crawler, crops, dashboard,
-    harvest, market, market_news, news, notifications,
+    harvest, locations, market, market_news, news, notifications, prices,
     price_forecast, pricing, quality, reports, weather,
 )
 from app.api import settings as settings_router
@@ -74,6 +74,7 @@ app.include_router(crops.router)
 app.include_router(harvest.router)
 app.include_router(quality.router)
 app.include_router(pricing.router)
+app.include_router(prices.router)
 app.include_router(price_forecast.router)
 app.include_router(market.router)
 app.include_router(alert.router)
@@ -85,6 +86,9 @@ app.include_router(notifications.router)
 app.include_router(reports.router)
 app.include_router(settings_router.router)
 app.include_router(market_news.router)
+app.include_router(locations.router)
+app.include_router(alert.alerts_router)
+app.include_router(alert.weather_alert_router)
 
 os.makedirs(os.path.join(settings.UPLOAD_DIR, "quality_check"), exist_ok=True)
 

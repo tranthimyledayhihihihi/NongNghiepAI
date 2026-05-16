@@ -7,7 +7,6 @@ import {
   Loader2,
   Mail,
   MapPin,
-  MessageSquare,
   Monitor,
   Save,
   Send,
@@ -22,50 +21,79 @@ import { useAuth } from '../contexts/AuthContext';
 import { getApiErrorMessage } from '../services/api';
 import { settingsApi } from '../services/settingsApi';
 
-const TestButton = ({ channel, testState, onTest }) => {
+const eventTypes = [
+  { key: 'priceAlerts', label: 'Giá' },
+  { key: 'weatherAlerts', label: 'Thời tiết' },
+  { key: 'harvestReminders', label: 'Mùa vụ' },
+];
+
+const channels = [
+  { key: 'app', label: 'App' },
+  { key: 'emailChannel', label: 'Email', channel: 'email' },
+  { key: 'zaloChannel', label: 'Zalo', channel: 'zalo' },
+  { key: 'smsChannel', label: 'SMS', channel: 'sms' },
+];
+
+const Toggle = ({ checked, onChange, disabled = false }) => (
+  <label className="relative inline-flex cursor-pointer items-center">
+    <input type="checkbox" checked={checked} onChange={onChange} disabled={disabled} className="peer sr-only" />
+    <span className="h-6 w-11 rounded-full bg-gray-200 transition peer-checked:bg-green-700 peer-disabled:opacity-50" />
+    <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition peer-checked:translate-x-5" />
+  </label>
+);
+
+const statusClass = (status) => {
+  if (status === 'ready') return 'bg-green-100 text-green-800';
+  if (status === 'mock' || status === 'missing_token' || status === 'not_configured') return 'bg-amber-100 text-amber-800';
+  if (status === 'failed_last_test') return 'bg-red-100 text-red-700';
+  return 'bg-gray-100 text-gray-700';
+};
+
+const ChannelStatus = ({ channel, status, testState, onTest }) => {
   const active = testState.channel === channel;
   const isLoading = active && testState.status === 'loading';
   const isOk = active && testState.status === 'ok';
   const isErr = active && testState.status === 'error';
 
   return (
-    <div className="mt-2 flex items-center gap-3">
-      <button
-        type="button"
-        onClick={onTest}
-        disabled={isLoading}
-        className="inline-flex items-center gap-1.5 rounded border border-green-600 px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-50 disabled:opacity-50"
-      >
-        {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-        Gửi thử
-      </button>
-      {isOk && (
-        <span className="flex items-center gap-1 text-xs text-green-700">
-          <CheckCircle2 className="h-3.5 w-3.5" /> {testState.message}
+    <div className="rounded-lg border border-gray-200 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="font-semibold text-gray-900">{channel.toUpperCase()}</div>
+          <div className="mt-1 text-xs text-gray-500">{status?.receiver || 'Chưa có người nhận'}</div>
+        </div>
+        <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClass(status?.status)}`}>
+          {status?.status || 'unknown'}
         </span>
-      )}
-      {isErr && (
-        <span className="flex items-center gap-1 text-xs text-red-600">
-          <XCircle className="h-3.5 w-3.5" /> {testState.message}
-        </span>
-      )}
+      </div>
+      <div className="mt-3 text-xs text-gray-500">
+        {status?.last_tested_at ? `Test gần nhất: ${new Date(status.last_tested_at).toLocaleString('vi-VN')}` : 'Chưa gửi thử'}
+      </div>
+      {status?.error && <div className="mt-2 text-xs text-amber-700">{status.error}</div>}
+      <div className="mt-3 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onTest}
+          disabled={isLoading}
+          className="inline-flex items-center gap-1.5 rounded border border-green-600 px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-50 disabled:opacity-50"
+        >
+          {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+          Gửi thử
+        </button>
+        {isOk && (
+          <span className="flex items-center gap-1 text-xs text-green-700">
+            <CheckCircle2 className="h-3.5 w-3.5" /> {testState.message}
+          </span>
+        )}
+        {isErr && (
+          <span className="flex items-center gap-1 text-xs text-red-600">
+            <XCircle className="h-3.5 w-3.5" /> {testState.message}
+          </span>
+        )}
+      </div>
     </div>
   );
 };
-
-const Toggle = ({ checked, onChange, label, description }) => (
-  <div className="flex items-center justify-between gap-4 rounded-lg border border-gray-200 bg-white p-4">
-    <div>
-      <div className="font-medium text-gray-900">{label}</div>
-      {description && <div className="mt-1 text-sm text-gray-600">{description}</div>}
-    </div>
-    <label className="relative inline-flex cursor-pointer items-center">
-      <input type="checkbox" checked={checked} onChange={onChange} className="peer sr-only" />
-      <span className="h-6 w-11 rounded-full bg-gray-200 transition peer-checked:bg-green-700" />
-      <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition peer-checked:translate-x-5" />
-    </label>
-  </div>
-);
 
 const SettingsPage = () => {
   const { user } = useAuth();
@@ -73,8 +101,9 @@ const SettingsPage = () => {
     fullName: user?.name || '',
     email: user?.email || '',
     phone: user?.phone || '',
-    location: user?.region || '',
     zaloUserId: '',
+    regionKey: '',
+    location: user?.region || '',
     language: 'vi',
     unit: 'hectare',
     theme: 'light',
@@ -86,25 +115,41 @@ const SettingsPage = () => {
     smsChannel: false,
     twoFactor: false,
   });
+  const [locations, setLocations] = useState([]);
+  const [channelStatus, setChannelStatus] = useState({});
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [testState, setTestState] = useState({ channel: null, status: null, message: '' });
+  const [twoFactor, setTwoFactor] = useState({ method: 'email', challengeId: '', code: '', devCode: '', message: '' });
+  const [passwordForm, setPasswordForm] = useState({ oldPassword: '', newPassword: '', message: '' });
+
+  const loadChannelStatus = async () => {
+    const data = await settingsApi.getChannelStatus();
+    setChannelStatus(data);
+  };
 
   useEffect(() => {
     let active = true;
-
     const loadSettings = async () => {
       setLoading(true);
       setError(null);
       try {
-        const data = await settingsApi.getMe();
+        const [data, locationData, channelData] = await Promise.all([
+          settingsApi.getMe(),
+          settingsApi.getLocations(),
+          settingsApi.getChannelStatus(),
+        ]);
         if (!active) return;
+        setLocations(locationData.locations || []);
+        setChannelStatus(channelData);
         setSettings((current) => ({
           ...current,
           fullName: data.full_name || user?.name || '',
           email: data.email || user?.email || '',
           phone: data.phone_number || user?.phone || '',
+          zaloUserId: data.zalo_user_id || '',
+          regionKey: data.region_key || '',
           location: data.region || user?.region || '',
           language: data.language || current.language,
           unit: data.unit || current.unit,
@@ -118,22 +163,13 @@ const SettingsPage = () => {
           twoFactor: Boolean(data.two_factor_enabled),
         }));
       } catch (err) {
-        if (!active) return;
-        setError(getApiErrorMessage(err, 'Khong the tai cai dat'));
-        setSettings((current) => ({
-          ...current,
-          fullName: user?.name || '',
-          email: user?.email || '',
-          phone: user?.phone || '',
-          location: user?.region || '',
-        }));
+        if (active) setError(getApiErrorMessage(err, 'Không thể tải cài đặt'));
       } finally {
         if (active) setLoading(false);
       }
     };
 
     loadSettings();
-
     return () => {
       active = false;
     };
@@ -144,30 +180,35 @@ const SettingsPage = () => {
     setSaved(false);
   };
 
+  const handleRegionChange = (regionKey) => {
+    const region = locations.find((item) => item.region_key === regionKey);
+    setSettings((current) => ({
+      ...current,
+      regionKey,
+      location: region?.display_name || current.location,
+    }));
+    setSaved(false);
+  };
+
   const handleSendTest = async (channel) => {
     const receiverMap = {
       email: settings.email,
       zalo: settings.zaloUserId,
       sms: settings.phone,
     };
-    const receiver = receiverMap[channel];
-    if (!receiver) {
-      setTestState({ channel, status: 'error', message: 'Vui lòng điền thông tin nhận trước.' });
-      return;
-    }
     setTestState({ channel, status: 'loading', message: '' });
     try {
-      const result = await settingsApi.sendTestNotification({ channel, receiver });
-      const ok = result?.status === 'sent';
+      const result = await settingsApi.testChannel({ channel, receiver: receiverMap[channel] });
+      const ok = ['sent', 'stored', 'mock_sent'].includes(result?.status);
       setTestState({
         channel,
         status: ok ? 'ok' : 'error',
-        message: ok ? 'Gửi thành công!' : (result?.error || 'Gửi thất bại.'),
+        message: ok ? result.status : result?.error || 'Gửi thất bại.',
       });
+      await loadChannelStatus();
     } catch (err) {
-      setTestState({ channel, status: 'error', message: err?.response?.data?.detail || 'Lỗi kết nối.' });
+      setTestState({ channel, status: 'error', message: getApiErrorMessage(err, 'Lỗi kết nối') });
     }
-    setTimeout(() => setTestState({ channel: null, status: null, message: '' }), 5000);
   };
 
   const handleSubmit = async (event) => {
@@ -179,7 +220,9 @@ const SettingsPage = () => {
         full_name: settings.fullName,
         email: settings.email,
         phone_number: settings.phone,
+        zalo_user_id: settings.zaloUserId,
         region: settings.location,
+        region_key: settings.regionKey,
         language: settings.language,
         unit: settings.unit,
         theme: settings.theme,
@@ -189,33 +232,80 @@ const SettingsPage = () => {
         email_channel: settings.emailChannel,
         zalo_channel: settings.zaloChannel,
         sms_channel: settings.smsChannel,
-        two_factor_enabled: settings.twoFactor,
       });
       setSettings((current) => ({
         ...current,
         fullName: data.full_name || current.fullName,
         email: data.email || current.email,
         phone: data.phone_number || current.phone,
+        zaloUserId: data.zalo_user_id || current.zaloUserId,
+        regionKey: data.region_key || current.regionKey,
         location: data.region || current.location,
       }));
       setSaved(true);
+      await loadChannelStatus();
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Khong the luu cai dat'));
+      setError(getApiErrorMessage(err, 'Không thể lưu cài đặt'));
+    }
+  };
+
+  const startTwoFactor = async () => {
+    setError(null);
+    try {
+      const result = await settingsApi.startTwoFactor({ method: twoFactor.method });
+      setTwoFactor((current) => ({
+        ...current,
+        challengeId: result.challenge_id,
+        devCode: result.dev_code || '',
+        message: 'Đã gửi mã xác minh. Mã demo được hiển thị để tiện kiểm thử.',
+      }));
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Không thể bắt đầu 2FA'));
+    }
+  };
+
+  const verifyTwoFactor = async () => {
+    setError(null);
+    try {
+      await settingsApi.verifyTwoFactor({ challengeId: twoFactor.challengeId, code: twoFactor.code });
+      updateSetting('twoFactor', true);
+      setTwoFactor({ method: 'email', challengeId: '', code: '', devCode: '', message: 'Đã bật xác thực 2 lớp.' });
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Mã xác minh không đúng'));
+    }
+  };
+
+  const disableTwoFactor = async () => {
+    await settingsApi.disableTwoFactor();
+    updateSetting('twoFactor', false);
+    setTwoFactor((current) => ({ ...current, message: 'Đã tắt xác thực 2 lớp.' }));
+  };
+
+  const changePassword = async () => {
+    setError(null);
+    try {
+      await settingsApi.changePassword({
+        oldPassword: passwordForm.oldPassword,
+        newPassword: passwordForm.newPassword,
+      });
+      setPasswordForm({ oldPassword: '', newPassword: '', message: 'Đã đổi mật khẩu.' });
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Không thể đổi mật khẩu'));
     }
   };
 
   if (loading) {
-    return <InlineLoading text="Dang tai cai dat tu backend..." />;
+    return <InlineLoading text="Đang tải cài đặt từ backend..." />;
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-wide text-green-700">Thiết lập hệ thống</p>
+          <p className="text-sm font-semibold uppercase tracking-wide text-green-700">Thiết lập vận hành</p>
           <h1 className="mt-2 text-3xl font-bold text-gray-900">Cài đặt</h1>
           <p className="mt-2 text-gray-600">
-            Thông tin tài khoản và tuỳ chọn hiển thị được lưu qua API backend.
+            Hồ sơ, vùng chuẩn hóa, ma trận thông báo, trạng thái provider và bảo mật tài khoản.
           </p>
         </div>
         <button
@@ -236,7 +326,7 @@ const SettingsPage = () => {
         </div>
       )}
 
-      <div className="grid gap-6 xl:grid-cols-[1fr_380px]">
+      <div className="grid gap-6 xl:grid-cols-[1fr_400px]">
         <div className="space-y-6">
           <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
             <div className="mb-5 flex items-center gap-3">
@@ -245,7 +335,7 @@ const SettingsPage = () => {
               </div>
               <div>
                 <h2 className="text-xl font-bold text-gray-900">Hồ sơ tài khoản</h2>
-                <p className="text-sm text-gray-600">Thông tin dùng cho liên hệ và cá nhân hóa dashboard.</p>
+                <p className="text-sm text-gray-600">Thông tin dùng cho cá nhân hóa và kênh nhận cảnh báo.</p>
               </div>
             </div>
 
@@ -276,10 +366,10 @@ const SettingsPage = () => {
                 />
               </div>
               <div>
-                <label className="mb-2 block text-sm font-medium text-gray-700">Khu vực</label>
+                <label className="mb-2 block text-sm font-medium text-gray-700">Zalo User ID</label>
                 <input
-                  value={settings.location}
-                  onChange={(event) => updateSetting('location', event.target.value)}
+                  value={settings.zaloUserId}
+                  onChange={(event) => updateSetting('zaloUserId', event.target.value)}
                   className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
                 />
               </div>
@@ -292,12 +382,27 @@ const SettingsPage = () => {
                 <Monitor className="h-5 w-5" />
               </div>
               <div>
-                <h2 className="text-xl font-bold text-gray-900">Hiển thị và vùng</h2>
-                <p className="text-sm text-gray-600">Thiết lập ngôn ngữ, đơn vị đo và giao diện.</p>
+                <h2 className="text-xl font-bold text-gray-900">Vùng và hiển thị</h2>
+                <p className="text-sm text-gray-600">Region dùng chung cho giá, thời tiết và dashboard.</p>
               </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-4">
+              <div className="md:col-span-2">
+                <label className="mb-2 block text-sm font-medium text-gray-700">Khu vực chuẩn hóa</label>
+                <select
+                  value={settings.regionKey}
+                  onChange={(event) => handleRegionChange(event.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
+                >
+                  {locations.map((location) => (
+                    <option key={location.region_key} value={location.region_key}>
+                      {location.display_name}
+                      {location.latitude ? ` · ${location.latitude}, ${location.longitude}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div>
                 <label className="mb-2 block text-sm font-medium text-gray-700">Ngôn ngữ</label>
                 <select
@@ -310,18 +415,6 @@ const SettingsPage = () => {
                 </select>
               </div>
               <div>
-                <label className="mb-2 block text-sm font-medium text-gray-700">Đơn vị diện tích</label>
-                <select
-                  value={settings.unit}
-                  onChange={(event) => updateSetting('unit', event.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
-                >
-                  <option value="hectare">Hecta</option>
-                  <option value="acre">Acre</option>
-                  <option value="cong">Công</option>
-                </select>
-              </div>
-              <div>
                 <label className="mb-2 block text-sm font-medium text-gray-700">Giao diện</label>
                 <select
                   value={settings.theme}
@@ -329,6 +422,7 @@ const SettingsPage = () => {
                   className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
                 >
                   <option value="light">Sáng</option>
+                  <option value="dark">Tối</option>
                   <option value="system">Theo hệ thống</option>
                 </select>
               </div>
@@ -341,30 +435,37 @@ const SettingsPage = () => {
                 <Bell className="h-5 w-5" />
               </div>
               <div>
-                <h2 className="text-xl font-bold text-gray-900">Thông báo</h2>
-                <p className="text-sm text-gray-600">Chọn loại cảnh báo và kênh nhận thông tin.</p>
+                <h2 className="text-xl font-bold text-gray-900">Ma trận thông báo</h2>
+                <p className="text-sm text-gray-600">Bật/tắt loại event và kênh nhận tương ứng.</p>
               </div>
             </div>
 
-            <div className="grid gap-4">
-              <Toggle
-                checked={settings.priceAlerts}
-                onChange={() => updateSetting('priceAlerts', !settings.priceAlerts)}
-                label="Cảnh báo giá"
-                description="Nhận thông báo khi nông sản vượt ngưỡng mục tiêu."
-              />
-              <Toggle
-                checked={settings.weatherAlerts}
-                onChange={() => updateSetting('weatherAlerts', !settings.weatherAlerts)}
-                label="Cảnh báo thời tiết"
-                description="Theo dõi mưa lớn, nắng nóng và điều kiện bất lợi."
-              />
-              <Toggle
-                checked={settings.harvestReminders}
-                onChange={() => updateSetting('harvestReminders', !settings.harvestReminders)}
-                label="Nhắc lịch mùa vụ"
-                description="Nhắc việc bón phân, kiểm tra chất lượng và thu hoạch."
-              />
+            <div className="overflow-hidden rounded-lg border border-gray-200">
+              <div className="grid grid-cols-[1fr_repeat(4,80px)] bg-gray-50 text-sm font-semibold text-gray-700">
+                <div className="p-3">Loại event</div>
+                {channels.map((channel) => (
+                  <div key={channel.key} className="p-3 text-center">
+                    {channel.label}
+                  </div>
+                ))}
+              </div>
+              {eventTypes.map((eventType) => (
+                <div key={eventType.key} className="grid grid-cols-[1fr_repeat(4,80px)] border-t border-gray-200 text-sm">
+                  <div className="p-3 font-medium text-gray-900">{eventType.label}</div>
+                  {channels.map((channel) => (
+                    <div key={channel.key} className="flex items-center justify-center p-3">
+                      <Toggle
+                        checked={channel.key === 'app' ? settings[eventType.key] : settings[eventType.key] && settings[channel.key]}
+                        onChange={() =>
+                          channel.key === 'app'
+                            ? updateSetting(eventType.key, !settings[eventType.key])
+                            : updateSetting(channel.key, !settings[channel.key])
+                        }
+                      />
+                    </div>
+                  ))}
+                </div>
+              ))}
             </div>
           </section>
         </div>
@@ -376,72 +477,36 @@ const SettingsPage = () => {
                 <Mail className="h-5 w-5" />
               </div>
               <div>
-                <h2 className="text-lg font-bold text-gray-900">Kênh nhận thông báo</h2>
-                <p className="text-xs text-gray-500">Cấu hình trong backend/.env để kích hoạt gửi thật</p>
+                <h2 className="text-lg font-bold text-gray-900">Kênh nhận và trạng thái</h2>
+                <p className="text-xs text-gray-500">Status lấy từ backend/provider, không chỉ là toggle.</p>
               </div>
             </div>
-            <div className="space-y-4">
-              {/* Email */}
-              <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-                <Toggle
-                  checked={settings.emailChannel}
-                  onChange={() => updateSetting('emailChannel', !settings.emailChannel)}
-                  label="Email"
-                  description={settings.email || 'Chưa có địa chỉ email'}
-                />
-                {settings.emailChannel && (
-                  <TestButton
-                    channel="email"
-                    testState={testState}
-                    onTest={() => handleSendTest('email')}
-                  />
-                )}
-              </div>
 
-              {/* Zalo */}
-              <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-                <Toggle
-                  checked={settings.zaloChannel}
-                  onChange={() => updateSetting('zaloChannel', !settings.zaloChannel)}
-                  label="Zalo OA"
-                  description="Nhận cảnh báo khẩn cấp qua Zalo."
-                />
-                {settings.zaloChannel && (
-                  <div className="mt-3">
-                    <label className="mb-1 block text-xs font-medium text-gray-600">
-                      Zalo User ID
-                    </label>
-                    <input
-                      value={settings.zaloUserId}
-                      onChange={(e) => updateSetting('zaloUserId', e.target.value)}
-                      placeholder="Lấy tại: zalo.me/pc → Về tôi → ID"
-                      className="w-full rounded border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600 focus:ring-1 focus:ring-green-100"
-                    />
-                    <TestButton
-                      channel="zalo"
-                      testState={testState}
-                      onTest={() => handleSendTest('zalo')}
-                    />
-                  </div>
-                )}
-              </div>
+            <div className="mb-4 grid gap-3">
+              <label className="flex items-center justify-between rounded-lg border border-gray-200 p-3">
+                <span className="text-sm font-medium text-gray-900">Email</span>
+                <Toggle checked={settings.emailChannel} onChange={() => updateSetting('emailChannel', !settings.emailChannel)} />
+              </label>
+              <label className="flex items-center justify-between rounded-lg border border-gray-200 p-3">
+                <span className="text-sm font-medium text-gray-900">Zalo OA</span>
+                <Toggle checked={settings.zaloChannel} onChange={() => updateSetting('zaloChannel', !settings.zaloChannel)} />
+              </label>
+              <label className="flex items-center justify-between rounded-lg border border-gray-200 p-3">
+                <span className="text-sm font-medium text-gray-900">SMS</span>
+                <Toggle checked={settings.smsChannel} onChange={() => updateSetting('smsChannel', !settings.smsChannel)} />
+              </label>
+            </div>
 
-              {/* SMS */}
-              <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-                <Toggle
-                  checked={settings.smsChannel}
-                  onChange={() => updateSetting('smsChannel', !settings.smsChannel)}
-                  label="SMS (ESMS.vn)"
-                  description={settings.phone || 'Điền số điện thoại ở Hồ sơ'}
+            <div className="space-y-3">
+              {['email', 'zalo', 'sms'].map((channel) => (
+                <ChannelStatus
+                  key={channel}
+                  channel={channel}
+                  status={channelStatus[channel]}
+                  testState={testState}
+                  onTest={() => handleSendTest(channel)}
                 />
-                {settings.smsChannel && (
-                  <TestButton
-                    channel="sms"
-                    testState={testState}
-                    onTest={() => handleSendTest('sms')}
-                  />
-                )}
-              </div>
+              ))}
             </div>
           </section>
 
@@ -453,40 +518,134 @@ const SettingsPage = () => {
               <h2 className="text-lg font-bold text-gray-900">Bảo mật</h2>
             </div>
             <div className="space-y-4">
-              <Toggle
-                checked={settings.twoFactor}
-                onChange={() => updateSetting('twoFactor', !settings.twoFactor)}
-                label="Xác thực 2 lớp"
-                description="FE đã có điều khiển, cần BE để kích hoạt thật."
-              />
-              <button
-                type="button"
-                className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 px-4 py-3 font-medium text-gray-700 hover:bg-gray-50"
-              >
-                <KeyRound className="h-5 w-5" />
-                Đổi mật khẩu
-              </button>
+              <div className="rounded-lg border border-gray-200 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="font-semibold text-gray-900">Xác thực 2 lớp</div>
+                    <div className="mt-1 text-xs text-gray-500">
+                      Chỉ bật sau khi nhập đúng mã xác minh.
+                    </div>
+                  </div>
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${settings.twoFactor ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'}`}>
+                    {settings.twoFactor ? 'enabled' : 'disabled'}
+                  </span>
+                </div>
+                <div className="mt-4 grid gap-2">
+                  {!settings.twoFactor && (
+                    <>
+                      <select
+                        value={twoFactor.method}
+                        onChange={(event) => setTwoFactor((current) => ({ ...current, method: event.target.value }))}
+                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600"
+                      >
+                        <option value="email">Email OTP</option>
+                        <option value="sms">SMS OTP</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={startTwoFactor}
+                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                      >
+                        Gửi mã xác minh
+                      </button>
+                      {twoFactor.challengeId && (
+                        <div className="grid gap-2">
+                          <input
+                            value={twoFactor.code}
+                            onChange={(event) => setTwoFactor((current) => ({ ...current, code: event.target.value }))}
+                            placeholder="Nhập mã OTP"
+                            className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600"
+                          />
+                          <button
+                            type="button"
+                            onClick={verifyTwoFactor}
+                            className="rounded-lg bg-green-700 px-3 py-2 text-sm font-semibold text-white hover:bg-green-800"
+                          >
+                            Xác minh và bật
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {settings.twoFactor && (
+                    <button
+                      type="button"
+                      onClick={disableTwoFactor}
+                      className="rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+                    >
+                      Tắt 2FA
+                    </button>
+                  )}
+                  {(twoFactor.message || twoFactor.devCode) && (
+                    <div className="rounded-lg bg-green-50 p-3 text-xs text-green-800">
+                      {twoFactor.message} {twoFactor.devCode ? `Mã demo: ${twoFactor.devCode}` : ''}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-gray-200 p-4">
+                <div className="mb-3 flex items-center gap-2 font-semibold text-gray-900">
+                  <KeyRound className="h-4 w-4" />
+                  Đổi mật khẩu
+                </div>
+                <div className="grid gap-2">
+                  <input
+                    type="password"
+                    value={passwordForm.oldPassword}
+                    onChange={(event) => setPasswordForm((current) => ({ ...current, oldPassword: event.target.value }))}
+                    placeholder="Mật khẩu hiện tại"
+                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600"
+                  />
+                  <input
+                    type="password"
+                    value={passwordForm.newPassword}
+                    onChange={(event) => setPasswordForm((current) => ({ ...current, newPassword: event.target.value }))}
+                    placeholder="Mật khẩu mới"
+                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600"
+                  />
+                  <button
+                    type="button"
+                    onClick={changePassword}
+                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Cập nhật mật khẩu
+                  </button>
+                  {passwordForm.message && <div className="text-xs text-green-700">{passwordForm.message}</div>}
+                </div>
+              </div>
             </div>
           </section>
 
           <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-bold text-gray-900">Tóm tắt cấu hình</h2>
+            <h2 className="text-lg font-bold text-gray-900">Data source status</h2>
             <div className="mt-4 space-y-3 text-sm text-gray-700">
-              <div className="flex items-center gap-3">
-                <Globe2 className="h-4 w-4 text-green-700" />
-                <span>{settings.language === 'vi' ? 'Tiếng Việt' : 'English'}</span>
+              <div className="flex items-center justify-between gap-3">
+                <span className="inline-flex items-center gap-2">
+                  <Globe2 className="h-4 w-4 text-green-700" />
+                  Weather API
+                </span>
+                <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClass(channelStatus.data_sources?.weather?.status)}`}>
+                  {channelStatus.data_sources?.weather?.status || 'unknown'}
+                </span>
               </div>
-              <div className="flex items-center gap-3">
-                <MapPin className="h-4 w-4 text-blue-600" />
-                <span>{settings.location}</span>
+              <div className="flex items-center justify-between gap-3">
+                <span className="inline-flex items-center gap-2">
+                  <MapPin className="h-4 w-4 text-blue-600" />
+                  Price crawler/cache
+                </span>
+                <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClass(channelStatus.data_sources?.price?.status)}`}>
+                  {channelStatus.data_sources?.price?.status || 'unknown'}
+                </span>
               </div>
-              <div className="flex items-center gap-3">
-                <MessageSquare className="h-4 w-4 text-blue-500" />
-                <span>{settings.zaloChannel ? 'Zalo bật' : 'Zalo tắt'}</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <Smartphone className="h-4 w-4 text-amber-600" />
-                <span>{settings.smsChannel ? 'SMS bật' : 'SMS tắt'}</span>
+              <div className="flex items-center justify-between gap-3">
+                <span className="inline-flex items-center gap-2">
+                  <Smartphone className="h-4 w-4 text-amber-600" />
+                  SMS provider
+                </span>
+                <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClass(channelStatus.sms?.status)}`}>
+                  {channelStatus.sms?.status || 'unknown'}
+                </span>
               </div>
             </div>
           </section>

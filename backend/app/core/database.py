@@ -162,6 +162,16 @@ def _apply_lightweight_schema_upgrades() -> None:
             "ProviderMessageID": "VARCHAR(100) NULL",
             "ErrorMessage": "TEXT NULL" if _is_sqlite() else "NVARCHAR(MAX) NULL",
         },
+        "AlertSubscriptions": {
+            "Receiver": "VARCHAR(255) NULL",
+        },
+        "WeatherAlerts": {
+            "UserID": "INTEGER NULL" if _is_sqlite() else "INT NULL",
+            "NotifyMethod": "VARCHAR(20) NOT NULL DEFAULT 'Email'",
+            "Receiver": "VARCHAR(255) NULL",
+            "LastTriggered": "DATETIME NULL",
+            "LastValue": "FLOAT NULL",
+        },
         "QualityRecords": {
             "DefectDetails": "TEXT NULL" if _is_sqlite() else "NVARCHAR(MAX) NULL",
             "ModelVersion": "VARCHAR(100) NULL",
@@ -197,6 +207,39 @@ def _apply_lightweight_schema_upgrades() -> None:
                         ),
                         {"column_name": column},
                     )
+        _apply_mssql_unicode_upgrades()
+
+
+def _apply_mssql_unicode_upgrades() -> None:
+    """Keep Vietnamese text columns Unicode in existing SQL Server schemas."""
+    unicode_upgrades = {
+        "Notifications": {
+            "Title": "NVARCHAR(255) NOT NULL",
+            "Message": "NVARCHAR(MAX) NOT NULL",
+        },
+        "NotificationDeliveries": {
+            "ErrorMessage": "NVARCHAR(MAX) NULL",
+        },
+        "WeatherLocations": {
+            "Region": "NVARCHAR(100) NOT NULL",
+            "Province": "NVARCHAR(100) NULL",
+            "District": "NVARCHAR(100) NULL",
+            "Ward": "NVARCHAR(100) NULL",
+        },
+        "WeatherAlerts": {
+            "Region": "NVARCHAR(100) NOT NULL",
+            "Title": "NVARCHAR(200) NOT NULL",
+            "Message": "NVARCHAR(MAX) NOT NULL",
+            "Recommendation": "NVARCHAR(MAX) NULL",
+        },
+    }
+    for table_name, columns in unicode_upgrades.items():
+        for column, ddl in columns.items():
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE {table_name} ALTER COLUMN {column} {ddl}"))
+            except SQLAlchemyError:
+                pass
 
 
 def get_db():

@@ -34,9 +34,8 @@ class MarketNewsService:
             return {**cached, "cache_status": "hit"}
 
         rows = list_market_news(db, limit=limit, crop_name=crop_name, region=region)
-        if not rows:
-            self.refresh_news()
-            rows = list_market_news(db, limit=limit, crop_name=crop_name, region=region)
+        if not rows and (crop_name or region):
+            rows = list_market_news(db, limit=limit)
 
         response = {
             "news": [self._to_dict(row) for row in rows],

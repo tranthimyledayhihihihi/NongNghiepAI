@@ -2,6 +2,7 @@ import csv
 import io
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
 from typing import Any
 
@@ -41,6 +42,24 @@ class MarketPriceClient:
 
     def fetch_all(self, source_name: str | None = None, crop_filter: str | None = None) -> list[dict]:
         records: list[dict] = []
+        tasks = []
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            if self._should_fetch_stooq(source_name):
+                tasks.append(executor.submit(self._fetch_stooq_futures, crop_filter))
+            for source in self._configured_sources():
+                if source_name and source["name"].lower() != source_name.lower():
+                    continue
+                tasks.append(executor.submit(self._fetch_source, source, crop_filter))
+
+            for future in as_completed(tasks):
+                try:
+                    records.extend(future.result())
+                except Exception:
+                    continue
+        return records
+
+    def fetch_all_legacy(self, source_name: str | None = None, crop_filter: str | None = None) -> list[dict]:
+        records: list[dict] = []
         if self._should_fetch_stooq(source_name):
             try:
                 records.extend(self._fetch_stooq_futures(crop_filter))
@@ -68,10 +87,10 @@ class MarketPriceClient:
         headers = {"User-Agent": "Mozilla/5.0"}
         for symbol, meta in self.STOOQ_FUTURES.items():
             crop_name = meta["crop_name"]
-            if crop_filter and crop_filter.lower() not in crop_name.lower():
+            if crop_filter and not self._matches_crop_filter(crop_name, crop_filter):
                 continue
             url = f"https://stooq.com/q/l/?s={symbol}&f=sd2t2ohlcv&h&e=csv"
-            response = httpx.get(url, timeout=10, headers=headers, follow_redirects=True)
+            response = httpx.get(url, timeout=3, headers=headers, follow_redirects=True)
             response.raise_for_status()
             rows = self._parse_csv(response.text)
             if not rows:
@@ -101,7 +120,7 @@ class MarketPriceClient:
 
     def _fetch_usd_vnd_rate(self) -> float:
         try:
-            response = httpx.get(settings.EXCHANGE_RATE_API_URL, timeout=8, follow_redirects=True)
+            response = httpx.get(settings.EXCHANGE_RATE_API_URL, timeout=3, follow_redirects=True)
             response.raise_for_status()
             payload = response.json()
             rate = payload.get("rates", {}).get("VND")
@@ -112,7 +131,7 @@ class MarketPriceClient:
         return float(settings.USD_VND_FALLBACK_RATE)
 
     def _fetch_source(self, source: dict, crop_filter: str | None = None) -> list[dict]:
-        response = httpx.get(source["url"], timeout=15, follow_redirects=True)
+        response = httpx.get(source["url"], timeout=3, follow_redirects=True)
         response.raise_for_status()
         content_type = response.headers.get("content-type", "").lower()
         text = response.text
@@ -128,10 +147,21 @@ class MarketPriceClient:
             record = self._normalize_record(raw, source)
             if not record:
                 continue
-            if crop_filter and crop_filter.lower() not in record["crop_name"].lower():
+            if crop_filter and not self._matches_crop_filter(record["crop_name"], crop_filter):
                 continue
             normalized.append(record)
         return normalized
+
+    @staticmethod
+    def _matches_crop_filter(crop_name: str, crop_filter: str) -> bool:
+        aliases = {
+            "lua": {"lua", "gao", "rice", "paddy"},
+            "gao": {"lua", "gao", "rice", "paddy"},
+        }
+        crop = crop_name.strip().lower()
+        requested = crop_filter.strip().lower()
+        accepted = aliases.get(requested, {requested})
+        return any(token in crop for token in accepted)
 
     def _configured_sources(self) -> list[dict]:
         try:

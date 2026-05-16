@@ -1,5 +1,23 @@
-import { ArrowRight, Cloud, Droplets, MapPin, Sparkles, TrendingUp } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowRight,
+  ArrowUp,
+  Bell,
+  CloudRain,
+  Droplets,
+  ExternalLink,
+  Gauge,
+  Globe2,
+  MapPin,
+  Newspaper,
+  Sparkles,
+  Sprout,
+  ThermometerSun,
+  TrendingUp,
+  Wind,
+} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import DataSourceBadge from '../components/DataSourceBadge';
 import { InlineLoading, PageError } from '../components/StatusState';
@@ -7,342 +25,435 @@ import { useAuth } from '../contexts/AuthContext';
 import { getApiErrorMessage } from '../services/api';
 import { dashboardApi } from '../services/dashboardApi';
 
+const formatNumber = (value, digits = 0) => {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 'N/A';
+  return number.toLocaleString('vi-VN', { maximumFractionDigits: digits });
+};
+
+const formatDateTime = (value) => {
+  if (!value) return 'Chua co';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
+const formatDate = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+};
+
+const formatPct = (value) => {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '+0.0%';
+  return `${number >= 0 ? '+' : ''}${number.toFixed(1)}%`;
+};
+
+const trendIcon = (trend) => {
+  if (trend === 'up' || trend === 'increasing') return <ArrowUp className="h-4 w-4 text-emerald-600" />;
+  if (trend === 'down' || trend === 'decreasing') return <ArrowDown className="h-4 w-4 text-rose-600" />;
+  return <ArrowRight className="h-4 w-4 text-slate-500" />;
+};
+
+const Panel = ({ children, className = '' }) => (
+  <section className={`rounded-lg border border-slate-200 bg-white p-5 shadow-sm ${className}`}>
+    {children}
+  </section>
+);
+
+const PanelHeader = ({ icon: Icon, title, children }) => (
+  <div className="mb-4 flex items-start justify-between gap-3">
+    <div className="flex min-w-0 items-center gap-2">
+      {Icon && <Icon className="h-5 w-5 shrink-0 text-emerald-700" />}
+      <h2 className="truncate text-base font-semibold text-slate-950">{title}</h2>
+    </div>
+    {children}
+  </div>
+);
+
+const EmptyState = ({ text = 'Chua co du lieu.' }) => (
+  <div className="rounded-md border border-dashed border-slate-200 px-3 py-4 text-center text-sm text-slate-500">
+    {text}
+  </div>
+);
+
+const RiskBadge = ({ level }) => {
+  const styles = {
+    high: 'border-rose-200 bg-rose-50 text-rose-700',
+    medium: 'border-amber-200 bg-amber-50 text-amber-700',
+    low: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  };
+  const labels = { high: 'Cao', medium: 'Trung binh', low: 'Thap' };
+  return (
+    <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${styles[level] || styles.low}`}>
+      Rui ro {labels[level] || labels.low}
+    </span>
+  );
+};
+
+const SentimentBadge = ({ value }) => {
+  const sentiment = (value || 'neutral').toLowerCase();
+  const styles = {
+    positive: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    negative: 'bg-rose-50 text-rose-700 border-rose-200',
+    neutral: 'bg-slate-50 text-slate-700 border-slate-200',
+  };
+  const labels = { positive: 'Tich cuc', negative: 'Tieu cuc', neutral: 'Trung lap' };
+  return (
+    <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${styles[sentiment] || styles.neutral}`}>
+      {labels[sentiment] || labels.neutral}
+    </span>
+  );
+};
+
+const MiniHourlyChart = ({ hourly = [] }) => {
+  const points = hourly.slice(0, 12);
+  if (!points.length) return <EmptyState text="Chua co hourly forecast." />;
+  const maxRain = Math.max(...points.map((item) => Number(item.rainfall || item.rain_probability || 0)), 1);
+  return (
+    <div className="flex h-28 items-end gap-2">
+      {points.map((item, index) => {
+        const value = Number(item.rainfall || 0);
+        const probability = Number(item.rain_probability || 0);
+        const height = Math.max(12, Math.round(((value || probability / 10) / maxRain) * 92));
+        const label = item.time ? item.time.slice(11, 16) : `${index + 1}h`;
+        return (
+          <div key={`${label}-${index}`} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+            <div
+              className="w-full rounded-t bg-sky-500"
+              style={{ height }}
+              title={`${label}: mua ${formatNumber(value, 1)} mm, xac suat ${formatNumber(probability)}%`}
+            />
+            <span className="text-[10px] text-slate-500">{label}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 const Dashboard = () => {
   const { user } = useAuth();
-  // Mock data - sẽ được thay thế bằng API calls
-  const featuredCrop = {
-    name: 'Lúa OM 5451',
-    location: 'Cần Thơ, Việt Nam',
-    price: 18500,
-    change: '+2.4%',
-    trend: 'up',
-    lastUpdate: 'Cập nhật 15 phút trước'
-  };
-
-  const forecast7Days = [
-    { day: '18', date: 'T3', price: 18750, change: 'ĐỘ TIN CẬY CAO', trend: 'up' },
-    { day: '19', date: 'T4', price: 19100, change: 'ĐỘ TIN CẬY CAO', trend: 'up' },
-    { day: '20', date: 'T5', price: 19050, change: 'ĐỘ TIN CẬY TB', trend: 'neutral' },
-  ];
-
-  const regionalPrices = [
-    { region: 'Hà Nội (Bắc Bộ)', price: 18900, unit: 'VNĐ/kg' },
-    { region: 'Cần Thơ (Mekong)', price: 18500, unit: 'VNĐ/kg' },
-    { region: 'Đắk Lắk (T. Nguyên)', price: 17200, unit: 'VNĐ/kg' },
-  ];
-
-  const aiRecommendation = {
-    title: 'Nên Giữ Lại (HOLD)',
-    description: 'Dựa trên xu hướng xuất khẩu và dự báo thời tiết, giá lúa có khả năng tăng mạnh trong 10 ngày tới.',
-    confidence: '+5.2%',
-    period: 'trong 10 ngày'
-  };
-
-  const weather = {
-    temp: 28,
-    condition: 'Nắng nhẹ',
-    humidity: '85%',
-    rainfall: 'Dự báo mưa vào 5 ngày tới'
-  };
-
-  const [dashboardSummary, setDashboardSummary] = useState(null);
-  const [priceTrend, setPriceTrend] = useState(null);
-  const [aiInsight, setAiInsight] = useState(null);
-  const [weatherLive, setWeatherLive] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const region = user?.region || 'Ha Noi';
+  const cropName = 'lua';
+  const [summary, setSummary] = useState(null);
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const loadedKeyRef = useRef(null);
 
-  useEffect(() => {
-    let active = true;
-    const region = user?.region || 'Ha Noi';
+  const loadDashboard = useCallback(async () => {
     setLoading(true);
     setError(null);
+    try {
+      const data = await dashboardApi.reset({ cropName, region });
+      setSummary(data);
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Khong tai duoc dashboard'));
+    } finally {
+      setLoading(false);
+    }
+  }, [cropName, region]);
 
-    Promise.all([
-      dashboardApi.getSummary(region),
-      dashboardApi.getPriceTrend({ cropName: 'lua', region, days: 7 }),
-      dashboardApi.getAiRecommendation({ cropName: 'lua', region }),
-    ])
-      .then(([summary, trend, recommendation]) => {
-        if (!active) return;
-        const weatherData = summary.weather?.current;
-        setDashboardSummary(summary);
-        setPriceTrend(trend);
-        setAiInsight(recommendation);
-        if (weatherData) {
-          setWeatherLive({
-            ...weatherData,
-            temp: Math.round(weatherData.temperature ?? 28),
-            humidity: `${Math.round(weatherData.humidity ?? 0)}%`,
-            rainfall: `${weatherData.rainfall ?? 0} mm`,
-            condition: weatherData.condition || 'unknown',
-          });
-        }
-      })
-      .catch((err) => {
-        if (active) setError(getApiErrorMessage(err, 'Khong the tai dashboard'));
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [user?.region]);
+  useEffect(() => {
+    const loadKey = `${region}:${cropName}`;
+    if (loadedKeyRef.current === loadKey) return undefined;
+    loadedKeyRef.current = loadKey;
+    loadDashboard();
+    return undefined;
+  }, [cropName, loadDashboard, region]);
 
-  const displayedCrop = dashboardSummary?.featured_crop || featuredCrop;
-  const displayedRegionalPrices = dashboardSummary?.regional_prices?.length
-    ? dashboardSummary.regional_prices
-    : regionalPrices;
-  const displayedForecast = priceTrend?.forecast?.length
-    ? priceTrend.forecast.slice(0, 3).map((item) => {
-        const itemDate = new Date(item.date);
-        return {
-          day: Number.isNaN(itemDate.getTime()) ? item.date : String(itemDate.getDate()).padStart(2, '0'),
-          date: Number.isNaN(itemDate.getTime()) ? '' : `T${itemDate.getDay() + 1}`,
-          price: item.predicted_price,
-          change: item.confidence === 'high' ? 'DO TIN CAY CAO' : 'DO TIN CAY TB',
-          trend: item.trend === 'up' ? 'up' : 'neutral',
-        };
-      })
-    : forecast7Days;
-  const displayedAi = aiInsight
-    ? {
-        title: aiInsight.title,
-        description: aiInsight.description,
-        confidence: `${Math.round((aiInsight.confidence || 0) * 100)}%`,
-        period: aiInsight.period,
-      }
-    : aiRecommendation;
-  const displayedWeather = weatherLive || weather;
+  const featured = summary?.featured_crop || {};
+  const weatherRisk = summary?.weather_risk || {};
+  const weatherCurrent = weatherRisk.current || summary?.weather?.current || {};
+  const forecast = summary?.forecast || [];
+  const regionalPrices = summary?.regional_prices || [];
+  const news = summary?.news || [];
+  const realtimeMarket = summary?.realtime_market || {};
+  const alerts = summary?.alert_center || [];
 
-  if (loading) {
-    return <InlineLoading text="Dang tai tong quan dashboard..." />;
+  const forecastHigh = useMemo(() => {
+    if (!forecast.length) return null;
+    return forecast.reduce(
+      (best, item) => (Number(item.forecast_price || item.predicted_price) > Number(best.forecast_price || best.predicted_price) ? item : best),
+      forecast[0],
+    );
+  }, [forecast]);
+
+  if (loading && !summary) {
+    return <InlineLoading text="Dang xoa du lieu cu va lay du lieu moi tu API..." />;
   }
 
-  if (error) {
-    return <PageError message={error} onRetry={() => window.location.reload()} />;
+  if (error && !summary) {
+    return <PageError message={error} onRetry={loadDashboard} />;
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Chào mừng trở lại! 👋</h1>
-        <p className="text-gray-600 mt-1">Đây là tổng quan thị trường nông sản hôm nay</p>
+    <div className="space-y-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-sm font-medium text-emerald-700">
+            <Sprout className="h-4 w-4" />
+            Dashboard van hanh nong san
+          </div>
+          <h1 className="mt-1 text-2xl font-bold text-slate-950">Trung tam du lieu thi truong va nong vu</h1>
+          <p className="mt-1 text-sm text-slate-600">
+            Tu lam moi du lieu thuc te khi mo trang, sau do doc nhanh tu DB.
+          </p>
+        </div>
       </div>
 
-      {/* Main Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column - Featured Crop */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Featured Crop Card */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <div className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 mb-2">
-                  THỊTRƯỜNG NỔI BẬT HÔM NAY
-                </div>
-                <h2 className="text-3xl font-bold text-gray-900 mt-2">{displayedCrop.name}</h2>
-                <p className="text-sm text-gray-600 flex items-center mt-1">
-                  <MapPin className="w-4 h-4 mr-1" />
-                  {displayedCrop.location}
-                </p>
-              </div>
-              <div className="text-right">
-                <div className="flex items-center text-emerald-600 text-sm font-medium">
-                  <TrendingUp className="w-4 h-4 mr-1" />
-                  {displayedCrop.change}
-                </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  {displayedCrop.last_updated ? new Date(displayedCrop.last_updated).toLocaleString('vi-VN') : displayedCrop.lastUpdate}
-                </p>
-              </div>
-            </div>
-
-            <div className="mb-6">
-              <div className="text-4xl font-bold text-gray-900">
-                {Number(displayedCrop.price || 0).toLocaleString()}
-                <span className="text-lg text-gray-600 font-normal ml-2">VNĐ/kg</span>
-              </div>
-            </div>
-
-            <button className="w-full bg-emerald-800 text-white py-3 rounded-lg hover:bg-emerald-900 transition-colors flex items-center justify-center">
-              <span className="mr-2">🔔</span>
-              Đặt Cảnh Báo Giá
-            </button>
-          </div>
-
-          {/* 7-Day Forecast */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">Dự Báo 7 Ngày</h3>
-                <p className="text-sm text-gray-500 italic mt-1">
-                  "Xu hướng giá định nhịp như cầu tiêu thụ nội địa tăng 3% so với tuần trước."
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {displayedForecast.map((day, idx) => (
-                <div key={idx} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                  <div className="flex items-center space-x-4">
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-gray-900">{day.day}</div>
-                      <div className="text-xs text-gray-500">{day.date}</div>
-                    </div>
-                    <div>
-                      <div className="text-lg font-semibold text-gray-900">
-                        {day.price.toLocaleString()}
-                      </div>
-                      <div className={`text-xs font-medium ${day.change.includes('CAO') ? 'text-emerald-600' : 'text-orange-600'
-                        }`}>
-                        {day.change}
-                      </div>
-                    </div>
-                  </div>
-                  <div>
-                    {day.trend === 'up' && <TrendingUp className="w-5 h-5 text-emerald-600" />}
-                    {day.trend === 'neutral' && <ArrowRight className="w-5 h-5 text-gray-400" />}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Regional Comparison */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">So Sánh Vùng Miền</h3>
-
-            {/* Map placeholder */}
-            <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-lg p-8 mb-4 flex items-center justify-center">
-              <div className="text-center">
-                <MapPin className="w-12 h-12 text-emerald-600 mx-auto mb-2" />
-                <p className="text-sm text-gray-600">Bản đồ giá theo khu vực</p>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              {displayedRegionalPrices.map((region, idx) => (
-                <div key={idx} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg">
-                  <div className="flex items-center">
-                    <div className={`w-3 h-3 rounded-full mr-3 ${idx === 0 ? 'bg-emerald-500' : idx === 1 ? 'bg-emerald-400' : 'bg-emerald-300'
-                      }`} />
-                    <span className="text-sm text-gray-700">{region.region}</span>
-                  </div>
-                  <span className="text-sm font-semibold text-gray-900">
-                    {region.price.toLocaleString()} {region.unit}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
+      {error && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          {error}
         </div>
+      )}
 
-        {/* Right Column - AI Insights & Weather */}
-        <div className="space-y-6">
-          {/* AI Recommendation */}
-          <div className="bg-gradient-to-br from-emerald-800 to-emerald-900 rounded-xl shadow-lg p-6 text-white">
-            <div className="flex items-center mb-3">
-              <Sparkles className="w-5 h-5 mr-2" />
-              <span className="text-sm font-medium">Khuyến Nghị AI</span>
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+        <Panel>
+          <PanelHeader icon={TrendingUp} title="Thi truong noi bat">
+            <DataSourceBadge data={featured} />
+          </PanelHeader>
+
+          <div className="space-y-4">
+            <div>
+              <div className="flex items-center gap-2 text-sm text-slate-600">
+                <MapPin className="h-4 w-4" />
+                {featured.location || region}
+              </div>
+              <h2 className="mt-1 text-2xl font-bold text-slate-950">{featured.display_name || featured.name || cropName}</h2>
+              <div className="mt-3 flex items-end gap-2">
+                <span className="text-4xl font-bold text-slate-950">{formatNumber(featured.price)}</span>
+                <span className="pb-1 text-sm font-medium text-slate-500">{featured.unit || 'VND/kg'}</span>
+              </div>
             </div>
 
-            <h3 className="text-2xl font-bold mb-3">{displayedAi.title}</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-md bg-emerald-50 px-3 py-2">
+                <div className="text-xs text-emerald-700">So voi hom truoc</div>
+                <div className="mt-1 flex items-center gap-1 text-lg font-bold text-emerald-800">
+                  {trendIcon(featured.trend)}
+                  {formatPct(featured.change_day_pct)}
+                </div>
+              </div>
+              <div className="rounded-md bg-sky-50 px-3 py-2">
+                <div className="text-xs text-sky-700">So voi tuan truoc</div>
+                <div className="mt-1 text-lg font-bold text-sky-800">{formatPct(featured.change_week_pct)}</div>
+              </div>
+            </div>
 
-            <p className="text-emerald-100 text-sm mb-4">
-              {displayedAi.description}
-            </p>
-
-            <div className="bg-emerald-700/50 rounded-lg p-4 mb-4">
-              <div className="text-sm text-emerald-200 mb-1">LỢI NHUẬN DỰ KIẾN</div>
-              <div className="text-3xl font-bold">{displayedAi.confidence}</div>
-              <div className="text-sm text-emerald-200">{displayedAi.period}</div>
+            <div className="rounded-md border border-slate-200 px-3 py-2 text-xs text-slate-600">
+              <div className="font-semibold text-slate-800">Nguon: {featured.source_name || 'Chua ro'}</div>
+              <div>Cap nhat: {formatDateTime(featured.last_updated)}</div>
+              {featured.source_url && (
+                <a href={featured.source_url} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-emerald-700">
+                  Mo nguon <ExternalLink className="h-3 w-3" />
+                </a>
+              )}
             </div>
 
             <Link
-              to="/pricing"
-              className="block w-full bg-white text-emerald-900 text-center py-3 rounded-lg font-medium hover:bg-emerald-50 transition-colors"
+              to="/alerts-management"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-emerald-700 px-4 py-2.5 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50"
             >
-              Xem Chi Tiết →
+              <Bell className="h-4 w-4" />
+              Dat canh bao gia
             </Link>
           </div>
+        </Panel>
 
-          {/* Weather Card */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Thời tiết sắp tới</h3>
-              <div className="flex items-center gap-2">
-                <DataSourceBadge data={displayedWeather} />
-                <Cloud className="w-6 h-6 text-gray-400" />
-              </div>
+        <Panel>
+          <PanelHeader icon={CloudRain} title="Weather Intelligence">
+            <div className="flex items-center gap-2">
+              <RiskBadge level={weatherRisk.risk_level} />
+              <DataSourceBadge data={weatherRisk} />
             </div>
+          </PanelHeader>
 
-            <div className="text-center mb-4">
-              <div className="text-5xl font-bold text-gray-900">{displayedWeather.temp}°C</div>
-              <p className="text-gray-600 mt-2">{displayedWeather.condition}</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-md bg-slate-50 px-3 py-3">
+              <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                <ThermometerSun className="h-4 w-4 text-orange-600" />
+                Nhiet do
+              </div>
+              <div className="mt-2 text-2xl font-bold text-slate-950">{formatNumber(weatherCurrent.temperature, 1)} C</div>
             </div>
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-                <div className="flex items-center">
-                  <Droplets className="w-5 h-5 text-blue-600 mr-2" />
-                  <span className="text-sm text-gray-700">Độ ẩm</span>
-                </div>
-                <span className="text-sm font-semibold text-gray-900">{displayedWeather.humidity}</span>
+            <div className="rounded-md bg-slate-50 px-3 py-3">
+              <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                <Gauge className="h-4 w-4 text-slate-600" />
+                Risk score
               </div>
-
-              <div className="p-3 bg-amber-50 rounded-lg">
-                <p className="text-sm text-amber-800">{displayedWeather.rainfall}</p>
-              </div>
+              <div className="mt-2 text-2xl font-bold text-slate-950">{formatNumber(weatherRisk.risk_score)}</div>
             </div>
-          </div>
-
-          {/* Market News */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Tin tức thị trường</h3>
-
-            <div className="space-y-4">
-              <div className="pb-4 border-b border-gray-200">
-                <div className="flex items-start">
-                  <div className="w-2 h-2 bg-emerald-500 rounded-full mt-2 mr-3" />
-                  <div>
-                    <p className="text-sm text-gray-900 font-medium">
-                      Xuất khẩu gạo tăng 15%
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">2 giờ trước</p>
-                  </div>
-                </div>
+            <div className="rounded-md bg-slate-50 px-3 py-3">
+              <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                <Droplets className="h-4 w-4 text-sky-600" />
+                Mua 24h toi
               </div>
-
-              <div className="pb-4 border-b border-gray-200">
-                <div className="flex items-start">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 mr-3" />
-                  <div>
-                    <p className="text-sm text-gray-900 font-medium">
-                      Dự báo mưa ảnh hưởng thu hoạch
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">5 giờ trước</p>
-                  </div>
-                </div>
+              <div className="mt-2 text-2xl font-bold text-sky-700">{formatNumber(weatherRisk.rain_24h, 1)} mm</div>
+            </div>
+            <div className="rounded-md bg-slate-50 px-3 py-3">
+              <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                <Wind className="h-4 w-4 text-slate-600" />
+                Gio / UV
               </div>
-
-              <div>
-                <div className="flex items-start">
-                  <div className="w-2 h-2 bg-amber-500 rounded-full mt-2 mr-3" />
-                  <div>
-                    <p className="text-sm text-gray-900 font-medium">
-                      Giá phân bón giảm 8%
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">1 ngày trước</p>
-                  </div>
-                </div>
+              <div className="mt-2 text-2xl font-bold text-slate-950">
+                {formatNumber(weatherCurrent.wind_speed, 1)} / {formatNumber(weatherCurrent.uv_index, 1)}
               </div>
             </div>
           </div>
-        </div>
+
+          <div className="mt-5">
+            <MiniHourlyChart hourly={weatherRisk.hourly_forecast || []} />
+          </div>
+        </Panel>
+
+        <Panel>
+          <PanelHeader icon={AlertTriangle} title="Alert Center">
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+              {alerts.length} canh bao
+            </span>
+          </PanelHeader>
+          <div className="space-y-3">
+            {alerts.length ? (
+              alerts.slice(0, 4).map((alert, index) => (
+                <div key={`${alert.alert_type}-${index}`} className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+                  <div className="text-sm font-semibold text-amber-900">{alert.title || alert.alert_type}</div>
+                  <div className="mt-1 text-xs text-amber-800">{alert.message || alert.recommendation}</div>
+                </div>
+              ))
+            ) : (
+              <EmptyState text="Chua co canh bao tu backend." />
+            )}
+          </div>
+        </Panel>
       </div>
+
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+        <Panel>
+          <PanelHeader icon={Sparkles} title="AI khuyen nghi">
+            <DataSourceBadge data={summary?.ai_recommendation || {}} />
+          </PanelHeader>
+          <div className="space-y-3">
+            <h3 className="text-xl font-bold text-slate-950">{summary?.ai_recommendation?.title || 'Dang tong hop'}</h3>
+            <p className="text-sm leading-6 text-slate-600">{summary?.ai_recommendation?.description || 'Chua co khuyen nghi.'}</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-md bg-emerald-50 p-3">
+                <div className="text-xs text-emerald-700">Do tin cay</div>
+                <div className="mt-1 text-xl font-bold text-emerald-800">
+                  {formatNumber(Number(summary?.ai_recommendation?.confidence || 0) * 100)}%
+                </div>
+              </div>
+              <div className="rounded-md bg-slate-50 p-3">
+                <div className="text-xs text-slate-500">Gia ky vong</div>
+                <div className="mt-1 text-xl font-bold text-slate-950">{formatNumber(summary?.ai_recommendation?.expected_price)}</div>
+              </div>
+            </div>
+          </div>
+        </Panel>
+
+        <Panel>
+          <PanelHeader icon={TrendingUp} title="Du bao gia 7 ngay">
+            {forecastHigh && <span className="text-xs font-medium text-slate-500">Dinh: {formatNumber(forecastHigh.forecast_price || forecastHigh.predicted_price)}</span>}
+          </PanelHeader>
+          <div className="space-y-2">
+            {forecast.length ? (
+              forecast.slice(0, 7).map((item) => (
+                <div key={item.date} className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">{formatDate(item.date)}</div>
+                    <div className="text-xs text-slate-500">{item.confidence === 'high' ? 'Tin cay cao' : 'Tin cay trung binh'}</div>
+                  </div>
+                  <div className="flex items-center gap-2 text-right">
+                    {trendIcon(item.trend)}
+                    <span className="text-sm font-bold text-slate-950">{formatNumber(item.forecast_price || item.predicted_price)} VND/kg</span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <EmptyState text="Chua co du bao gia." />
+            )}
+          </div>
+        </Panel>
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+        <Panel className="xl:col-span-2">
+          <PanelHeader icon={Globe2} title="Gia theo vung" />
+          <div className="grid gap-3 md:grid-cols-2">
+            {regionalPrices.length ? (
+              regionalPrices.map((item) => (
+                <div key={item.region} className="rounded-md border border-slate-200 px-3 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-semibold text-slate-950">{item.region}</div>
+                      <div className="text-xs text-slate-500">{item.source_name || 'database'}</div>
+                    </div>
+                    <DataSourceBadge data={item} />
+                  </div>
+                  <div className="mt-3 text-2xl font-bold text-slate-950">
+                    {formatNumber(item.price)} <span className="text-sm font-medium text-slate-500">{item.unit || 'VND/kg'}</span>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <EmptyState text="Chua co gia theo vung." />
+            )}
+          </div>
+        </Panel>
+
+        <Panel>
+          <PanelHeader icon={Newspaper} title="Tin thi truong" />
+          <div className="space-y-3">
+            {news.length ? (
+              news.slice(0, 6).map((item) => (
+                <a
+                  key={item.news_id || item.source_url || item.title}
+                  href={item.source_url || '#'}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block rounded-md border border-slate-200 px-3 py-2 transition hover:border-emerald-200 hover:bg-emerald-50"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="line-clamp-2 text-sm font-semibold text-slate-950">{item.title}</div>
+                    <SentimentBadge value={item.sentiment} />
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {item.source_name || 'RSS'} - {formatDateTime(item.published_at)}
+                  </div>
+                </a>
+              ))
+            ) : (
+              <EmptyState text="Chua co tin tuc tu backend." />
+            )}
+          </div>
+        </Panel>
+      </div>
+
+      <Panel>
+        <PanelHeader icon={Globe2} title="Tham chieu thi truong quoc te">
+          <DataSourceBadge data={realtimeMarket.exchange_rate || {}} />
+        </PanelHeader>
+        <div className="grid gap-3 md:grid-cols-3">
+          {(realtimeMarket.global_references || []).length ? (
+            realtimeMarket.global_references.map((item) => (
+              <div key={`${item.crop_name}-${item.source_url}`} className="rounded-md border border-slate-200 px-3 py-3">
+                <div className="text-sm font-semibold text-slate-950">{item.crop_name || item.crop_id}</div>
+                <div className="mt-2 text-xl font-bold text-slate-950">{formatNumber(item.price)} VND/kg</div>
+                <div className="mt-1 text-xs text-slate-500">{item.source_name}</div>
+              </div>
+            ))
+          ) : (
+            <EmptyState text="Chua co tham chieu quoc te." />
+          )}
+        </div>
+      </Panel>
     </div>
   );
 };
