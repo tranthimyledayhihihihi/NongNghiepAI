@@ -1306,12 +1306,16 @@ async def _fetch_weather_province(
         f"?latitude={lat}&longitude={lon}"
         f"&daily=temperature_2m_max,temperature_2m_min,precipitation_sum"
         f",relative_humidity_2m_max,sunshine_duration,weather_code"
+        f",wind_speed_10m_max,uv_index_max"
         f"&timezone=Asia%2FHo_Chi_Minh"
         f"&past_days={past_days}"
         f"&forecast_days={forecast_days}"
     )
     try:
         resp = await client.get(url, timeout=15)
+        if resp.status_code == 429:
+            logger.warning(f"[Weather] {region}: Rate limited (429) — sẽ retry")
+            return []
         if resp.status_code != 200:
             logger.debug(f"[Weather] {region}: HTTP {resp.status_code}")
             return []
@@ -1324,6 +1328,8 @@ async def _fetch_weather_province(
         humidity    = daily.get("relative_humidity_2m_max", [])
         sunshine    = daily.get("sunshine_duration", [])   # seconds
         codes       = daily.get("weather_code", [])
+        wind_speeds = daily.get("wind_speed_10m_max", [])
+        uv_indices  = daily.get("uv_index_max", [])
 
         def _get(lst, idx):
             v = lst[idx] if idx < len(lst) else None
@@ -1345,6 +1351,11 @@ async def _fetch_weather_province(
                 "rainfall":     _get(rain, i),
                 "sunshine_h":   sun_h,
                 "weather_desc": desc,
+                "weather_code": wcode,
+                "wind_speed":   _get(wind_speeds, i),
+                "uv_index":     _get(uv_indices, i),
+                "latitude":     lat,
+                "longitude":    lon,
             })
         logger.info(f"[Weather] {region}: {len(results)} ngày")
         return results
@@ -1354,12 +1365,22 @@ async def _fetch_weather_province(
 
 
 async def _fetch_all_weather(past_days: int = 6, forecast_days: int = 7) -> List[Dict]:
-    """Cào thời tiết song song cho tất cả tỉnh.
-    Mặc định: 6 ngày quá khứ + hôm nay + 6 ngày tới (forecast_days=7 bao gồm hôm nay).
-    """
+    """Cào thời tiết song song cho tất cả tỉnh, giới hạn 3 request đồng thời tránh 429."""
+    semaphore = asyncio.Semaphore(3)
+
+    async def _fetch_with_limit(client, region, lat, lon):
+        async with semaphore:
+            for attempt in range(3):
+                rows = await _fetch_weather_province(client, region, lat, lon, past_days, forecast_days)
+                if rows:
+                    return rows
+                # 429 hoặc lỗi tạm thời — chờ rồi retry
+                await asyncio.sleep(1.5 * (attempt + 1))
+            return []
+
     async with httpx.AsyncClient() as client:
         tasks = [
-            _fetch_weather_province(client, region, lat, lon, past_days, forecast_days)
+            _fetch_with_limit(client, region, lat, lon)
             for region, lat, lon in _WEATHER_PROVINCES
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -1404,6 +1425,11 @@ def _save_weather_data_force(rows: List[Dict]) -> int:
                 existing.Rainfall       = row.get("rainfall")
                 existing.SunshineHours  = row.get("sunshine_h")
                 existing.WeatherDesc    = row.get("weather_desc")
+                existing.WeatherCode    = row.get("weather_code")
+                existing.WindSpeed      = row.get("wind_speed")
+                existing.UVIndex        = row.get("uv_index")
+                existing.Latitude       = row.get("latitude")
+                existing.Longitude      = row.get("longitude")
             else:
                 db.add(WeatherData(
                     Region=region,
@@ -1414,6 +1440,11 @@ def _save_weather_data_force(rows: List[Dict]) -> int:
                     Rainfall=row.get("rainfall"),
                     SunshineHours=row.get("sunshine_h"),
                     WeatherDesc=row.get("weather_desc"),
+                    WeatherCode=row.get("weather_code"),
+                    WindSpeed=row.get("wind_speed"),
+                    UVIndex=row.get("uv_index"),
+                    Latitude=row.get("latitude"),
+                    Longitude=row.get("longitude"),
                 ))
             saved += 1
 

@@ -20,21 +20,8 @@ export const weatherApi = {
     return response.data;
   },
 
-  getAgricultureWeather: async ({ region, cropName, growthStage, days = 7, includeHourly = true, forceRefresh = false }) => {
+  getAgricultureWeather: async ({ region, cropName, growthStage, days = 7, includeHourly = true }) => {
     const response = await api.get(`/api/weather/agriculture/${encodeURIComponent(region)}`, {
-      params: {
-        crop_name: cropName || undefined,
-        growth_stage: growthStage || undefined,
-        days,
-        include_hourly: includeHourly,
-        force_refresh: forceRefresh,
-      },
-    });
-    return response.data;
-  },
-
-  refreshAgricultureWeather: async ({ region, cropName, growthStage, days = 7, includeHourly = true }) => {
-    const response = await api.post(`/api/weather/agriculture/${encodeURIComponent(region)}/refresh`, null, {
       params: {
         crop_name: cropName || undefined,
         growth_stage: growthStage || undefined,

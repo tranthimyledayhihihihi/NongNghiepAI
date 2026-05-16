@@ -12,6 +12,7 @@ export const qualityApi = {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
+      timeout: 90000,
     });
     return response.data;
   },

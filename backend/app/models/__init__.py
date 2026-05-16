@@ -1,7 +1,6 @@
 from .alert import AlertNotification, AlertSubscription, PriceAlert
 from .conversation import AIConversation
 from .crop import Crop, CropType
-from .dashboard import AirQualityObservation, DashboardCache, DataSource, RegionalPriceSnapshot
 from .harvest import HarvestForecast, HarvestSchedule
 from .market import MarketChannel, MarketSuggestion
 from .ingestion import DataIngestionLog
@@ -28,10 +27,7 @@ __all__ = [
     "AlertSubscription",
     "Crop",
     "CropType",
-    "AirQualityObservation",
-    "DashboardCache",
     "DataIngestionLog",
-    "DataSource",
     "HarvestForecast",
     "HarvestSchedule",
     "MarketPrice",
@@ -47,7 +43,6 @@ __all__ = [
     "PricingRequest",
     "QualityCheck",
     "QualityRecord",
-    "RegionalPriceSnapshot",
     "User",
     "UserSettings",
     "CropWeatherRule",

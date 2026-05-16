@@ -1,3 +1,4 @@
+import asyncio
 import shutil
 import uuid
 from pathlib import Path
@@ -19,8 +20,8 @@ router = APIRouter(prefix="/api/quality", tags=["quality"])
 async def check_quality(
     image: UploadFile | None = File(None),
     file: UploadFile | None = File(None),
-    crop_name: str = Form("unknown"),
-    region: str = Form("unknown"),
+    crop_name: str = Form(""),
+    region: str = Form("Đà Nẵng"),
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_current_user),
 ):
@@ -38,7 +39,8 @@ async def check_quality(
     with file_path.open("wb") as buffer:
         shutil.copyfileobj(upload.file, buffer)
 
-    return quality_service.check_quality(
+    return await asyncio.to_thread(
+        quality_service.check_quality,
         db,
         image_path=str(file_path),
         crop_name=crop_name,

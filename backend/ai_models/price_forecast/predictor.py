@@ -23,7 +23,7 @@ class PricePredictor:
             # Đảm bảo có đủ dữ liệu cho tính toán EMA.
             # Một quy tắc chung cho EMA là cần ít nhất 2*span điểm dữ liệu để ổn định.
             # Sử dụng tối thiểu 30 ngày cho EMA 14 ngày để có độ tin cậy nhất định.
-            min_data_points = 30 
+            min_data_points = 15 
             if len(df) < min_data_points:
                 logger.warning(f"Không đủ dữ liệu lịch sử để dự báo chính xác bằng EMA (Cần >= {min_data_points} ngày).")
                 return []

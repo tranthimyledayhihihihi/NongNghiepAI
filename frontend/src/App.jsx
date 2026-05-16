@@ -29,6 +29,8 @@ const PricingPage = lazy(() => import('./pages/PricingPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 const QualityCheckPage = lazy(() => import('./pages/QualityCheckPage'));
 const QualityPage = lazy(() => import('./pages/QualityPage'));
+const ReportsPage = lazy(() => import('./pages/ReportsPage'));
+const SeasonManagementPage = lazy(() => import('./pages/SeasonManagementPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const SubscriptionPricingPage = lazy(() => import('./pages/SubscriptionPricingPage'));
 
@@ -59,10 +61,12 @@ const appRoutes = [
   '/harvest',
   '/harvest-forecast',
   '/weather',
+  '/season-management',
   '/market',
   '/market-strategy',
   '/alerts',
   '/alerts-management',
+  '/reports',
   '/ai-chat',
   '/notifications',
   '/settings',
@@ -108,6 +112,7 @@ const AppShell = ({ sidebarOpen, setSidebarOpen }) => (
               <Route path="/harvest" element={<HarvestPage />} />
               <Route path="/harvest-forecast" element={<HarvestForecastPage />} />
               <Route path="/weather" element={<ForecastPage />} />
+              <Route path="/season-management" element={<SeasonManagementPage />} />
 
               <Route path="/market" element={<MarketPage />} />
               <Route path="/market-strategy" element={<MarketStrategyPage />} />
@@ -115,6 +120,7 @@ const AppShell = ({ sidebarOpen, setSidebarOpen }) => (
               <Route path="/alerts" element={<AlertPage />} />
               <Route path="/alerts-management" element={<AlertManagementPage />} />
 
+              <Route path="/reports" element={<ReportsPage />} />
               <Route path="/ai-chat" element={<AIChatPage />} />
               <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="/settings" element={<SettingsPage />} />

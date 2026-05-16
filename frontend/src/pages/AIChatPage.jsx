@@ -1,7 +1,7 @@
 import {
-  AlertCircle,
   Bot,
   Clock,
+  Database,
   Image as ImageIcon,
   Leaf,
   Menu,
@@ -11,12 +11,14 @@ import {
   RefreshCw,
   Send,
   Sparkles,
-  TrendingUp,
+  Trash2,
   User,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import DataSourceBadge from '../components/DataSourceBadge';
+import { useAuth } from '../contexts/AuthContext';
 import { aiApi } from '../services/aiApi';
 
 const initialMessages = [
@@ -56,65 +58,46 @@ const initialMessages = [
   },
 ];
 
-const chatHistory = [
-  {
-    id: 1,
-    title: 'Tư vấn sâu bệnh lúa',
-    subtitle: 'Bệnh đạo ôn lá',
-    description: 'Dựa trên ảnh ruộng lúa 40 ngày tuổi...',
-    time: '10:45',
-    icon: Leaf,
-    color: 'text-green-700 bg-green-50',
-  },
-  {
-    id: 2,
-    title: 'Dự báo giá cà phê',
-    subtitle: 'Thị trường Tây Nguyên',
-    description: 'Giá dự báo tăng trong tuần tới...',
-    time: '08:12',
-    icon: TrendingUp,
-    color: 'text-amber-700 bg-amber-50',
-  },
-  {
-    id: 3,
-    title: 'Kỹ thuật bón phân',
-    subtitle: 'Quy trình 4 đợt',
-    description: 'Bón phân đạm cần lưu ý giai đoạn sinh trưởng...',
-    time: 'Hôm qua',
-    icon: AlertCircle,
-    color: 'text-blue-700 bg-blue-50',
-  },
-];
+function formatHistoryTime(isoString) {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  const now = new Date();
+  const diffDays = Math.floor((now - d) / 86400000);
+  if (diffDays === 0) return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+  if (diffDays === 1) return 'Hôm qua';
+  if (diffDays < 7) return `${diffDays} ngày trước`;
+  return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+}
 
 const quickSuggestions = [
-  'Lập kế hoạch canh tác cho vụ tới',
-  'Cảnh báo thời tiết xấu tuần này',
-  'Dự báo giá cà phê tại Tây Nguyên',
-  'Phân tích lịch bón phân cho lúa',
+  'Thời tiết và cảnh báo bão tuần này tại Đà Nẵng',
+  'Giá sầu riêng tại Đắk Lắk hôm nay',
+  'Cách xử lý đất phèn ĐBSCL',
+  'Xâm nhập mặn tháng này ảnh hưởng cây trồng thế nào',
+  'Sâu cuốn lá lúa: cách nhận biết và xử lý',
+  'Kỹ thuật trồng cà phê vụ mới',
+  'Xu hướng giá hồ tiêu tháng này',
+  'Lịch bón phân cho lúa hè thu',
 ];
 
 const capabilities = [
   {
     icon: Clock,
-    title: 'Hỗ trợ liên tục',
-    description: 'Gợi ý xử lý nhanh cho giá, thời tiết và mùa vụ.',
+    title: 'Giá & Thị trường',
+    description: 'Giá nông sản theo vùng, xu hướng 7 ngày, so sánh toàn quốc.',
   },
   {
     icon: Sparkles,
-    title: 'Phân tích theo ngữ cảnh',
-    description: 'Kết hợp cây trồng, khu vực và lịch canh tác.',
+    title: 'Thời tiết & Cảnh báo',
+    description: 'Dự báo thời tiết, cảnh báo bão lũ, khuyến cáo canh tác theo thời tiết.',
   },
   {
     icon: Leaf,
-    title: 'Tư vấn nông nghiệp',
-    description: 'Trả lời về sâu bệnh, dinh dưỡng và thu hoạch.',
+    title: 'Đất & Kỹ thuật',
+    description: 'Cải tạo đất phèn, đất mặn, sâu bệnh, kỹ thuật trồng trọt.',
   },
 ];
 
-const analysisHistory = [
-  { id: 1, date: '14/05', title: 'Chẩn đoán bệnh đạo ôn', time: '4 hôm trước' },
-  { id: 2, date: '12/05', title: 'Kiểm tra dinh dưỡng lá', time: '6 ngày trước' },
-];
 
 const MessageAvatar = ({ type }) => (
   <div
@@ -127,12 +110,79 @@ const MessageAvatar = ({ type }) => (
 );
 
 const AIChatPage = () => {
+  const { isAuthenticated } = useAuth();
   const [messages, setMessages] = useState(initialMessages);
   const [inputMessage, setInputMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [chatHistory, setChatHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  const [activeHistoryId, setActiveHistoryId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+  const [confirmClear, setConfirmClear] = useState(false);
+
+  const loadHistory = useCallback(async () => {
+    if (!isAuthenticated) return;
+    setHistoryLoading(true);
+    try {
+      const data = await aiApi.getHistory(20);
+      setChatHistory(data.history || []);
+    } catch {
+      // silent — history is non-critical
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [isAuthenticated]);
+
+  const loadConversation = useCallback((item) => {
+    const ts = item.created_at
+      ? new Date(item.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+      : '';
+    setMessages([
+      {
+        id: `hist-user-${item.id}`,
+        type: 'user',
+        content: item.user_message,
+        timestamp: ts,
+      },
+      {
+        id: `hist-bot-${item.id}`,
+        type: 'bot',
+        content: item.ai_response,
+        timestamp: ts,
+      },
+    ]);
+    setActiveHistoryId(item.id);
+    setHistoryOpen(false);
+  }, []);
+
+  const deleteMessage = useCallback(async (id, e) => {
+    e.stopPropagation();
+    setDeletingId(id);
+    try {
+      await aiApi.deleteMessage(id);
+      setChatHistory((prev) => prev.filter((item) => item.id !== id));
+      if (activeHistoryId === id) { setMessages(initialMessages); setActiveHistoryId(null); }
+    } catch { /* silent */ }
+    finally { setDeletingId(null); }
+  }, [activeHistoryId]);
+
+  const clearAllHistory = useCallback(async () => {
+    setConfirmClear(false);
+    try {
+      await aiApi.clearHistory();
+      setChatHistory([]);
+      setMessages(initialMessages);
+      setActiveHistoryId(null);
+    } catch { /* silent */ }
+  }, []);
+
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory]);
 
   const todayLabel = useMemo(
     () => new Date().toLocaleDateString('vi-VN', { day: '2-digit', month: 'long', year: 'numeric' }),
@@ -177,6 +227,7 @@ const AIChatPage = () => {
         sessionId: 'frontend-session',
       });
       setMessages((current) => [...current, createBotResponse(data)]);
+      loadHistory();
     } catch {
       setMessages((current) => [...current, createBotResponse()]);
     } finally {
@@ -217,53 +268,149 @@ const AIChatPage = () => {
 
   const HistoryList = () => (
     <>
-      <div className="mb-5 flex items-center justify-between">
+      {/* Header */}
+      <div className="mb-4 flex items-center justify-between">
         <h2 className="font-bold text-gray-900">Lịch sử chat</h2>
-        <button type="button" className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
-          <MoreVertical className="h-5 w-5" />
-        </button>
-      </div>
-
-      <div className="mb-5 grid grid-cols-2 gap-2">
-        <button type="button" className="rounded-lg bg-green-700 px-3 py-2 text-sm font-medium text-white">
-          Lịch sử
-        </button>
-        <button type="button" className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100">
-          Gợi ý
-        </button>
-      </div>
-
-      <div className="space-y-3">
-        {chatHistory.map((chat) => {
-          const Icon = chat.icon;
-          return (
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={loadHistory}
+            className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            title="Tải lại"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </button>
+          {isAuthenticated && chatHistory.length > 0 && (
             <button
-              key={chat.id}
               type="button"
-              onClick={() => setHistoryOpen(false)}
-              className="w-full rounded-lg p-3 text-left transition hover:bg-gray-50"
+              onClick={() => setConfirmClear(true)}
+              className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500"
+              title="Xóa tất cả lịch sử"
             >
-              <div className="flex items-start gap-3">
-                <div className={`rounded-lg p-2 ${chat.color}`}>
-                  <Icon className="h-5 w-5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-semibold text-gray-900">{chat.title}</div>
-                  <div className="mt-1 text-xs text-gray-600">{chat.subtitle}</div>
-                  <div className="mt-1 truncate text-xs text-gray-500">{chat.description}</div>
-                  <div className="mt-2 text-xs text-gray-400">{chat.time}</div>
-                </div>
-              </div>
+              <Trash2 className="h-4 w-4" />
             </button>
+          )}
+        </div>
+      </div>
+
+      {/* Storage info badge */}
+      {isAuthenticated && (
+        <div className="mb-3 flex items-center gap-1.5 rounded-lg bg-gray-50 px-2.5 py-2 text-xs text-gray-500 border border-gray-100">
+          <Database className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+          <span>Lưu trong <strong>SQL Server</strong> · bảng <code className="bg-gray-200 px-1 rounded text-gray-600">AIConversations</code></span>
+        </div>
+      )}
+
+      {/* Confirm clear dialog */}
+      {confirmClear && (
+        <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3">
+          <p className="text-xs font-semibold text-red-700 mb-2">Xóa toàn bộ lịch sử chat?</p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={clearAllHistory}
+              className="flex-1 rounded-lg bg-red-600 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
+            >
+              Xóa tất cả
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmClear(false)}
+              className="flex-1 rounded-lg border border-gray-300 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-100"
+            >
+              Hủy
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* List */}
+      <div className="space-y-1.5">
+        {historyLoading && (
+          <div className="py-6 text-center text-sm text-gray-400">Đang tải lịch sử...</div>
+        )}
+        {!historyLoading && !isAuthenticated && (
+          <div className="rounded-lg bg-gray-50 px-3 py-4 text-center text-xs text-gray-500">
+            Đăng nhập để xem lịch sử hội thoại của bạn.
+          </div>
+        )}
+        {!historyLoading && isAuthenticated && chatHistory.length === 0 && (
+          <div className="rounded-lg bg-gray-50 px-3 py-4 text-center text-xs text-gray-500">
+            Chưa có lịch sử. Hãy bắt đầu hỏi AgriBot!
+          </div>
+        )}
+        {!historyLoading && chatHistory.map((item) => {
+          const isActive = activeHistoryId === item.id;
+          const isDeleting = deletingId === item.id;
+          const topicColors = {
+            weather: 'text-sky-600 bg-sky-50',
+            price: 'text-emerald-700 bg-emerald-50',
+            pest: 'text-orange-600 bg-orange-50',
+            cultivation: 'text-green-700 bg-green-50',
+            soil_salinity: 'text-blue-600 bg-blue-50',
+            soil_acidity: 'text-yellow-700 bg-yellow-50',
+          };
+          const topicLabel = {
+            weather: '🌤 Thời tiết', price: '💰 Giá', pest: '🐛 Sâu bệnh',
+            cultivation: '🌱 Canh tác', soil_salinity: '🌊 Đất mặn', soil_acidity: '⚗ Đất phèn',
+          };
+          return (
+            <div
+              key={item.id}
+              className={`group relative rounded-xl border transition ${
+                isActive ? 'border-green-200 bg-green-50' : 'border-transparent hover:border-gray-200 hover:bg-gray-50'
+              } ${isDeleting ? 'opacity-40' : ''}`}
+            >
+              <button
+                type="button"
+                onClick={() => loadConversation(item)}
+                className="w-full p-3 text-left"
+              >
+                <div className="flex items-start gap-2.5">
+                  <div className={`mt-0.5 rounded-lg p-1.5 ${isActive ? 'bg-green-700 text-white' : 'bg-green-100 text-green-700'}`}>
+                    <Leaf className="h-3.5 w-3.5" />
+                  </div>
+                  <div className="min-w-0 flex-1 pr-6">
+                    <div className={`truncate text-sm font-semibold ${isActive ? 'text-green-800' : 'text-gray-900'}`}>
+                      {item.user_message.length > 48 ? `${item.user_message.slice(0, 48)}…` : item.user_message}
+                    </div>
+                    {item.ai_response && (
+                      <div className="mt-0.5 truncate text-xs text-gray-400">
+                        {item.ai_response.replace(/[#*`]/g, '').slice(0, 65)}…
+                      </div>
+                    )}
+                    <div className="mt-1.5 flex items-center gap-2">
+                      {item.topic && topicLabel[item.topic] && (
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${topicColors[item.topic] || 'bg-gray-100 text-gray-600'}`}>
+                          {topicLabel[item.topic]}
+                        </span>
+                      )}
+                      <span className="text-xs text-gray-400">{formatHistoryTime(item.created_at)}</span>
+                    </div>
+                  </div>
+                </div>
+              </button>
+              {/* Delete button */}
+              <button
+                type="button"
+                onClick={(e) => deleteMessage(item.id, e)}
+                disabled={isDeleting}
+                className="absolute right-2 top-2 rounded-lg p-1.5 text-gray-300 opacity-0 transition hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
+                title="Xóa tin nhắn này"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
           );
         })}
       </div>
 
       <button
         type="button"
-        className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-green-700 py-3 font-medium text-white hover:bg-green-800"
+        onClick={() => { setMessages(initialMessages); setActiveHistoryId(null); setHistoryOpen(false); }}
+        className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-green-700 py-2.5 text-sm font-semibold text-white hover:bg-green-800"
       >
-        <Plus className="h-5 w-5" />
+        <Plus className="h-4 w-4" />
         Cuộc hội thoại mới
       </button>
     </>
@@ -358,7 +505,13 @@ const AIChatPage = () => {
                     {message.image && (
                       <img src={message.image} alt="Ảnh đã gửi" className="mb-3 max-h-72 w-full rounded-lg object-cover" />
                     )}
-                    <p>{message.content}</p>
+                    {message.type === 'bot' ? (
+                      <div className="prose prose-sm max-w-none prose-headings:font-bold prose-headings:text-gray-900 prose-h1:text-base prose-h2:text-sm prose-h3:text-sm prose-p:text-gray-700 prose-p:leading-6 prose-strong:text-gray-900 prose-ul:my-2 prose-ul:space-y-1 prose-ol:my-2 prose-ol:space-y-1 prose-li:text-gray-700 prose-li:leading-6">
+                        <ReactMarkdown>{message.content}</ReactMarkdown>
+                      </div>
+                    ) : (
+                      <p>{message.content}</p>
+                    )}
                     {message.source && (
                       <div className="mt-3">
                         <DataSourceBadge data={message.source} />
@@ -503,13 +656,20 @@ const AIChatPage = () => {
 
         <div className="mt-6 space-y-3">
           <h3 className="text-sm font-bold uppercase tracking-wide text-gray-900">Phân tích gần đây</h3>
-          {analysisHistory.map((item) => (
+          {chatHistory.slice(0, 3).map((item) => (
             <div key={item.id} className="rounded-lg bg-gray-50 p-3">
-              <div className="text-xs font-semibold text-gray-500">{item.date}</div>
-              <div className="mt-1 text-sm font-semibold text-gray-900">{item.title}</div>
-              <div className="mt-1 text-xs text-gray-500">{item.time}</div>
+              <div className="text-xs font-semibold text-gray-500">
+                {item.created_at ? new Date(item.created_at).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }) : ''}
+              </div>
+              <div className="mt-1 truncate text-sm font-semibold text-gray-900">
+                {item.user_message.length > 45 ? `${item.user_message.slice(0, 45)}…` : item.user_message}
+              </div>
+              <div className="mt-1 text-xs text-gray-500">{formatHistoryTime(item.created_at)}</div>
             </div>
           ))}
+          {chatHistory.length === 0 && !historyLoading && (
+            <div className="text-xs text-gray-400">Chưa có phân tích nào.</div>
+          )}
         </div>
       </aside>
     </div>

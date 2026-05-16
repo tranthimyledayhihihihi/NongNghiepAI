@@ -48,9 +48,12 @@ class Settings(BaseSettings):
     FROM_EMAIL: str = ""
     ZALO_OA_TOKEN: str = ""
     ZALO_API_BASE_URL: str = "https://openapi.zalo.me"
+    ESMS_API_KEY: str = ""
+    ESMS_SECRET_KEY: str = ""
+    ESMS_BRAND_NAME: str = "AgriAI"
+    ESMS_SMS_TYPE: int = 2
     PRICE_SOURCE_URLS_JSON: str = json.dumps(
         [
-            {"name": "Vietnam Food Association", "url": "https://e.vietfood.org.vn/market-update/export-price/"},
             {"name": "agro.gov.vn", "url": "https://agro.gov.vn/index.aspx"},
             {"name": "agro.gov.vn-gia", "url": "https://agro.gov.vn/vn/nguonwmy.aspx"},
         ]
@@ -67,7 +70,9 @@ class Settings(BaseSettings):
     MARKET_NEWS_CACHE_TTL_SECONDS: int = 1800
 
     BACKEND_CORS_ORIGINS: list[str] = [
+        "http://localhost:3000",
         "http://localhost:5173",
+        "http://127.0.0.1:3000",
         "http://127.0.0.1:5173",
     ]
 

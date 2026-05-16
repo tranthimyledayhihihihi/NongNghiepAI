@@ -11,16 +11,7 @@ except ModuleNotFoundError:  # pragma: no cover - depends on local environment
 
 class RedisClient:
     def __init__(self):
-        self.client = (
-            redis.from_url(
-                settings.REDIS_URL,
-                decode_responses=True,
-                socket_connect_timeout=0.2,
-                socket_timeout=0.2,
-            )
-            if redis
-            else None
-        )
+        self.client = redis.from_url(settings.REDIS_URL, decode_responses=True) if redis else None
         self.enabled = self.client is not None
 
     def _disable(self):

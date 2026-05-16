@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, UnicodeText
 from sqlalchemy.orm import synonym
 from sqlalchemy.sql import func
 
@@ -11,14 +11,14 @@ class AIConversation(Base):
     ConvID = Column("ConvID", Integer, primary_key=True, index=True)
     UserID = Column("UserID", Integer, ForeignKey("Users.UserID"), nullable=True, index=True)
     SessionID = Column("SessionID", String(100), nullable=True)
-    UserMessage = Column("UserMessage", Text, nullable=False)
-    AIResponse = Column("AIResponse", Text, nullable=False)
+    UserMessage = Column("UserMessage", UnicodeText, nullable=False)
+    AIResponse = Column("AIResponse", UnicodeText, nullable=False)
     Topic = Column("Topic", String(50), nullable=True)
     RelatedCropID = Column("RelatedCropID", Integer, ForeignKey("CropTypes.CropID"), nullable=True)
-    ContextSnapshot = Column("ContextSnapshot", Text, nullable=True)
+    ContextSnapshot = Column("ContextSnapshot", UnicodeText, nullable=True)
     Provider = Column("Provider", String(50), nullable=True)
     ModelName = Column("ModelName", String(100), nullable=True)
-    TokenUsage = Column("TokenUsage", Text, nullable=True)
+    TokenUsage = Column("TokenUsage", UnicodeText, nullable=True)
     CreatedAt = Column("CreatedAt", DateTime, server_default=func.now(), nullable=False)
 
     id = synonym("ConvID")

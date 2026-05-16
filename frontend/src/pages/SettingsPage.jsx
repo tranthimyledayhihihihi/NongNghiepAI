@@ -1,21 +1,57 @@
 import {
   Bell,
   Check,
+  CheckCircle2,
   Globe2,
   KeyRound,
+  Loader2,
   Mail,
   MapPin,
+  MessageSquare,
   Monitor,
   Save,
+  Send,
   ShieldCheck,
   Smartphone,
   User,
+  XCircle,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { InlineLoading, PageError } from '../components/StatusState';
 import { useAuth } from '../contexts/AuthContext';
 import { getApiErrorMessage } from '../services/api';
 import { settingsApi } from '../services/settingsApi';
+
+const TestButton = ({ channel, testState, onTest }) => {
+  const active = testState.channel === channel;
+  const isLoading = active && testState.status === 'loading';
+  const isOk = active && testState.status === 'ok';
+  const isErr = active && testState.status === 'error';
+
+  return (
+    <div className="mt-2 flex items-center gap-3">
+      <button
+        type="button"
+        onClick={onTest}
+        disabled={isLoading}
+        className="inline-flex items-center gap-1.5 rounded border border-green-600 px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-50 disabled:opacity-50"
+      >
+        {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+        Gửi thử
+      </button>
+      {isOk && (
+        <span className="flex items-center gap-1 text-xs text-green-700">
+          <CheckCircle2 className="h-3.5 w-3.5" /> {testState.message}
+        </span>
+      )}
+      {isErr && (
+        <span className="flex items-center gap-1 text-xs text-red-600">
+          <XCircle className="h-3.5 w-3.5" /> {testState.message}
+        </span>
+      )}
+    </div>
+  );
+};
 
 const Toggle = ({ checked, onChange, label, description }) => (
   <div className="flex items-center justify-between gap-4 rounded-lg border border-gray-200 bg-white p-4">
@@ -38,6 +74,7 @@ const SettingsPage = () => {
     email: user?.email || '',
     phone: user?.phone || '',
     location: user?.region || '',
+    zaloUserId: '',
     language: 'vi',
     unit: 'hectare',
     theme: 'light',
@@ -46,11 +83,13 @@ const SettingsPage = () => {
     harvestReminders: true,
     emailChannel: true,
     zaloChannel: false,
+    smsChannel: false,
     twoFactor: false,
   });
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [testState, setTestState] = useState({ channel: null, status: null, message: '' });
 
   useEffect(() => {
     let active = true;
@@ -75,6 +114,7 @@ const SettingsPage = () => {
           harvestReminders: Boolean(data.harvest_reminders),
           emailChannel: Boolean(data.email_channel),
           zaloChannel: Boolean(data.zalo_channel),
+          smsChannel: Boolean(data.sms_channel),
           twoFactor: Boolean(data.two_factor_enabled),
         }));
       } catch (err) {
@@ -104,6 +144,32 @@ const SettingsPage = () => {
     setSaved(false);
   };
 
+  const handleSendTest = async (channel) => {
+    const receiverMap = {
+      email: settings.email,
+      zalo: settings.zaloUserId,
+      sms: settings.phone,
+    };
+    const receiver = receiverMap[channel];
+    if (!receiver) {
+      setTestState({ channel, status: 'error', message: 'Vui lòng điền thông tin nhận trước.' });
+      return;
+    }
+    setTestState({ channel, status: 'loading', message: '' });
+    try {
+      const result = await settingsApi.sendTestNotification({ channel, receiver });
+      const ok = result?.status === 'sent';
+      setTestState({
+        channel,
+        status: ok ? 'ok' : 'error',
+        message: ok ? 'Gửi thành công!' : (result?.error || 'Gửi thất bại.'),
+      });
+    } catch (err) {
+      setTestState({ channel, status: 'error', message: err?.response?.data?.detail || 'Lỗi kết nối.' });
+    }
+    setTimeout(() => setTestState({ channel: null, status: null, message: '' }), 5000);
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError(null);
@@ -122,6 +188,7 @@ const SettingsPage = () => {
         harvest_reminders: settings.harvestReminders,
         email_channel: settings.emailChannel,
         zalo_channel: settings.zaloChannel,
+        sms_channel: settings.smsChannel,
         two_factor_enabled: settings.twoFactor,
       });
       setSettings((current) => ({
@@ -308,21 +375,73 @@ const SettingsPage = () => {
               <div className="rounded-lg bg-gray-100 p-2 text-gray-700">
                 <Mail className="h-5 w-5" />
               </div>
-              <h2 className="text-lg font-bold text-gray-900">Kênh nhận</h2>
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Kênh nhận thông báo</h2>
+                <p className="text-xs text-gray-500">Cấu hình trong backend/.env để kích hoạt gửi thật</p>
+              </div>
             </div>
             <div className="space-y-4">
-              <Toggle
-                checked={settings.emailChannel}
-                onChange={() => updateSetting('emailChannel', !settings.emailChannel)}
-                label="Email"
-                description="Nhận bản tin và cảnh báo định kỳ."
-              />
-              <Toggle
-                checked={settings.zaloChannel}
-                onChange={() => updateSetting('zaloChannel', !settings.zaloChannel)}
-                label="Zalo"
-                description="Nhận cảnh báo khẩn cấp khi BE/Zalo OA sẵn sàng."
-              />
+              {/* Email */}
+              <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+                <Toggle
+                  checked={settings.emailChannel}
+                  onChange={() => updateSetting('emailChannel', !settings.emailChannel)}
+                  label="Email"
+                  description={settings.email || 'Chưa có địa chỉ email'}
+                />
+                {settings.emailChannel && (
+                  <TestButton
+                    channel="email"
+                    testState={testState}
+                    onTest={() => handleSendTest('email')}
+                  />
+                )}
+              </div>
+
+              {/* Zalo */}
+              <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+                <Toggle
+                  checked={settings.zaloChannel}
+                  onChange={() => updateSetting('zaloChannel', !settings.zaloChannel)}
+                  label="Zalo OA"
+                  description="Nhận cảnh báo khẩn cấp qua Zalo."
+                />
+                {settings.zaloChannel && (
+                  <div className="mt-3">
+                    <label className="mb-1 block text-xs font-medium text-gray-600">
+                      Zalo User ID
+                    </label>
+                    <input
+                      value={settings.zaloUserId}
+                      onChange={(e) => updateSetting('zaloUserId', e.target.value)}
+                      placeholder="Lấy tại: zalo.me/pc → Về tôi → ID"
+                      className="w-full rounded border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600 focus:ring-1 focus:ring-green-100"
+                    />
+                    <TestButton
+                      channel="zalo"
+                      testState={testState}
+                      onTest={() => handleSendTest('zalo')}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* SMS */}
+              <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+                <Toggle
+                  checked={settings.smsChannel}
+                  onChange={() => updateSetting('smsChannel', !settings.smsChannel)}
+                  label="SMS (ESMS.vn)"
+                  description={settings.phone || 'Điền số điện thoại ở Hồ sơ'}
+                />
+                {settings.smsChannel && (
+                  <TestButton
+                    channel="sms"
+                    testState={testState}
+                    onTest={() => handleSendTest('sms')}
+                  />
+                )}
+              </div>
             </div>
           </section>
 
@@ -362,8 +481,12 @@ const SettingsPage = () => {
                 <span>{settings.location}</span>
               </div>
               <div className="flex items-center gap-3">
+                <MessageSquare className="h-4 w-4 text-blue-500" />
+                <span>{settings.zaloChannel ? 'Zalo bật' : 'Zalo tắt'}</span>
+              </div>
+              <div className="flex items-center gap-3">
                 <Smartphone className="h-4 w-4 text-amber-600" />
-                <span>{settings.zaloChannel ? 'Có nhận Zalo' : 'Chưa bật Zalo'}</span>
+                <span>{settings.smsChannel ? 'SMS bật' : 'SMS tắt'}</span>
               </div>
             </div>
           </section>

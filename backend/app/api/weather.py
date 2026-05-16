@@ -51,7 +51,6 @@ async def get_agriculture_weather(
     growth_stage: str | None = Query(default=None),
     days: int = Query(default=7, ge=1, le=7),
     include_hourly: bool = True,
-    force_refresh: bool = Query(default=False),
     db: Session = Depends(get_db),
 ):
     return weather_service.get_agriculture_weather(
@@ -61,27 +60,6 @@ async def get_agriculture_weather(
         growth_stage=growth_stage,
         days=days,
         include_hourly=include_hourly,
-        force_refresh=force_refresh,
-    )
-
-
-@router.post("/agriculture/{region}/refresh", response_model=WeatherAgricultureResponse)
-async def refresh_agriculture_weather(
-    region: str,
-    crop_name: str | None = Query(default=None),
-    growth_stage: str | None = Query(default=None),
-    days: int = Query(default=7, ge=1, le=7),
-    include_hourly: bool = True,
-    db: Session = Depends(get_db),
-):
-    return weather_service.get_agriculture_weather(
-        db,
-        region,
-        crop_name=crop_name,
-        growth_stage=growth_stage,
-        days=days,
-        include_hourly=include_hourly,
-        force_refresh=True,
     )
 
 

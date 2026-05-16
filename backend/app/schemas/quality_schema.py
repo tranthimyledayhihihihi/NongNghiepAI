@@ -5,6 +5,10 @@ from pydantic import BaseModel, Field
 
 class QualityCheckResponse(BaseModel):
     crop_name: str
+    detected_crop: str = ""
+    is_produce: bool = True
+    color_assessment: str = ""
+    reasoning: str = ""
     region: str
     image_path: str | None = None
     quality_grade: str = Field(..., description="grade_1, grade_2, grade_3")
@@ -18,6 +22,8 @@ class QualityCheckResponse(BaseModel):
     image_width: int | None = None
     image_height: int | None = None
     suggested_price_source: str | None = None
+    price_source: str = ""
+    quality_multiplier: float = 1.0
     price_is_mock: bool = False
     suggested_price_range: dict[str, float] = Field(default_factory=dict)
     recommendations: list[str] = Field(default_factory=list)

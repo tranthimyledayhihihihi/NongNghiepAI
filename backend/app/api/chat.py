@@ -1,12 +1,29 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, model_validator
 from sqlalchemy.orm import Session
 from app.integrations.gemini_client import GeminiClient
 from app.core.database import get_db
+from app.api.auth import get_optional_current_user, get_current_user
+from app.models.user import User
 
 router = APIRouter(prefix="/api/chat", tags=["AI Chatbot"])
 
 gemini_client = GeminiClient()
+
+
+def _save_conversation(db: Session, user_id: int | None, question: str, answer: str, topic: str = "general") -> None:
+    try:
+        from app.models.conversation import AIConversation
+        db.add(AIConversation(
+            UserID=user_id,
+            UserMessage=question,
+            AIResponse=answer,
+            Provider="gemini",
+            Topic=topic,
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
 
 
 class ChatRequest(BaseModel):
@@ -39,16 +56,148 @@ class PriceQAResponse(BaseModel):
     db_prices: list = []
 
 # Từ khoá kích hoạt RAG từng loại
-_PRICE_KEYWORDS = ["giá", "bao nhiêu", "thị trường", "mua", "bán", "đồng", "tiền", "xu hướng giá"]
-_CROP_KEYWORDS  = ["trồng", "chăm sóc", "thu hoạch", "sinh trưởng", "phát triển", "ra hoa", "đậu trái", "bón phân"]
-_PEST_KEYWORDS  = ["sâu", "bệnh", "nấm", "vi khuẩn", "virus", "héo", "vàng lá", "thối", "rệp", "nhện"]
+_PRICE_KEYWORDS       = ["giá", "bao nhiêu", "thị trường", "mua", "bán", "đồng", "tiền", "xu hướng giá"]
+_CROP_KEYWORDS        = ["trồng", "chăm sóc", "thu hoạch", "sinh trưởng", "phát triển", "ra hoa", "đậu trái", "bón phân", "gieo", "ươm", "canh tác", "mùa vụ"]
+_PEST_KEYWORDS        = ["sâu", "bệnh", "nấm", "vi khuẩn", "virus", "héo", "vàng lá", "thối", "rệp", "nhện", "côn trùng", "thuốc trừ", "thuốc bảo vệ", "phòng trừ"]
+_WEATHER_KEYWORDS     = ["thời tiết", "bão", "lũ", "lụt", "mưa", "hạn hán", "nhiệt độ", "độ ẩm", "gió", "dự báo", "áp thấp", "nắng nóng", "rét đậm", "sương muối", "ngập", "khô hạn", "lũ quét", "bão số"]
+_SALINITY_KEYWORDS    = ["độ mặn", "xâm nhập mặn", "đất mặn", "nước mặn", "nhiễm mặn", "mặn hóa", "mặn xâm"]
+_ACIDITY_KEYWORDS     = ["phèn", "đất phèn", "đất chua", "ph đất", "cải tạo đất", "vôi nông nghiệp", "bón vôi", "đất nhiễm phèn", "axit đất"]
 
 def _question_contains(question: str, keywords: list[str]) -> bool:
     q = question.lower()
     return any(k in q for k in keywords)
 
+
+def _detect_topic(question: str) -> str:
+    """Phát hiện chủ đề chính của câu hỏi."""
+    q = question.lower()
+    if any(k in q for k in _WEATHER_KEYWORDS):
+        return "weather"
+    if any(k in q for k in _SALINITY_KEYWORDS):
+        return "soil_salinity"
+    if any(k in q for k in _ACIDITY_KEYWORDS):
+        return "soil_acidity"
+    if any(k in q for k in _PEST_KEYWORDS):
+        return "pest"
+    if any(k in q for k in _CROP_KEYWORDS):
+        return "cultivation"
+    if any(k in q for k in _PRICE_KEYWORDS):
+        return "price"
+    return "general"
+
+
+_SALINITY_KNOWLEDGE = """## Kiến thức xử lý đất mặn (Saline Soil):
+- Đất mặn: ECe > 4 dS/m, phổ biến ĐBSCL khi nước biển xâm nhập tháng 1–4
+- Ngưỡng an toàn: Lúa ECe < 2 dS/m | Sầu riêng/Chôm chôm < 1 dS/m | Dừa < 6 dS/m
+- Nhận biết: Lá cây cháy mép, đất có váng muối trắng, cây chậm phát triển
+- Xử lý cấp bách: Đắp bờ ngăn nước mặn | Tưới rửa mặn bằng nước ngọt 3–4 lần liên tiếp
+- Cải tạo: Bón thạch cao (CaSO4) 500–1000 kg/ha | Trồng cây phân xanh cải tạo đất
+- Giống chịu mặn: Lúa OM9915, GKG9, Đài Thơm 8 | Ớt, cà tím, mè chịu mặn tương đối
+- Thời điểm nguy hiểm: tháng 2–4 mặn xâm nhập sâu nhất tại ĐBSCL"""
+
+_ACIDITY_KNOWLEDGE = """## Kiến thức xử lý đất phèn (Acid Sulfate Soil):
+- Đất phèn: pH < 4.5, có pyrite (FeS2) và jarosite vàng, phổ biến tứ giác Long Xuyên, Đồng Tháp
+- Nhận biết: đất vàng xám/xám đen | nước ruộng màu đỏ cam | lá cây vàng từ ngọn xuống
+- Không cày sâu khi đất phèn tiềm tàng | Xả phèn trước khi trồng 2–3 tuần
+- Bón vôi: CaCO3 (vôi nông nghiệp) 1–2 tấn/ha | Dolomite nếu thiếu Mg | Trộn đều tầng canh tác
+- pH mục tiêu: 5.5–6.5 cho lúa và rau màu | > 6.0 cho cây ăn trái
+- Phân bón phù hợp: Lân nung chảy (thermophosphate) thay super lân | Ưu tiên NPK cao P và K
+- Luân canh: Lúa → cải thiện hơn hoa màu liên tục | Cây tràm giúp ổn định đất phèn"""
+
+
+_WEATHER_COND_VI = {
+    "clear": "trời trong", "mostly_clear": "ít mây", "partly_cloudy": "mây rải rác",
+    "cloudy": "nhiều mây", "rainy": "có mưa", "heavy_rain": "mưa lớn",
+    "thunderstorm": "dông sấm sét", "foggy": "sương mù", "drizzle": "mưa phùn",
+    "rain_showers": "mưa rào", "sunny": "nắng đẹp",
+}
+
+
+def _build_weather_context(db: Session, region: str) -> str:
+    try:
+        from app.services.weather_service import weather_service
+        current = weather_service.get_current_weather(db, region)
+        cond = _WEATHER_COND_VI.get(str(current.get("condition", "")), str(current.get("condition", "chưa rõ")))
+        lines = [f"## Thời tiết tại {current.get('region', region)} (live):"]
+        temp = current.get("temperature")
+        if temp is not None:
+            lines.append(f"- Nhiệt độ: {temp}°C (thấp nhất {current.get('temp_min', 'N/A')}°C / cao nhất {current.get('temp_max', 'N/A')}°C)")
+        if current.get("humidity") is not None:
+            lines.append(f"- Độ ẩm: {current['humidity']}%")
+        rain = current.get("rainfall") or 0
+        lines.append(f"- Lượng mưa: {float(rain):.1f} mm/ngày")
+        if current.get("wind_speed"):
+            lines.append(f"- Gió: {float(current['wind_speed']):.0f} km/h")
+        lines.append(f"- Điều kiện: {cond}")
+        warnings = current.get("warnings") or []
+        if warnings:
+            lines.append("\n## Cảnh báo thời tiết:")
+            for w in warnings:
+                lines.append(f"- ⚠️ {w}")
+        forecast = weather_service.get_forecast(db, region, days=3)
+        if forecast:
+            lines.append(f"\n## Dự báo 3 ngày tới tại {region}:")
+            for f in forecast[:3]:
+                fc = _WEATHER_COND_VI.get(str(f.get("condition", "")), str(f.get("condition", "")))
+                fwarns = f.get("warnings") or []
+                ws = f" | ⚠️ {fwarns[0]}" if fwarns else ""
+                lines.append(f"- {f.get('date', 'N/A')}: {fc} | {f.get('temp_min', '?')}–{f.get('temp_max', '?')}°C | mưa {float(f.get('rainfall', 0)):.0f}mm{ws}")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"## Lưu ý: Không lấy được dữ liệu thời tiết tại {region}."
+
+# Bảng mapping từ khoá vùng → tên vùng chính xác trong DB
+_REGION_KEYWORDS: dict[str, str] = {
+    "đà nẵng": "Đà Nẵng", "da nang": "Đà Nẵng",
+    "hà nội": "Hà Nội", "ha noi": "Hà Nội", "hà nôi": "Hà Nội",
+    "hồ chí minh": "TP.HCM", "ho chi minh": "TP.HCM",
+    "tp.hcm": "TP.HCM", "tphcm": "TP.HCM", "hcm": "TP.HCM", "sài gòn": "TP.HCM",
+    "cần thơ": "Cần Thơ", "can tho": "Cần Thơ",
+    "gia lai": "Gia Lai",
+    "đắk lắk": "Đắk Lắk", "dak lak": "Đắk Lắk", "đắk lak": "Đắk Lắk",
+    "đắk nông": "Đắk Nông", "dak nong": "Đắk Nông",
+    "bình phước": "Bình Phước", "binh phuoc": "Bình Phước",
+    "tiền giang": "Tiền Giang", "tien giang": "Tiền Giang",
+    "đồng nai": "Đồng Nai", "dong nai": "Đồng Nai",
+    "lâm đồng": "Lâm Đồng", "lam dong": "Lâm Đồng",
+    "đà lạt": "Đà Lạt", "da lat": "Đà Lạt",
+    "an giang": "An Giang",
+    "bắc giang": "Bắc Giang", "bac giang": "Bắc Giang",
+    "bến tre": "Bến Tre", "ben tre": "Bến Tre",
+    "bình định": "Bình Định", "binh dinh": "Bình Định",
+    "bình dương": "Bình Dương", "binh duong": "Bình Dương",
+    "bình thuận": "Bình Thuận", "binh thuan": "Bình Thuận",
+    "đồng tháp": "Đồng Tháp", "dong thap": "Đồng Tháp",
+    "hà giang": "Hà Giang", "ha giang": "Hà Giang",
+    "hải dương": "Hải Dương", "hai duong": "Hải Dương",
+    "hậu giang": "Hậu Giang", "hau giang": "Hậu Giang",
+    "hưng yên": "Hưng Yên", "hung yen": "Hưng Yên",
+    "khánh hòa": "Khánh Hòa", "khanh hoa": "Khánh Hòa",
+    "kiên giang": "Kiên Giang", "kien giang": "Kiên Giang",
+    "kon tum": "Kon Tum",
+    "long an": "Long An",
+    "nghệ an": "Nghệ An", "nghe an": "Nghệ An",
+    "quảng ngãi": "Quảng Ngãi", "quang ngai": "Quảng Ngãi",
+    "sóc trăng": "Sóc Trăng", "soc trang": "Sóc Trăng",
+    "sơn la": "Sơn La", "son la": "Sơn La",
+    "tây ninh": "Tây Ninh", "tay ninh": "Tây Ninh",
+    "vĩnh long": "Vĩnh Long", "vinh long": "Vĩnh Long",
+}
+DEFAULT_PRICE_REGION = "Đà Nẵng"
+
+def _detect_region(question: str) -> str:
+    q = question.lower()
+    for key, region in _REGION_KEYWORDS.items():
+        if key in q:
+            return region
+    return DEFAULT_PRICE_REGION
+
 @router.post("", response_model=ChatResponse)
-async def ask_farming_advice(request: ChatRequest, db: Session = Depends(get_db)):
+async def ask_farming_advice(
+    request: ChatRequest,
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
+):
     context_parts = []
     if request.context_data:
         context_parts.append(request.context_data)
@@ -132,70 +281,153 @@ async def ask_farming_advice(request: ChatRequest, db: Session = Depends(get_db)
             question=q,
             context_data=combined_context
         )
+        _save_conversation(db, current_user.UserID if current_user else None, q, answer)
         return ChatResponse(answer=answer)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi khi kết nối AI: {str(e)}")
 
 
 @router.post("/price-qa", response_model=PriceQAResponse)
-async def price_qa(request: PriceQARequest, db: Session = Depends(get_db)):
-    """
-    Hỏi-đáp định giá nông sản với Tavily Search + dữ liệu DB thực tế.
+async def price_qa(
+    request: PriceQARequest,
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
+):
+    from datetime import date as _date, timedelta
+    from app.models.crop import Crop as _Crop
+    from app.models.price import MarketPrice as _MP, PriceHistory as _PH
 
-    Quy trình:
-    1. Truy vấn Tavily để lấy giá mới nhất từ web (real-time)
-    2. Lấy giá từ DB hệ thống để đối chiếu
-    3. Tổng hợp câu trả lời đầy đủ có nguồn trích dẫn
-    """
     q = request.question
+    region = _detect_region(q)
+    _seven_ago = _date.today() - timedelta(days=7)
 
-    # ── Bước 1: Lấy giá từ DB để làm context ──────────────────────────────
-    db_context = ""
-    db_prices = []
+    def _mp_row(mp, name):
+        return {
+            "crop_name": name, "region": mp.Region,
+            "price": float(mp.PricePerKg),
+            "source": mp.SourceName or "",
+            "date": str(mp.PriceDate),
+        }
+
+    # ── Bước 1: Giá mới nhất theo vùng ────────────────────────────────────
+    db_prices: list[dict] = []
     try:
-        from sqlalchemy import text
-        rows = db.execute(text("""
-            SELECT TOP 15 c.CropName, m.Region, m.PricePerKg, m.SourceName, m.PriceDate
-            FROM MarketPrices m
-            JOIN CropTypes c ON m.CropID = c.CropID
-            ORDER BY m.PriceDate DESC
-        """)).fetchall()
-        if rows:
-            lines = ["Giá trong hệ thống (cập nhật gần nhất):"]
-            for r in rows:
-                line = f"- {r[0]} tại {r[1]}: {float(r[2]):,.0f} VNĐ/kg (nguồn: {r[3]}, ngày {r[4]})"
-                lines.append(line)
-                db_prices.append({
-                    "crop_name": r[0], "region": r[1],
-                    "price": float(r[2]), "source": r[3],
-                    "date": str(r[4]),
-                })
-            db_context = "\n".join(lines)
+        rows = (
+            db.query(_Crop.CropName, _MP)
+            .join(_MP, _Crop.CropID == _MP.CropID)
+            .filter(_MP.Region == region)
+            .order_by(_MP.PriceDate.desc())
+            .limit(15).all()
+        )
+        if not rows:
+            rows = (
+                db.query(_Crop.CropName, _MP)
+                .join(_MP, _Crop.CropID == _MP.CropID)
+                .order_by(_MP.PriceDate.desc())
+                .limit(15).all()
+            )
+        db_prices = [_mp_row(mp, name) for name, mp in rows]
     except Exception:
         pass
 
-    # ── Bước 2: Tavily Search Q&A ──────────────────────────────────────────
+    # ── Bước 2: Lịch sử 7 ngày theo vùng ─────────────────────────────────
+    price_history: list = []
+    try:
+        hist = (
+            db.query(_Crop.CropName, _PH)
+            .join(_PH, _Crop.CropID == _PH.CropID)
+            .filter(_PH.Region == region, _PH.RecordDate >= _seven_ago)
+            .order_by(_PH.RecordDate.desc())
+            .limit(50).all()
+        )
+        if not hist:
+            hist = (
+                db.query(_Crop.CropName, _PH)
+                .join(_PH, _Crop.CropID == _PH.CropID)
+                .filter(_PH.RecordDate >= _seven_ago)
+                .order_by(_PH.RecordDate.desc())
+                .limit(50).all()
+            )
+        price_history = [(name, ph) for name, ph in hist]
+    except Exception:
+        pass
+
+    # ── Bước 3 extra: Luôn lấy top giá toàn quốc làm tham chiếu ──────────
+    national_rows: list = []
+    try:
+        national_rows = (
+            db.query(_Crop.CropName, _MP)
+            .join(_MP, _Crop.CropID == _MP.CropID)
+            .order_by(_MP.PriceDate.desc())
+            .limit(30).all()
+        )
+    except Exception:
+        pass
+
+    # ── Xây context cho AI: vùng cụ thể + toàn quốc tham chiếu ───────────
+    ctx_parts: list[str] = []
+
+    if db_prices:
+        lines = [f"## Giá tại {region} (mới nhất):"]
+        for p in db_prices:
+            lines.append(f"- {p['crop_name']} ({p['region']}): {p['price']:,.0f} VNĐ/kg — {p['date']}")
+        ctx_parts.append("\n".join(lines))
+
+    if price_history:
+        lines = [f"## Lịch sử giá 7 ngày tại {region}:"]
+        for name, ph in price_history:
+            lines.append(
+                f"- {name} ({ph.Region}) ngày {ph.RecordDate}: "
+                f"TB {float(ph.AvgPrice):,.0f} | Min {float(ph.MinPrice or 0):,.0f} | Max {float(ph.MaxPrice or 0):,.0f} VNĐ/kg"
+            )
+        ctx_parts.append("\n".join(lines))
+
+    if national_rows:
+        lines = ["## Giá toàn quốc (tham chiếu khi vùng trên thiếu dữ liệu):"]
+        for name, mp in national_rows:
+            lines.append(f"- {name} tại {mp.Region}: {float(mp.PricePerKg):,.0f} VNĐ/kg — {mp.PriceDate}")
+        ctx_parts.append("\n".join(lines))
+
+    db_context = "\n\n".join(ctx_parts)
+
+    # ── Bước 3: Tavily Search ──────────────────────────────────────────────
+    tavily_answer = ""
+    sources: list = []
+    full_answer = ""
     try:
         from app.integrations.tavily_client import ask_price_qa
         import asyncio
-        result = await asyncio.to_thread(ask_price_qa, q, db_context)
+        result = await asyncio.to_thread(ask_price_qa, f"{q} tại {region}", db_context)
         tavily_answer = result.get("tavily_answer", "")
         sources = result.get("sources", [])
         full_answer = result.get("answer", "")
-    except Exception as e:
-        tavily_answer = ""
-        sources = []
-        full_answer = f"Không tìm được dữ liệu từ Tavily: {e}"
+    except Exception:
+        pass
 
-    # ── Bước 3: Nếu Tavily không trả lời được, dùng Gemini + context DB ───
-    if not tavily_answer and db_context:
+    # ── Bước 4: Gemini với prompt ngắn gọn về giá ─────────────────────────
+    if not tavily_answer:
         try:
-            full_answer = await gemini_client.get_farming_advice(
-                question=q,
-                context_data=db_context,
-            )
+            full_answer = await gemini_client.get_price_answer(q, region, db_context)
         except Exception:
             pass
+
+    # ── Bước 5: Fallback thuần DB nếu AI fail ─────────────────────────────
+    _is_ai_fail = (
+        not full_answer
+        or full_answer.startswith("Xin lỗi")
+        or full_answer.startswith("Lỗi AI")
+        or "đang bận" in full_answer
+    )
+    if _is_ai_fail:
+        if db_prices:
+            lines = [f"**Giá nông sản tại {region}** *(AI tạm bận — dữ liệu thô từ hệ thống)*\n"]
+            for p in db_prices:
+                lines.append(f"- **{p['crop_name']}**: {p['price']:,.0f} VNĐ/kg — {p['date']}")
+            full_answer = "\n".join(lines)
+        else:
+            full_answer = f"Chưa có dữ liệu giá tại {region}. Vui lòng hỏi về hồ tiêu, sầu riêng hoặc chọn vùng khác."
+
+    _save_conversation(db, current_user.UserID if current_user else None, q, full_answer)
 
     return PriceQAResponse(
         answer=full_answer,
@@ -203,3 +435,185 @@ async def price_qa(request: PriceQARequest, db: Session = Depends(get_db)):
         sources=sources,
         db_prices=db_prices,
     )
+
+
+class AskResponse(BaseModel):
+    answer: str
+    topic: str = "general"
+    region: str = ""
+    sources: list = []
+
+
+@router.post("/ask", response_model=AskResponse)
+async def ask_agri(
+    request: ChatRequest,
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
+):
+    """Endpoint thống nhất: tự phát hiện chủ đề (giá, thời tiết, đất phèn/mặn, sâu bệnh, canh tác)."""
+    from datetime import date as _date, timedelta
+    from app.models.crop import Crop as _Crop
+    from app.models.price import MarketPrice as _MP, PriceHistory as _PH
+
+    q = request.question
+    topic = _detect_topic(q)
+    region = _detect_region(q)
+    _seven_ago = _date.today() - timedelta(days=7)
+    ctx_parts: list[str] = []
+    sources: list = []
+
+    # ── Context theo chủ đề ──────────────────────────────────────────────────
+    if topic == "weather":
+        ctx_parts.append(_build_weather_context(db, region))
+
+    elif topic == "soil_salinity":
+        ctx_parts.append(_SALINITY_KNOWLEDGE)
+
+    elif topic == "soil_acidity":
+        ctx_parts.append(_ACIDITY_KNOWLEDGE)
+
+    elif topic == "price":
+        try:
+            rows = (
+                db.query(_Crop.CropName, _MP)
+                .join(_MP, _Crop.CropID == _MP.CropID)
+                .filter(_MP.Region == region)
+                .order_by(_MP.PriceDate.desc())
+                .limit(15).all()
+            )
+            if not rows:
+                rows = (
+                    db.query(_Crop.CropName, _MP)
+                    .join(_MP, _Crop.CropID == _MP.CropID)
+                    .order_by(_MP.PriceDate.desc())
+                    .limit(15).all()
+                )
+            if rows:
+                lines = [f"## Giá tại {region}:"]
+                for name, mp in rows:
+                    lines.append(f"- {name} ({mp.Region}): {float(mp.PricePerKg):,.0f} VNĐ/kg — {mp.PriceDate}")
+                ctx_parts.append("\n".join(lines))
+            hist = (
+                db.query(_Crop.CropName, _PH)
+                .join(_PH, _Crop.CropID == _PH.CropID)
+                .filter(_PH.RecordDate >= _seven_ago)
+                .order_by(_PH.RecordDate.desc())
+                .limit(30).all()
+            )
+            if hist:
+                lines = ["## Lịch sử giá 7 ngày:"]
+                for name, ph in hist:
+                    lines.append(f"- {name} ({ph.Region}) ngày {ph.RecordDate}: TB {float(ph.AvgPrice):,.0f} VNĐ/kg")
+                ctx_parts.append("\n".join(lines))
+        except Exception as e:
+            pass
+
+    # Canh tác, sâu bệnh, general: bổ sung thông tin cây trồng từ DB
+    if topic in ("cultivation", "pest", "general"):
+        try:
+            crops = (
+                db.query(_Crop)
+                .order_by(_Crop.CropName)
+                .limit(15).all()
+            )
+            if crops:
+                lines = ["## Thông tin cây trồng:"]
+                for c in crops:
+                    days = f", chu kỳ {c.GrowthDurationDays} ngày" if c.GrowthDurationDays else ""
+                    season = f", mùa vụ: {c.HarvestSeason}" if c.HarvestSeason else ""
+                    price_range = (
+                        f", giá: {float(c.TypicalPriceMin):,.0f}–{float(c.TypicalPriceMax):,.0f} VNĐ/kg"
+                        if c.TypicalPriceMin and c.TypicalPriceMax else ""
+                    )
+                    lines.append(f"- {c.CropName}{days}{season}{price_range}")
+                ctx_parts.append("\n".join(lines))
+        except Exception:
+            pass
+
+    # ── Tavily cho thời tiết, đất, sâu bệnh (thông tin web thực tế) ─────────
+    if topic in ("weather", "soil_salinity", "soil_acidity", "pest"):
+        try:
+            import asyncio
+            from app.integrations.tavily_client import ask_agri_qa
+            result = await asyncio.to_thread(ask_agri_qa, q, "\n\n".join(ctx_parts))
+            if result.get("tavily_answer"):
+                ctx_parts.append(f"## Thông tin từ web:\n{result['tavily_answer']}")
+            sources = result.get("sources", [])
+        except Exception:
+            pass
+
+    context = "\n\n".join(ctx_parts)
+
+    # ── Gọi AI với system prompt theo chủ đề ────────────────────────────────
+    try:
+        answer = await gemini_client.get_agri_answer(q, topic, region, context)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi AI: {str(e)}")
+
+    _save_conversation(db, current_user.UserID if current_user else None, q, answer, topic)
+    return AskResponse(answer=answer, topic=topic, region=region, sources=sources)
+
+
+@router.get("/history")
+def get_chat_history(
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.models.conversation import AIConversation
+    rows = (
+        db.query(AIConversation)
+        .filter(AIConversation.UserID == current_user.UserID)
+        .order_by(AIConversation.CreatedAt.desc())
+        .limit(limit)
+        .all()
+    )
+    return {
+        "total": len(rows),
+        "history": [
+            {
+                "id": r.ConvID,
+                "user_message": r.UserMessage,
+                "ai_response": r.AIResponse,
+                "topic": r.Topic,
+                "created_at": r.CreatedAt.isoformat() if r.CreatedAt else None,
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.delete("/history/{conv_id}", status_code=200)
+def delete_chat_message(
+    conv_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Xóa một tin nhắn khỏi lịch sử chat."""
+    from app.models.conversation import AIConversation
+    row = (
+        db.query(AIConversation)
+        .filter(AIConversation.ConvID == conv_id, AIConversation.UserID == current_user.UserID)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tin nhắn")
+    db.delete(row)
+    db.commit()
+    return {"deleted": conv_id}
+
+
+@router.delete("/history", status_code=200)
+def clear_chat_history(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Xóa toàn bộ lịch sử chat của người dùng."""
+    from app.models.conversation import AIConversation
+    count = (
+        db.query(AIConversation)
+        .filter(AIConversation.UserID == current_user.UserID)
+        .delete()
+    )
+    db.commit()
+    return {"deleted_count": count}

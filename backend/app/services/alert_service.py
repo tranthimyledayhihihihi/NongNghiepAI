@@ -60,6 +60,88 @@ class AlertService:
             return None
         return {"alert_id": alert.id, "message": "Da tat canh bao gia."}
 
+    def check_and_trigger_alerts(self, db: Session) -> list[dict]:
+        from app.models.alert import PriceAlert
+
+        try:
+            alerts = db.query(PriceAlert).filter(PriceAlert.IsActive == True).all()
+        except Exception as exc:
+            logger.warning("Cannot load active price alerts: %s", exc)
+            return []
+
+        triggered = []
+        for alert in alerts:
+            result = self._evaluate_alert(db, alert)
+            if result:
+                triggered.append(result)
+        return triggered
+
+    def _evaluate_alert(self, db: Session, alert) -> dict | None:
+        from app.models.price import MarketPrice
+
+        crop_id = getattr(alert, "CropID", getattr(alert, "crop_id", None))
+        region = getattr(alert, "Region", getattr(alert, "region", ""))
+        latest = (
+            db.query(MarketPrice)
+            .filter(MarketPrice.CropID == crop_id, MarketPrice.Region == region)
+            .order_by(desc(MarketPrice.PriceDate))
+            .first()
+        )
+        if not latest:
+            return None
+
+        current_price = float(getattr(latest, "PricePerKg", getattr(latest, "price_per_kg", 0)))
+        target_price = float(getattr(alert, "TargetPrice", getattr(alert, "target_price", 0)))
+        raw_condition = getattr(alert, "AlertType", getattr(alert, "condition", ""))
+        condition = str(raw_condition or "").strip().lower()
+        is_above = condition in {">", ">=", "above"} or condition.startswith("tr")
+        is_below = condition in {"<", "<=", "below"} or condition.startswith("du") or condition.startswith("dư")
+
+        if is_above:
+            matched = current_price >= target_price
+        elif is_below:
+            matched = current_price <= target_price
+        else:
+            matched = False
+
+        if not matched:
+            return None
+
+        result = {
+            "alert_id": getattr(alert, "AlertID", getattr(alert, "id", None)),
+            "crop_name": get_alert_crop_name(db, alert),
+            "region": region,
+            "target_price": target_price,
+            "current_price": current_price,
+            "condition": to_api_alert_condition(raw_condition),
+            "triggered": True,
+            "triggered_at": datetime.now(),
+        }
+        self._send_alert_notification(db, alert, result)
+        try:
+            alert.LastTriggered = result["triggered_at"]
+            db.add(alert)
+            db.commit()
+        except Exception:
+            db.rollback()
+        return result
+
+    def _send_alert_notification(self, db: Session, alert, payload: dict):
+        from app.services.notification_service import notification_service
+
+        channel = (getattr(alert, "NotifyMethod", getattr(alert, "notification_channel", "Email")) or "Email").lower()
+        receiver = get_alert_receiver(db, alert)
+        if not receiver:
+            return None
+        subject, plain, html = notification_service.build_price_alert_message(
+            crop_name=payload.get("crop_name") or "Nong san",
+            region=payload.get("region") or "",
+            current_price=payload.get("current_price") or 0,
+            target_price=payload.get("target_price") or 0,
+            condition=payload.get("condition") or "",
+        )
+        return notification_service.send(channel, receiver, subject, plain, html)
+
     @staticmethod
     def _to_response(db: Session, alert, message: str) -> dict:
         return {

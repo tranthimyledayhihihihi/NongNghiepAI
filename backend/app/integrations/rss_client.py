@@ -1,6 +1,5 @@
 import html
 import json
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 from xml.etree import ElementTree
@@ -13,14 +12,11 @@ from app.core.config import settings
 class RSSClient:
     def fetch_market_news(self) -> list[dict]:
         records: list[dict] = []
-        urls = self._feed_urls()
-        with ThreadPoolExecutor(max_workers=min(len(urls), 4) or 1) as executor:
-            futures = [executor.submit(self._fetch_feed, url) for url in urls]
-            for future in as_completed(futures):
-                try:
-                    records.extend(future.result())
-                except Exception:
-                    continue
+        for url in self._feed_urls():
+            try:
+                records.extend(self._fetch_feed(url))
+            except Exception:
+                continue
         return records
 
     def _feed_urls(self) -> list[str]:
@@ -31,7 +27,7 @@ class RSSClient:
         return [url for url in urls if isinstance(url, str) and url.startswith(("http://", "https://"))]
 
     def _fetch_feed(self, url: str) -> list[dict]:
-        response = httpx.get(url, timeout=5, follow_redirects=True)
+        response = httpx.get(url, timeout=15, follow_redirects=True)
         response.raise_for_status()
         root = ElementTree.fromstring(response.content)
         channel_title = root.findtext("./channel/title") or self._host_name(url)

@@ -12,4 +12,9 @@ export const settingsApi = {
     const response = await api.put('/api/settings/me', payload);
     return unwrap(response);
   },
+
+  sendTestNotification: async ({ channel, receiver }) => {
+    const response = await api.post('/api/notifications/test', { channel, receiver });
+    return unwrap(response);
+  },
 };

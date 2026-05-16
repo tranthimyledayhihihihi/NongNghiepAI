@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, Unicode
+from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Integer, String, Unicode
 from sqlalchemy.orm import synonym
 from sqlalchemy.sql import func
 
@@ -17,12 +17,6 @@ class MarketPrice(Base):
     SourceURL = Column("SourceURL", String(500), nullable=True)
     SourceName = Column("SourceName", String(100), nullable=True)
     PriceDate = Column("PriceDate", Date, nullable=False, index=True)
-    CollectedAt = Column("CollectedAt", DateTime, nullable=True)
-    ConfidenceScore = Column("ConfidenceScore", Float, nullable=True)
-    IsRealtime = Column("IsRealtime", Boolean, nullable=False, default=False)
-    IsScraped = Column("IsScraped", Boolean, nullable=False, default=False)
-    RawPayloadHash = Column("RawPayloadHash", String(128), nullable=True)
-    RawPayload = Column("RawPayload", Text, nullable=True)
     UpdatedAt = Column("UpdatedAt", DateTime, server_default=func.now(), nullable=False)
 
     id = synonym("PriceID")
@@ -36,13 +30,8 @@ class MarketPrice(Base):
     source_name = synonym("SourceName")
     price_date = synonym("PriceDate")
     date = synonym("PriceDate")
-    confidence_score = synonym("ConfidenceScore")
-    is_realtime = synonym("IsRealtime")
-    is_scraped = synonym("IsScraped")
-    raw_payload_hash = synonym("RawPayloadHash")
-    raw_payload = synonym("RawPayload")
     updated_at = synonym("UpdatedAt")
-    collected_at = synonym("CollectedAt")
+    collected_at = synonym("UpdatedAt")
 
     @property
     def unit(self) -> str:

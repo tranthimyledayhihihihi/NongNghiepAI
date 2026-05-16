@@ -32,7 +32,7 @@ class QualityDetector:
 
     def analyze_image(self, image_path: str, crop_name: str = "") -> dict:
         if not self.model:
-            return _fallback_result()
+            return _fallback_result(error="model_unavailable")
 
         try:
             results = self.model(image_path, verbose=False)
@@ -125,11 +125,14 @@ class QualityDetector:
         }
 
 
-def _fallback_result() -> dict:
-    return {
+def _fallback_result(error: str | None = None) -> dict:
+    result = {
         "quality_grade": "grade_1",
         "confidence": 0.80,
         "disease_detected": False,
         "damage_level": "low",
         "defects": [],
     }
+    if error:
+        result["error"] = error
+    return result

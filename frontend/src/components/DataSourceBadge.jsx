@@ -33,9 +33,7 @@ const DataSourceBadge = ({ data, className = '' }) => {
   const source = resolveSource(data);
   const titleParts = [
     data?.source_name && `Source: ${data.source_name}`,
-    data?.checked_at && `Checked: ${new Date(data.checked_at).toLocaleString('vi-VN')}`,
-    data?.source_updated_at && `Source updated: ${new Date(data.source_updated_at).toLocaleString('vi-VN')}`,
-    !data?.source_updated_at && data?.last_updated && `Updated: ${new Date(data.last_updated).toLocaleString('vi-VN')}`,
+    data?.last_updated && `Updated: ${new Date(data.last_updated).toLocaleString('vi-VN')}`,
     Number.isFinite(data?.data_age_minutes) && `Age: ${data.data_age_minutes} min`,
   ].filter(Boolean);
 
