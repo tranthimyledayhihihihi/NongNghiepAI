@@ -19,8 +19,12 @@ class ClaudeService:
         crop_name: str | None = None,
         region: str | None = None,
         session_id: str | None = None,
+        extra_context: dict | None = None,
     ) -> dict:
         context = self._build_context(db, crop_name=crop_name, region=region, user_id=user_id)
+        if extra_context:
+            context.update({key: value for key, value in extra_context.items() if key not in {"weather_error", "pricing_error"}})
+            context["tools_used"] = extra_context.get("tools_used", [])
         system_prompt = (
             "You are AgriBot for a Vietnamese agriculture support system. "
             "Answer in Vietnamese, be practical, cite the provided system context, "

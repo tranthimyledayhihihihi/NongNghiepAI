@@ -32,6 +32,20 @@ export const weatherApi = {
     return response.data;
   },
 
+  getRiskAnalysis: async ({ region, cropName }) => {
+    const response = await api.get(
+      `/api/weather/risk-analysis/${encodeURIComponent(region)}/${encodeURIComponent(cropName || 'lua')}`
+    );
+    return response.data;
+  },
+
+  getFarmingRecommendation: async ({ region, cropName }) => {
+    const response = await api.get(
+      `/api/weather/farming-recommendation/${encodeURIComponent(region)}/${encodeURIComponent(cropName || 'lua')}`
+    );
+    return response.data;
+  },
+
   getAlerts: async ({ region, cropName, growthStage, days = 7 }) => {
     const response = await api.get(`/api/weather/alerts/${encodeURIComponent(region)}`, {
       params: {

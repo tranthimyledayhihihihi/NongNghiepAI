@@ -1,6 +1,8 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.api.response import api_response
 from app.core.database import get_db
 from app.schemas.price_schema import (
     PriceForecastRequest,
@@ -15,43 +17,126 @@ from app.services.pricing_service import pricing_service
 router = APIRouter(prefix="/api/pricing", tags=["pricing"])
 
 
-@router.post("/current", response_model=PriceResponse)
+class PricingEngineRequest(BaseModel):
+    crop: str | None = None
+    crop_name: str | None = None
+    region: str = "Ha Noi"
+    quantity: float = Field(default=1, gt=0)
+    quality_grade: str = "grade_1"
+    days: int = Field(default=7, ge=1, le=30)
+
+    @property
+    def resolved_crop(self) -> str:
+        return (self.crop_name or self.crop or "lua").strip()
+
+
+@router.post("/current")
 async def get_current_price(request: PriceRequest, db: Session = Depends(get_db)):
-    return pricing_service.get_current_price(
+    data = pricing_service.get_current_price(
         db,
         request.crop_name,
         request.region,
         request.quality_grade,
     )
+    return api_response(
+        data,
+        source=data.get("source", "database"),
+        source_name=data.get("source_name"),
+        is_mock=data.get("is_mock", False),
+        cache_status=data.get("cache_status", "from_db"),
+        last_updated=data.get("last_updated"),
+        confidence=data.get("confidence", 0.0),
+    )
 
 
-@router.get("/current", response_model=PriceResponse)
+@router.get("/current")
 async def get_current_price_query(
-    crop_name: str,
-    region: str,
-    quality_grade: str = "grade_1",
+    crop: str | None = Query(default=None),
+    crop_name: str | None = Query(default=None),
+    region: str = Query(default="Ha Noi"),
+    quality_grade: str = Query(default="grade_1"),
     db: Session = Depends(get_db),
 ):
-    return pricing_service.get_current_price(db, crop_name, region, quality_grade)
+    selected_crop = (crop_name or crop or "lua").strip()
+    data = pricing_service.get_current_price(db, selected_crop, region, quality_grade)
+    return api_response(
+        data,
+        source=data.get("source", "database"),
+        source_name=data.get("source_name"),
+        is_mock=data.get("is_mock", False),
+        cache_status=data.get("cache_status", "from_db"),
+        last_updated=data.get("last_updated"),
+        confidence=data.get("confidence", 0.0),
+    )
 
 
-@router.post("/suggest", response_model=PricingSuggestResponse)
+@router.post("/suggest")
 async def suggest_price(request: PricingSuggestRequest, db: Session = Depends(get_db)):
-    return pricing_service.suggest_price(db, request)
+    data = pricing_service.suggest_price(db, request)
+    return api_response(
+        data,
+        source="ai_generated",
+        source_name="AI Pricing Engine",
+        is_mock=bool(data.get("is_mock")),
+        cache_status=data.get("cache_status", "computed"),
+        last_updated=data.get("last_updated"),
+        confidence=data.get("confidence", 0.72),
+    )
 
 
-@router.post("/forecast", response_model=PriceForecastResponse)
+@router.post("/forecast")
 async def forecast_price(request: PriceForecastRequest):
-    return pricing_service.forecast_price(request.crop_name, request.region, request.days)
+    data = pricing_service.forecast_price(request.crop_name, request.region, request.days)
+    return api_response(
+        data,
+        source=data.get("source", "mock"),
+        source_name=data.get("source_name"),
+        is_mock=data.get("is_mock", False),
+        cache_status=data.get("cache_status", "mock"),
+        last_updated=data.get("last_updated"),
+        confidence=data.get("confidence", 0.0),
+    )
+
+
+@router.get("/history")
+async def get_price_history_query(
+    crop: str | None = Query(default=None),
+    crop_name: str | None = Query(default=None),
+    region: str = Query(default="Ha Noi"),
+    days: int = Query(default=30, ge=1, le=365),
+    db: Session = Depends(get_db),
+):
+    selected_crop = (crop_name or crop or "lua").strip()
+    history = pricing_service.get_price_history(db, selected_crop, region, days)
+    is_mock = any(item.get("is_mock") for item in history)
+    return api_response(
+        {"crop_name": selected_crop, "crop": selected_crop, "region": region, "history": history},
+        source="mock" if is_mock else "database",
+        source_name="PriceHistory DB" if not is_mock else "Pricing demo history",
+        is_mock=is_mock,
+        cache_status="mock" if is_mock else "from_db",
+        confidence=0.68 if not is_mock else 0.42,
+    )
 
 
 @router.get("/history/{crop_name}/{region}")
 async def get_price_history(crop_name: str, region: str, days: int = 30, db: Session = Depends(get_db)):
-    return {
+    history = pricing_service.get_price_history(db, crop_name, region, days)
+    is_mock = any(item.get("is_mock") for item in history)
+    data = {
         "crop_name": crop_name,
+        "crop": crop_name,
         "region": region,
-        "history": pricing_service.get_price_history(db, crop_name, region, days),
+        "history": history,
     }
+    return api_response(
+        data,
+        source="mock" if is_mock else "database",
+        source_name="PriceHistory DB" if not is_mock else "Pricing demo history",
+        is_mock=is_mock,
+        cache_status="mock" if is_mock else "from_db",
+        confidence=0.68 if not is_mock else 0.42,
+    )
 
 
 @router.get("/weather-forecast")
@@ -75,7 +160,7 @@ async def weather_price_forecast(
     weather_info = get_weather_adjusted_pricing(db, crop_name, region, base_price)
     multiplier = pricing_service.quality_multipliers.get(quality_grade, 1.0)
 
-    return {
+    data = {
         "crop_name":   crop_name,
         "region":      region,
         "quality_grade": quality_grade,
@@ -90,17 +175,73 @@ async def weather_price_forecast(
         "forecast":               weather_info["forecast"],
         "unit": "VND/kg",
     }
+    return api_response(
+        data,
+        source="ai_generated",
+        source_name="Weather Pricing Engine",
+        confidence=0.72,
+        cache_status="computed",
+    )
 
 
 @router.get("/compare-regions/{crop_name}")
 async def compare_regions(crop_name: str, region: str = "Ha Noi", db: Session = Depends(get_db)):
-    suggestion = pricing_service.suggest_price(
-        db,
-        PricingSuggestRequest(
-            crop_name=crop_name,
-            region=region,
-            quantity=1,
-            quality_grade="grade_1",
-        ),
+    data = pricing_service.compare_regions(db, crop_name, region)
+    return api_response(
+        data,
+        source=data.get("source", "database"),
+        source_name=data.get("source_name"),
+        is_mock=data.get("is_mock", False),
+        cache_status=data.get("cache_status", "from_db"),
+        last_updated=data.get("last_updated"),
+        confidence=data.get("confidence", 0.0),
     )
-    return {"crop_name": crop_name, "regions": suggestion["nearby_region_prices"]}
+
+
+@router.post("/compare-regions")
+async def compare_regions_post(request: PricingEngineRequest, db: Session = Depends(get_db)):
+    data = pricing_service.compare_regions(db, request.resolved_crop, request.region)
+    return api_response(
+        data,
+        source=data.get("source", "database"),
+        source_name=data.get("source_name"),
+        is_mock=data.get("is_mock", False),
+        cache_status=data.get("cache_status", "from_db"),
+        last_updated=data.get("last_updated"),
+        confidence=data.get("confidence", 0.0),
+    )
+
+
+@router.post("/ai-explanation")
+async def ai_pricing_explanation(request: PricingEngineRequest, db: Session = Depends(get_db)):
+    data = pricing_service.explain_pricing(db, request.resolved_crop, request.region, request.quality_grade)
+    return api_response(
+        data,
+        source="ai_generated" if not data.get("is_mock") else "mock",
+        source_name=data.get("source_name"),
+        is_mock=data.get("is_mock", False),
+        cache_status=data.get("cache_status", "computed"),
+        last_updated=data.get("last_updated"),
+        confidence=data.get("confidence", 0.0),
+    )
+
+
+@router.post("/engine")
+async def pricing_engine(request: PricingEngineRequest, db: Session = Depends(get_db)):
+    data = pricing_service.build_pricing_engine(
+        db,
+        crop_name=request.resolved_crop,
+        region=request.region,
+        quantity=request.quantity,
+        quality_grade=request.quality_grade,
+        days=request.days,
+    )
+    return api_response(
+        data,
+        source="ai_generated" if not data.get("is_mock") else "mock",
+        source_name=data.get("source_name"),
+        is_mock=data.get("is_mock", False),
+        cache_status=data.get("cache_status", "computed"),
+        last_updated=data.get("last_updated"),
+        confidence=data.get("confidence", 0.0),
+    )

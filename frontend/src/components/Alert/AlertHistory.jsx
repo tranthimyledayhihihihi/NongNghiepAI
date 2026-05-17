@@ -2,6 +2,7 @@ import { CloudSun, History, MailCheck, Trash2, TrendingDown, TrendingUp } from '
 import { useEffect, useState } from 'react';
 import { alertApi } from '../../services/alertApi';
 import { getApiErrorMessage } from '../../services/api';
+import DataSourceBadge from '../DataSourceBadge';
 import { EmptyState, InlineLoading, PageError } from '../StatusState';
 
 const formatCurrency = (value) => Number(value || 0).toLocaleString('vi-VN');
@@ -101,6 +102,9 @@ const AlertHistory = ({ refreshKey = 0 }) => {
         <p className="mt-1 text-sm text-gray-600">
           Theo dõi subscription, lần kích hoạt gần nhất và trạng thái gửi qua từng kênh.
         </p>
+        <div className="mt-3">
+          <DataSourceBadge data={{ source: 'database', source_name: 'Alert rules DB', confidence: 0.7 }} />
+        </div>
       </div>
 
       <div className="space-y-6 p-5">

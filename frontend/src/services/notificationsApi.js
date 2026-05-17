@@ -8,6 +8,11 @@ export const notificationsApi = {
     return unwrap(response);
   },
 
+  unreadCount: async () => {
+    const response = await api.get('/api/notifications/unread-count');
+    return unwrap(response);
+  },
+
   list: async ({ type, unreadOnly = false, limit = 50, offset = 0 } = {}) => {
     const response = await api.get('/api/notifications', {
       params: {
@@ -46,12 +51,33 @@ export const notificationsApi = {
   },
 
   markRead: async (notificationId) => {
-    const response = await api.patch(`/api/notifications/${notificationId}/read`);
+    const response = await api.post('/api/notifications/mark-read', {
+      notification_id: notificationId,
+    });
     return unwrap(response);
   },
 
   markAllRead: async () => {
     const response = await api.post('/api/notifications/mark-all-read');
+    return unwrap(response);
+  },
+
+  generateFromAlert: async ({ alertId, alertType, title, message, priority, suggestedAction }) => {
+    const response = await api.post('/api/notifications/generate-from-alert', {
+      alert_id: alertId,
+      alert_type: alertType,
+      title,
+      message,
+      priority,
+      suggested_action: suggestedAction,
+    });
+    return unwrap(response);
+  },
+
+  priority: async ({ minPriority = 'high' } = {}) => {
+    const response = await api.get('/api/notifications/priority', {
+      params: { min_priority: minPriority },
+    });
     return unwrap(response);
   },
 

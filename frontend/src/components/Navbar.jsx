@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 const Navbar = ({ setSidebarOpen }) => {
   const navigate = useNavigate();
-  const { logout, user } = useAuth();
+  const { logout, user, isAuthenticated } = useAuth();
 
   const handleLogout = () => {
     logout();
@@ -51,28 +51,41 @@ const Navbar = ({ setSidebarOpen }) => {
           >
             <Settings className="h-5 w-5" />
           </Link>
-          <Link
-            to="/profile"
-            className="hidden items-center gap-2 rounded-lg p-2 hover:bg-gray-100 sm:flex"
-            aria-label="Hồ sơ"
-            title="Hồ sơ"
-          >
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600">
-              <User className="h-5 w-5 text-white" />
-            </span>
-            <span className="hidden max-w-32 truncate text-sm font-medium text-gray-700 xl:block">
-              {user?.name || 'Tài khoản'}
-            </span>
-          </Link>
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-red-600"
-            aria-label="Đăng xuất"
-            title="Đăng xuất"
-          >
-            <LogOut className="h-5 w-5" />
-          </button>
+          {isAuthenticated ? (
+            <>
+              <Link
+                to="/profile"
+                className="hidden items-center gap-2 rounded-lg p-2 hover:bg-gray-100 sm:flex"
+                aria-label="Hồ sơ"
+                title="Hồ sơ"
+              >
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-600">
+                  <User className="h-5 w-5 text-white" />
+                </span>
+                <span className="hidden max-w-32 truncate text-sm font-medium text-gray-700 xl:block">
+                  {user?.name || 'Tài khoản'}
+                </span>
+              </Link>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-red-600"
+                aria-label="Đăng xuất"
+                title="Đăng xuất"
+              >
+                <LogOut className="h-5 w-5" />
+              </button>
+            </>
+          ) : (
+            <Link
+              to="/login"
+              className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+              aria-label="Đăng nhập"
+              title="Đăng nhập"
+            >
+              Đăng nhập
+            </Link>
+          )}
         </div>
       </div>
     </header>

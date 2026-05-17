@@ -199,7 +199,18 @@ const AIChatPage = () => {
     content: data?.answer ||
       'Tôi đã nhận được thông tin. Bạn nên bổ sung khu vực canh tác, tuổi cây, ảnh cận cảnh và lịch bón phân gần nhất để tôi phân tích chính xác hơn.',
     timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-    source: data ? { source_name: data.provider, is_mock: data.is_mock } : null,
+    source: data ? {
+      source: data.source,
+      source_name: data.source_name || data.provider,
+      is_mock: data.is_mock,
+      confidence: data.confidence,
+      fetched_at: data.fetched_at,
+    } : null,
+    analysis: data?.reasons?.length || data?.recommendations?.length ? {
+      diagnosis: data.intent || 'AI farming assistant',
+      details: data.reasons || [],
+      recommendations: data.recommendations || [],
+    } : null,
   });
 
   const handleSendMessage = async () => {

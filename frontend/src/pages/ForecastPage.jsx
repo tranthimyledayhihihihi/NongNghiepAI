@@ -355,14 +355,22 @@ const ForecastPage = () => {
     setSelectedHour(null);
     setHourlyByDate({});
     try {
-      const result = await weatherApi.getAgricultureWeather({
-        region,
-        cropName,
-        growthStage,
-        days: 7,
-        includeHourly: true,
+      const [result, riskAnalysis, farmingRecommendation] = await Promise.all([
+        weatherApi.getAgricultureWeather({
+          region,
+          cropName,
+          growthStage,
+          days: 7,
+          includeHourly: true,
+        }),
+        weatherApi.getRiskAnalysis({ region, cropName }),
+        weatherApi.getFarmingRecommendation({ region, cropName }),
+      ]);
+      setData({
+        ...result,
+        risk_analysis: riskAnalysis,
+        farming_recommendation: farmingRecommendation,
       });
-      setData(result);
     } catch (err) {
       setError(getApiErrorMessage(err, 'Không thể tải dữ liệu thời tiết nông vụ'));
     } finally {
@@ -534,6 +542,7 @@ const ForecastPage = () => {
               <div className="flex items-center gap-2">
                 <Bot className="h-5 w-5 text-indigo-600" />
                 <h2 className="text-lg font-bold text-slate-950">Khuyến nghị AI/rule</h2>
+                <DataSourceBadge data={data.farming_recommendation || data.risk_analysis || {}} />
               </div>
               <p className="mt-3 text-sm leading-6 text-slate-700">{data.ai_recommendation.summary}</p>
               <p className="mt-2 text-sm leading-6 text-slate-700">{data.ai_recommendation.risk_explanation}</p>

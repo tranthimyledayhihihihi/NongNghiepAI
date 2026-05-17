@@ -1,213 +1,228 @@
-import { CalendarDays, ChevronRight, Search, Tag } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import PublicFooter from '../components/PublicFooter';
-import PublicHeader from '../components/PublicHeader';
-import { useAuth } from '../contexts/AuthContext';
+import React, { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import AgriNavbar from "../components/AgriNavbar";
 
-const categories = ['Tất cả', 'Canh tác', 'Thị trường', 'Sâu bệnh', 'Công nghệ'];
+const categories = ["Tất cả", "Thời tiết", "Giá nông sản", "Thu hoạch", "Thị trường", "AI nông nghiệp"];
 
 const articles = [
   {
     id: 1,
-    title: 'Lập lịch chăm sóc lúa trong giai đoạn làm đòng',
-    category: 'Canh tác',
-    date: '02/05/2026',
-    readTime: '6 phút đọc',
-    image: 'https://images.unsplash.com/photo-1625246333195-78d9c38ad449?auto=format&fit=crop&w=900&q=80',
-    excerpt:
-      'Các mốc kiểm tra nước, dinh dưỡng và sâu bệnh cần theo dõi để giảm rủi ro thất thoát năng suất.',
+    title: "5 dấu hiệu thời tiết cần theo dõi trước khi thu hoạch",
+    category: "Thời tiết",
+    badge: "Realtime API",
+    readTime: "5 phút đọc",
+    date: "Hôm nay",
+    description:
+      "Cách đọc nhanh lượng mưa, độ ẩm, gió và nhiệt độ để quyết định lịch tưới, phun thuốc hoặc thu hoạch.",
+    action: "/weather",
+    actionLabel: "Xem thời tiết",
   },
   {
     id: 2,
-    title: 'Cách đọc tín hiệu giá trước khi chốt bán nông sản',
-    category: 'Thị trường',
-    date: '28/04/2026',
-    readTime: '5 phút đọc',
-    image: 'https://images.unsplash.com/photo-1574943320219-553eb213f72d?auto=format&fit=crop&w=900&q=80',
-    excerpt:
-      'Kết hợp giá vùng, tồn kho và nhu cầu thu mua để chọn thời điểm bán phù hợp thay vì chỉ nhìn giá hôm nay.',
+    title: "Khi nào nên bán nông sản? Cách đọc xu hướng giá đơn giản",
+    category: "Giá nông sản",
+    badge: "AI Pricing",
+    readTime: "7 phút đọc",
+    date: "Mới cập nhật",
+    description:
+      "Hướng dẫn dùng biến động giá, chênh lệch vùng miền và dữ liệu lịch sử để ra quyết định bán phù hợp hơn.",
+    action: "/pricing",
+    actionLabel: "Xem giá",
   },
   {
     id: 3,
-    title: 'Nhận diện sớm bệnh đạo ôn qua ảnh lá lúa',
-    category: 'Sâu bệnh',
-    date: '24/04/2026',
-    readTime: '7 phút đọc',
-    image: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=900&q=80',
-    excerpt:
-      'Dấu hiệu hình ảnh thường gặp, điều kiện phát sinh và cách ghi nhận mẫu ảnh để AI phân tích ổn định hơn.',
+    title: "Checklist chuẩn bị thu hoạch cho nông hộ nhỏ",
+    category: "Thu hoạch",
+    badge: "Gợi ý mùa vụ",
+    readTime: "4 phút đọc",
+    date: "Tuần này",
+    description:
+      "Danh sách việc cần chuẩn bị: nhân công, phương tiện, bao bì, kiểm tra chất lượng và cập nhật giá thị trường.",
+    action: "/harvest",
+    actionLabel: "Dự báo thu hoạch",
   },
   {
     id: 4,
-    title: 'Ứng dụng drone và cảm biến trong hợp tác xã',
-    category: 'Công nghệ',
-    date: '18/04/2026',
-    readTime: '4 phút đọc',
-    image: 'https://images.unsplash.com/photo-1523741543316-beb7fc7023d8?auto=format&fit=crop&w=900&q=80',
-    excerpt:
-      'Các kịch bản dùng drone, cảm biến đất và dữ liệu thời tiết để giảm thao tác thủ công trong quản lý mùa vụ.',
+    title: "So sánh kênh bán: thương lái, chợ đầu mối, sàn TMĐT và doanh nghiệp thu mua",
+    category: "Thị trường",
+    badge: "Market Insight",
+    readTime: "8 phút đọc",
+    date: "Nổi bật",
+    description:
+      "Phân tích ưu nhược điểm từng kênh bán để chọn chiến lược tiêu thụ phù hợp theo sản lượng và chất lượng nông sản.",
+    action: "/market",
+    actionLabel: "Xem thị trường",
   },
   {
     id: 5,
-    title: 'Chuẩn bị dữ liệu để dự báo sản lượng tốt hơn',
-    category: 'Canh tác',
-    date: '12/04/2026',
-    readTime: '5 phút đọc',
-    image: 'https://images.unsplash.com/photo-1511735643442-503bb3bd348a?auto=format&fit=crop&w=900&q=80',
-    excerpt:
-      'Những trường dữ liệu nên ghi hằng tuần: diện tích, giống, ngày gieo, lượng mưa, phân bón và tình trạng cây.',
-  },
-  {
-    id: 6,
-    title: 'Khi nào nên bật cảnh báo giá theo vùng?',
-    category: 'Thị trường',
-    date: '06/04/2026',
-    readTime: '3 phút đọc',
-    image: 'https://images.unsplash.com/photo-1605000797499-95a51c5269ae?auto=format&fit=crop&w=900&q=80',
-    excerpt:
-      'Gợi ý đặt ngưỡng giá theo chi phí đầu vào, mức lợi nhuận mục tiêu và độ biến động của từng nông sản.',
+    title: "Cách đặt câu hỏi để AI tư vấn nông nghiệp chính xác hơn",
+    category: "AI nông nghiệp",
+    badge: "AI Chat",
+    readTime: "3 phút đọc",
+    date: "Gợi ý",
+    description:
+      "Mẫu câu hỏi nên dùng khi hỏi AI về thời tiết, giá nông sản, bệnh cây, lịch thu hoạch và chiến lược bán hàng.",
+    action: "/ai-chat",
+    actionLabel: "Hỏi AI",
   },
 ];
 
-const ArticlesPage = () => {
-  const { isAuthenticated } = useAuth();
-  const [activeCategory, setActiveCategory] = useState('Tất cả');
-  const [searchTerm, setSearchTerm] = useState('');
+const quickGuides = [
+  "Không phun thuốc khi xác suất mưa cao trong 6-12 giờ tới.",
+  "So sánh giá theo vùng trước khi quyết định bán toàn bộ sản lượng.",
+  "Theo dõi lịch thu hoạch kết hợp thời tiết để giảm rủi ro sau thu hoạch.",
+];
+
+export default function ArticlesPage() {
+  const [selectedCategory, setSelectedCategory] = useState("Tất cả");
+  const [keyword, setKeyword] = useState("");
 
   const filteredArticles = useMemo(() => {
-    const normalizedSearch = searchTerm.trim().toLowerCase();
-
     return articles.filter((article) => {
-      const matchesCategory = activeCategory === 'Tất cả' || article.category === activeCategory;
-      const matchesSearch =
-        normalizedSearch.length === 0 ||
-        article.title.toLowerCase().includes(normalizedSearch) ||
-        article.excerpt.toLowerCase().includes(normalizedSearch);
-
-      return matchesCategory && matchesSearch;
+      const matchCategory = selectedCategory === "Tất cả" || article.category === selectedCategory;
+      const matchKeyword = `${article.title} ${article.description} ${article.category}`
+        .toLowerCase()
+        .includes(keyword.trim().toLowerCase());
+      return matchCategory && matchKeyword;
     });
-  }, [activeCategory, searchTerm]);
+  }, [keyword, selectedCategory]);
 
   const featuredArticle = articles[0];
 
   return (
-    <div className="min-h-screen bg-white">
-      <PublicHeader />
-
-      <main>
-        <section className="border-b border-gray-200 bg-gray-50">
-          <div className="mx-auto grid max-w-7xl gap-8 px-4 py-14 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:px-8">
+    <main className="min-h-screen bg-slate-50 text-slate-900">
+      <AgriNavbar />
+      <section className="relative overflow-hidden bg-gradient-to-br from-emerald-900 via-green-800 to-lime-700 text-white">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.22),transparent_32%),radial-gradient(circle_at_bottom_left,rgba(132,204,22,0.25),transparent_35%)]" />
+        <div className="relative mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+          <div className="grid gap-10 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-wide text-green-700">Thư viện kỹ thuật</p>
-              <h1 className="mt-3 text-4xl font-bold text-gray-900">Bài viết nông nghiệp và thị trường</h1>
-              <p className="mt-4 leading-7 text-gray-600">
-                Tổng hợp hướng dẫn canh tác, phân tích giá và kinh nghiệm vận hành trang trại để dùng ngay trong
-                các quyết định hằng ngày.
+              <span className="inline-flex rounded-full border border-white/25 bg-white/10 px-4 py-2 text-sm font-semibold backdrop-blur">
+                🌱 Kiến thức nông nghiệp thông minh
+              </span>
+              <h1 className="mt-6 max-w-3xl text-4xl font-black tracking-tight sm:text-5xl">
+                Bài viết, hướng dẫn và mẹo vận hành cho nông dân số
+              </h1>
+              <p className="mt-5 max-w-2xl text-base leading-8 text-emerald-50 sm:text-lg">
+                Tổng hợp nội dung thực tế về thời tiết, giá nông sản, thu hoạch, thị trường và cách dùng AI để ra quyết định nhanh hơn.
               </p>
-            </div>
-
-            <article className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-              <img src={featuredArticle.image} alt={featuredArticle.title} className="h-56 w-full object-cover" />
-              <div className="p-5">
-                <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-gray-500">
-                  <span className="rounded-full bg-green-50 px-3 py-1 font-semibold text-green-700">
-                    {featuredArticle.category}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <CalendarDays className="h-4 w-4" />
-                    {featuredArticle.date}
-                  </span>
-                </div>
-                <h2 className="text-xl font-bold text-gray-900">{featuredArticle.title}</h2>
-                <p className="mt-2 text-sm leading-6 text-gray-600">{featuredArticle.excerpt}</p>
-              </div>
-            </article>
-          </div>
-        </section>
-
-        <section className="py-12">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex flex-wrap gap-2">
-                {categories.map((category) => (
-                  <button
-                    key={category}
-                    type="button"
-                    onClick={() => setActiveCategory(category)}
-                    className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
-                      activeCategory === category
-                        ? 'bg-green-700 text-white'
-                        : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    {category}
-                  </button>
-                ))}
-              </div>
-
-              <div className="relative w-full lg:max-w-sm">
-                <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
-                <input
-                  value={searchTerm}
-                  onChange={(event) => setSearchTerm(event.target.value)}
-                  placeholder="Tìm bài viết..."
-                  className="w-full rounded-lg border border-gray-300 py-2.5 pl-10 pr-4 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
-                />
-              </div>
-            </div>
-
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {filteredArticles.map((article) => (
-                <article key={article.id} className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-                  <img src={article.image} alt={article.title} className="h-48 w-full object-cover" />
-                  <div className="p-5">
-                    <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-gray-500">
-                      <span className="flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 font-medium text-gray-700">
-                        <Tag className="h-3.5 w-3.5" />
-                        {article.category}
-                      </span>
-                      <span>{article.readTime}</span>
-                    </div>
-                    <h3 className="text-lg font-bold text-gray-900">{article.title}</h3>
-                    <p className="mt-2 text-sm leading-6 text-gray-600">{article.excerpt}</p>
-                    <button className="mt-4 flex items-center gap-1 text-sm font-semibold text-green-700 hover:text-green-800">
-                      Đọc tiếp
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-
-            {filteredArticles.length === 0 && (
-              <div className="rounded-lg border border-dashed border-gray-300 p-10 text-center">
-                <p className="font-medium text-gray-900">Không tìm thấy bài viết phù hợp.</p>
-                <p className="mt-2 text-sm text-gray-600">Thử đổi từ khóa hoặc chọn danh mục khác.</p>
-              </div>
-            )}
-
-            {!isAuthenticated && (
-              <div className="mt-12 rounded-lg bg-gray-950 p-8 text-white md:flex md:items-center md:justify-between">
-                <div>
-                  <h2 className="text-2xl font-bold">Muốn nhận bản tin kỹ thuật hằng tuần?</h2>
-                  <p className="mt-2 text-gray-300">Đăng nhập để lưu chủ đề quan tâm và nhận đề xuất bài viết theo cây trồng.</p>
-                </div>
-                <Link
-                  to="/login"
-                  className="mt-5 inline-flex rounded-lg bg-green-700 px-5 py-3 font-semibold text-white hover:bg-green-800 md:mt-0"
-                >
-                  Đăng nhập
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Link to="/ai-chat" className="rounded-2xl bg-white px-5 py-3 font-bold text-emerald-800 shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:bg-emerald-50">
+                  Hỏi AI ngay
+                </Link>
+                <Link to="/market" className="rounded-2xl border border-white/30 px-5 py-3 font-bold text-white transition hover:bg-white/10">
+                  Xem thị trường
                 </Link>
               </div>
-            )}
+            </div>
+
+            <div className="rounded-[2rem] border border-white/20 bg-white/12 p-5 shadow-2xl backdrop-blur">
+              <div className="rounded-[1.5rem] bg-white p-6 text-slate-900">
+                <div className="mb-4 flex items-center justify-between gap-4">
+                  <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
+                    {featuredArticle.badge}
+                  </span>
+                  <span className="text-sm text-slate-500">{featuredArticle.readTime}</span>
+                </div>
+                <h2 className="text-2xl font-black leading-snug">{featuredArticle.title}</h2>
+                <p className="mt-3 text-slate-600">{featuredArticle.description}</p>
+                <div className="mt-6 grid grid-cols-3 gap-3 text-center">
+                  <div className="rounded-2xl bg-emerald-50 p-3">
+                    <p className="text-2xl font-black text-emerald-700">24/7</p>
+                    <p className="text-xs text-slate-500">AI hỗ trợ</p>
+                  </div>
+                  <div className="rounded-2xl bg-lime-50 p-3">
+                    <p className="text-2xl font-black text-lime-700">5</p>
+                    <p className="text-xs text-slate-500">chủ đề</p>
+                  </div>
+                  <div className="rounded-2xl bg-amber-50 p-3">
+                    <p className="text-2xl font-black text-amber-700">API</p>
+                    <p className="text-xs text-slate-500">có thể nối</p>
+                  </div>
+                </div>
+                <Link to={featuredArticle.action} className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-emerald-600 px-4 py-3 font-bold text-white transition hover:bg-emerald-700">
+                  {featuredArticle.actionLabel}
+                </Link>
+              </div>
+            </div>
           </div>
-        </section>
-      </main>
+        </div>
+      </section>
 
-      <PublicFooter />
-    </div>
+      <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+        <div className="rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
+            <div className="relative">
+              <input
+                value={keyword}
+                onChange={(event) => setKeyword(event.target.value)}
+                placeholder="Tìm bài viết về thời tiết, giá, thu hoạch, thị trường..."
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 font-medium outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-4 focus:ring-emerald-100"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {categories.map((category) => (
+                <button
+                  key={category}
+                  onClick={() => setSelectedCategory(category)}
+                  className={`rounded-2xl px-4 py-3 text-sm font-bold transition ${
+                    selectedCategory === category
+                      ? "bg-emerald-600 text-white shadow-lg shadow-emerald-600/20"
+                      : "bg-slate-100 text-slate-600 hover:bg-emerald-50 hover:text-emerald-700"
+                  }`}
+                >
+                  {category}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_320px]">
+          <div className="grid gap-5 md:grid-cols-2">
+            {filteredArticles.map((article) => (
+              <article key={article.id} className="group rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:border-emerald-200 hover:shadow-xl hover:shadow-emerald-900/5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">{article.category}</span>
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-500">{article.badge}</span>
+                  <span className="ml-auto text-xs font-semibold text-slate-400">{article.date}</span>
+                </div>
+                <h3 className="mt-5 text-xl font-black leading-snug text-slate-900 group-hover:text-emerald-700">{article.title}</h3>
+                <p className="mt-3 leading-7 text-slate-600">{article.description}</p>
+                <div className="mt-6 flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-slate-400">{article.readTime}</span>
+                  <Link to={article.action} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white transition hover:bg-emerald-700">
+                    {article.actionLabel}
+                  </Link>
+                </div>
+              </article>
+            ))}
+          </div>
+
+          <aside className="space-y-5">
+            <div className="rounded-[2rem] border border-emerald-100 bg-emerald-50 p-6">
+              <p className="text-sm font-black uppercase tracking-wide text-emerald-700">Gợi ý nhanh</p>
+              <h3 className="mt-2 text-2xl font-black text-slate-900">Nên đưa vào trang này</h3>
+              <div className="mt-5 space-y-3">
+                {quickGuides.map((guide) => (
+                  <div key={guide} className="rounded-2xl bg-white p-4 text-sm font-medium leading-6 text-slate-700 shadow-sm">
+                    ✅ {guide}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="text-xl font-black">Nguồn nội dung nên nâng cấp</h3>
+              <ul className="mt-4 space-y-3 text-sm leading-6 text-slate-600">
+                <li>• Tin tức thị trường: lấy từ RSS/API nông nghiệp.</li>
+                <li>• Bài hướng dẫn: lưu DB để admin quản lý.</li>
+                <li>• Bài gợi ý AI: sinh tóm tắt theo dữ liệu thời tiết/giá.</li>
+              </ul>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </main>
   );
-};
-
-export default ArticlesPage;
+}

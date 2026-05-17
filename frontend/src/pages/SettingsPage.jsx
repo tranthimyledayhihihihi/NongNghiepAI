@@ -16,6 +16,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import DataSourceBadge from '../components/DataSourceBadge';
 import { InlineLoading, PageError } from '../components/StatusState';
 import { useAuth } from '../contexts/AuthContext';
 import { getApiErrorMessage } from '../services/api';
@@ -130,6 +131,7 @@ const SettingsPage = () => {
   });
   const [locations, setLocations] = useState([]);
   const [channelStatus, setChannelStatus] = useState({});
+  const [sourceMeta, setSourceMeta] = useState({});
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -147,31 +149,41 @@ const SettingsPage = () => {
       setLoading(true);
       setError(null);
       try {
-        const [data, locationData, channelData] = await Promise.all([
-          settingsApi.getMe(),
+        const [profileData, farmData, alertPrefs, aiPrefs, locationData, channelData] = await Promise.all([
+          settingsApi.getProfile(),
+          settingsApi.getFarm(),
+          settingsApi.getAlertPreferences(),
+          settingsApi.getAiPreferences(),
           settingsApi.getLocations(),
           settingsApi.getChannelStatus(),
         ]);
         if (!active) return;
         setLocations(locationData.locations || []);
         setChannelStatus(channelData);
+        setSourceMeta({
+          profile: profileData,
+          farm: farmData,
+          alerts: alertPrefs,
+          ai: aiPrefs,
+          channels: channelData,
+        });
         setSettings((current) => ({
           ...current,
-          fullName: data.full_name || user?.name || '',
-          email: data.email || user?.email || '',
-          phone: data.phone_number || user?.phone || '',
-          zaloUserId: data.zalo_user_id || '',
-          regionKey: data.region_key || '',
-          location: data.region || user?.region || '',
-          language: data.language || current.language,
-          unit: data.unit || current.unit,
-          theme: data.theme || current.theme,
-          priceAlerts: Boolean(data.price_alerts),
-          weatherAlerts: Boolean(data.weather_alerts),
-          harvestReminders: Boolean(data.harvest_reminders),
-          emailChannel: Boolean(data.email_channel),
-          zaloChannel: Boolean(data.zalo_channel),
-          smsChannel: Boolean(data.sms_channel),
+          fullName: profileData.full_name || user?.name || '',
+          email: profileData.email || user?.email || '',
+          phone: profileData.phone_number || user?.phone || '',
+          zaloUserId: profileData.zalo_user_id || '',
+          regionKey: profileData.region_key || '',
+          location: farmData.region || profileData.region || user?.region || '',
+          language: aiPrefs.language || current.language,
+          unit: profileData.unit || current.unit,
+          theme: profileData.theme || current.theme,
+          priceAlerts: Boolean(alertPrefs.price_alerts),
+          weatherAlerts: Boolean(alertPrefs.weather_alerts),
+          harvestReminders: Boolean(alertPrefs.harvest_reminders),
+          emailChannel: Boolean(alertPrefs.channels?.email),
+          zaloChannel: Boolean(alertPrefs.channels?.zalo),
+          smsChannel: Boolean(alertPrefs.channels?.sms),
         }));
       } catch (err) {
         if (active) setError(getApiErrorMessage(err, 'Không thể tải cài đặt'));
@@ -209,7 +221,7 @@ const SettingsPage = () => {
     };
     setTestState({ channel, status: 'loading', message: '' });
     try {
-      const result = await settingsApi.testChannel({ channel, receiver: receiverMap[channel] });
+      const result = await settingsApi.testNotificationChannel({ channel, receiver: receiverMap[channel] });
       const ok = ['sent', 'stored', 'mock_sent'].includes(result?.status);
       setTestState({
         channel,
@@ -227,31 +239,50 @@ const SettingsPage = () => {
     setError(null);
     setSaved(false);
     try {
-      const data = await settingsApi.updateMe({
-        full_name: settings.fullName,
-        email: settings.email,
-        phone_number: settings.phone,
-        zalo_user_id: settings.zaloUserId,
-        region: settings.location,
-        region_key: settings.regionKey,
-        language: settings.language,
-        unit: settings.unit,
-        theme: settings.theme,
-        price_alerts: settings.priceAlerts,
-        weather_alerts: settings.weatherAlerts,
-        harvest_reminders: settings.harvestReminders,
-        email_channel: settings.emailChannel,
-        zalo_channel: settings.zaloChannel,
-        sms_channel: settings.smsChannel,
-      });
+      const [profile, farm, alertPrefs, aiPrefs] = await Promise.all([
+        settingsApi.saveProfile({
+          full_name: settings.fullName,
+          email: settings.email,
+          phone_number: settings.phone,
+          zalo_user_id: settings.zaloUserId,
+          region: settings.location,
+          region_key: settings.regionKey,
+          language: settings.language,
+          unit: settings.unit,
+          theme: settings.theme,
+        }),
+        settingsApi.saveFarm({
+          region: settings.location,
+          main_crops: ['lua'],
+        }),
+        settingsApi.saveAlertPreferences({
+          price_alerts: settings.priceAlerts,
+          weather_alerts: settings.weatherAlerts,
+          harvest_reminders: settings.harvestReminders,
+          email_channel: settings.emailChannel,
+          zalo_channel: settings.zaloChannel,
+          sms_channel: settings.smsChannel,
+        }),
+        settingsApi.saveAiPreferences({
+          language: settings.language,
+          explanation_level: 'balanced',
+        }),
+      ]);
+      setSourceMeta((current) => ({
+        ...current,
+        profile,
+        farm,
+        alerts: alertPrefs,
+        ai: aiPrefs,
+      }));
       setSettings((current) => ({
         ...current,
-        fullName: data.full_name || current.fullName,
-        email: data.email || current.email,
-        phone: data.phone_number || current.phone,
-        zaloUserId: data.zalo_user_id || current.zaloUserId,
-        regionKey: data.region_key || current.regionKey,
-        location: data.region || current.location,
+        fullName: profile.full_name || current.fullName,
+        email: profile.email || current.email,
+        phone: profile.phone_number || current.phone,
+        zaloUserId: profile.zalo_user_id || current.zaloUserId,
+        regionKey: profile.region_key || current.regionKey,
+        location: farm.region || profile.region || current.location,
       }));
       setSaved(true);
       await loadChannelStatus();
@@ -281,7 +312,10 @@ const SettingsPage = () => {
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-wide text-green-700">Thiết lập vận hành</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold uppercase tracking-wide text-green-700">Thiết lập vận hành</p>
+            <DataSourceBadge data={sourceMeta.profile || { source: 'database', source_name: 'Users/UserSettings DB', confidence: 0.72 }} />
+          </div>
           <h1 className="mt-2 text-3xl font-bold text-gray-900">Cài đặt</h1>
           <p className="mt-2 text-gray-600">
             Hồ sơ, vùng chuẩn hóa, ma trận thông báo, trạng thái provider và bảo mật tài khoản.
@@ -535,7 +569,10 @@ const SettingsPage = () => {
           </section>
 
           <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-bold text-gray-900">Data source status</h2>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-lg font-bold text-gray-900">Data source status</h2>
+              <DataSourceBadge data={sourceMeta.channels || { source: 'database', source_name: 'Settings channel status', confidence: 0.7 }} />
+            </div>
             <div className="mt-4 space-y-3 text-sm text-gray-700">
               <div className="flex items-center justify-between gap-3">
                 <span className="inline-flex items-center gap-2">

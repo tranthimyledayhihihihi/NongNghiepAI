@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     AI_TIMEOUT_SECONDS: float = 20.0
     WEATHER_API_KEY: str = ""
     WEATHER_PROVIDER: str = "open-meteo"
+    WEATHER_API_BASE_URL: str = ""
     OPEN_METEO_BASE_URL: str = "https://api.open-meteo.com"
     WEATHER_CACHE_TTL_SECONDS: int = 1800
     WEATHER_TIMEOUT_SECONDS: float = 4.0
@@ -63,6 +64,9 @@ class Settings(BaseSettings):
     )
     ENABLE_STOOQ_PRICE_SOURCE: bool = True
     EXCHANGE_RATE_API_URL: str = "https://open.er-api.com/v6/latest/USD"
+    MARKET_API_BASE_URL: str = ""
+    TAVILY_API_KEY: str = ""
+    GEMINI_API_KEY: str = ""
     USD_VND_FALLBACK_RATE: float = 26000.0
     MARKET_NEWS_RSS_URLS_JSON: str = json.dumps(
         [

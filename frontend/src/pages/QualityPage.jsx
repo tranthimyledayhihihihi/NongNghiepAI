@@ -15,6 +15,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useState } from 'react';
+import DataSourceBadge from '../components/DataSourceBadge';
 import { getApiErrorMessage } from '../services/api';
 import { qualityApi } from '../services/qualityApi';
 
@@ -129,7 +130,7 @@ const QualityPage = () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await qualityApi.checkQuality(selectedFile, '', region);
+      const data = await qualityApi.checkWithPrice(selectedFile, '', region);
       setResult(data);
     } catch (err) {
       setError(getApiErrorMessage(err, 'Lỗi khi kiểm tra chất lượng'));
@@ -290,6 +291,14 @@ const QualityPage = () => {
               <div className={`rounded-2xl bg-gradient-to-br ${g.bg} p-5 text-white shadow-md`}>
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1">
+                    <div className="mb-3 flex flex-wrap items-center gap-2">
+                      <DataSourceBadge data={result} className="bg-white/90" />
+                      {Number.isFinite(result.confidence) && (
+                        <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-semibold">
+                          Confidence {(result.confidence * 100).toFixed(0)}%
+                        </span>
+                      )}
+                    </div>
                     {result.detected_crop && (
                       <div className="inline-flex items-center gap-1.5 bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full text-xs font-semibold mb-3">
                         <BadgeCheck className="h-3.5 w-3.5" />

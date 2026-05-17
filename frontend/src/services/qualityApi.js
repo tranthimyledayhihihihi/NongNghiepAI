@@ -17,6 +17,21 @@ export const qualityApi = {
     return response.data;
   },
 
+  checkWithPrice: async (imageFile, cropName = 'ca chua', region = 'Ha Noi') => {
+    const formData = new FormData();
+    formData.append('image', imageFile);
+    formData.append('crop_name', cropName);
+    formData.append('region', region);
+
+    const response = await api.post('/api/quality/check-with-price', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      timeout: 90000,
+    });
+    return response.data;
+  },
+
   // Get quality grades info
   getQualityGrades: async () => {
     const response = await api.get('/api/quality/grades');

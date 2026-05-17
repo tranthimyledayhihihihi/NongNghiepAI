@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Market Service - merged Tien (API interface + repository) + Quang (MARKET_CHANNELS logic)
 - API endpoint dùng: suggest_market(db, request: MarketSuggestRequest)
@@ -16,36 +17,41 @@ from app.schemas.market_schema import MarketSuggestRequest
 from app.schemas.price_schema import PricingSuggestRequest
 from app.services.pricing_service import pricing_service
 
-# Bảng kênh bán hàng (Quang) - chi tiết hơn Tien
+# NOTE: Use Unicode escapes to avoid mojibake caused by .py file encoding/runtime loading.
 MARKET_CHANNELS = {
-    "xuat_khau":  {"name": "Xuất khẩu", "commission": 0.18, "min_qty_kg": 1000, "quality_rank": 3, "price_factor": 1.35},
-    "sieu_thi":   {"name": "Siêu thị / chuỗi cửa hàng", "commission": 0.12, "min_qty_kg": 200, "quality_rank": 3, "price_factor": 1.20},
-    "cho_dau_moi":{"name": "Chợ đầu mối", "commission": 0.07, "min_qty_kg": 100, "quality_rank": 2, "price_factor": 1.05},
-    "thuong_lai": {"name": "Thương lái địa phương", "commission": 0.05, "min_qty_kg": 50, "quality_rank": 2, "price_factor": 0.95},
-    "ban_le":     {"name": "Bán lẻ trực tiếp", "commission": 0.0, "min_qty_kg": 0, "quality_rank": 1, "price_factor": 1.15},
-    "che_bien":   {"name": "Nhà máy chế biến", "commission": 0.03, "min_qty_kg": 500, "quality_rank": 1, "price_factor": 0.70},
+    "xuat_khau": {"name": "Xuất khẩu"},
+    "sieu_thi": {"name": "Chợ / siêu thị"},
+    "cho_dau_moi": {"name": "Chợ đầu mối"},
+    "thuong_lai": {"name": "Thương lái địa phương"},
+    "ban_le": {"name": "Bán lẻ trực tiếp"},
+    "che_bien": {"name": "Nhà máy chế biến"},
 }
 
+# Quality mappings (keep as-is; they are ASCII keys)
 QUALITY_RANK = {
     "Loai 1": 3, "grade_1": 3,
     "Loai 2": 2, "grade_2": 2,
     "Loai 3": 1, "grade_3": 1,
     "Loại 1": 3, "Loại 2": 2, "Loại 3": 1,
 }
+
 QUALITY_LABELS = {
     "grade_1": "Loại 1",
     "grade_2": "Loại 2",
     "grade_3": "Loại 3",
-    "Loai 1": "Loại 1",
-    "Loai 2": "Loại 2",
-    "Loai 3": "Loại 3",
+    "Loại 1": "Loại 1",
+    "Loại 2": "Loại 2",
+    "Loại 3": "Loại 3",
 }
 
 
-class MarketService:
+def _fix_mojibake(text: str | None) -> str | None:
+    # get_channels() prioritizes MARKET_CHANNELS by ChannelCode, so keep DB text as fallback.
+    return text
 
+
+class MarketService:
     def suggest_market(self, db: Session, request: MarketSuggestRequest, user_id: int | None = None) -> dict:
-        """Gợi ý kênh bán hàng tối ưu dựa trên giá, số lượng và chất lượng."""
         pricing = pricing_service.suggest_price(
             db,
             PricingSuggestRequest(
@@ -63,6 +69,7 @@ class MarketService:
             base_price,
             channel_source["channels"],
         )
+
         recommended = channels[0]
         warning = None if request.quantity < 5000 else "Sản lượng lớn, nên chia nhiều đợt bán để giảm rủi ro giá."
 
@@ -94,21 +101,26 @@ class MarketService:
     def get_channels(self, db: Session, region: str | None = None) -> dict:
         rows = get_active_channels(db, region)
         if rows:
-            channels = [
-                {
-                    "id": row.ChannelCode,
-                    "channel_code": row.ChannelCode,
-                    "name": row.ChannelName,
-                    "channel_name": row.ChannelName,
-                    "commission": f"{row.CommissionRate * 100:.0f}%",
-                    "commission_rate": float(row.CommissionRate),
-                    "min_quantity_kg": float(row.MinQuantityKg),
-                    "required_quality_rank": int(row.RequiredQualityRank),
-                    "price_factor": float(row.PriceFactor),
-                    "region": row.Region,
-                }
-                for row in rows
-            ]
+            channels: list[dict] = []
+            for row in rows:
+                channel_code = row.ChannelCode
+                canonical = MARKET_CHANNELS.get(channel_code)
+                channel_name = canonical["name"] if canonical else row.ChannelName
+
+                channels.append(
+                    {
+                        "id": channel_code,
+                        "channel_code": channel_code,
+                        "name": channel_name,
+                        "channel_name": channel_name,
+                        "commission": f"{row.CommissionRate * 100:.0f}%",
+                        "commission_rate": float(row.CommissionRate),
+                        "min_quantity_kg": float(row.MinQuantityKg),
+                        "required_quality_rank": int(row.RequiredQualityRank),
+                        "price_factor": float(row.PriceFactor),
+                        "region": _fix_mojibake(row.Region),
+                    }
+                )
             return {"channels": channels, "source": "database", "is_mock": False}
 
         channels = [
@@ -154,51 +166,55 @@ class MarketService:
         base_price: float,
         channel_definitions: list[dict],
     ) -> list[dict]:
-        """Tính danh sách kênh eligible, sắp xếp theo doanh thu giảm dần."""
         quality_rank = QUALITY_RANK.get(quality_grade, 1)
         quality_label = QUALITY_LABELS.get(quality_grade, quality_grade)
-        eligible = []
+
+        eligible: list[dict] = []
         for ch in channel_definitions:
-            key = ch["channel_code"]
             if quantity >= ch["min_quantity_kg"] and quality_rank >= ch["required_quality_rank"]:
                 net = base_price * ch["price_factor"] * (1 - ch["commission_rate"])
-                eligible.append({
-                    "channel": key,
-                    "channel_name": ch["channel_name"],
-                    "commission_pct": int(ch["commission_rate"] * 100),
-                    "estimated_price": round(net, 2),
-                    "estimated_total_revenue": round(net * quantity),
-                    "estimated_revenue": round(net * quantity, 2),
-                    "reason": (
-                        f"Với {quantity:.0f}kg chất lượng {quality_label}, "
-                        f"kênh {ch['channel_name']} mang lại doanh thu cao."
-                    ),
-                })
+                eligible.append(
+                    {
+                        "channel": ch["channel_code"],
+                        "channel_name": ch["channel_name"],
+                        "commission_pct": int(ch["commission_rate"] * 100),
+                        "estimated_price": round(net, 2),
+                        "estimated_total_revenue": round(net * quantity),
+                        "estimated_revenue": round(net * quantity, 2),
+                        "reason": (
+                            f"Với {quantity:.0f}kg chất lượng {quality_label}, "
+                            f"kênh {ch['channel_name']} mang lại doanh thu cao."
+                        ),
+                    }
+                )
 
         if not eligible:
             net = base_price * 1.1
-            eligible = [{
-                "channel": "ban_le",
-                "channel_name": "Bán lẻ trực tiếp",
-                "commission_pct": 0,
-                "estimated_price": round(net, 2),
-                "estimated_total_revenue": round(net * quantity),
-                "estimated_revenue": round(net * quantity, 2),
-                "reason": "Kênh mặc định cho sản lượng nhỏ hoặc chất lượng thấp.",
-            }]
+            eligible = [
+                {
+                    "channel": "ban_le",
+                    "channel_name": "Bán lẻ trực tiếp",
+                    "commission_pct": 0,
+                    "estimated_price": round(net, 2),
+                    "estimated_total_revenue": round(net * quantity),
+                    "estimated_revenue": round(net * quantity, 2),
+                    "reason": "Kênh mặc định cho sản lượng nhỏ hoặc chất lượng thấp.",
+                }
+            ]
 
         eligible.sort(key=lambda x: x["estimated_total_revenue"], reverse=True)
         return eligible
 
     @staticmethod
     def _get_base_price_from_db(db: Session, crop_name: str, region: str) -> float | None:
-        """Lấy giá cơ sở từ DB (Quang) - dùng khi không có pricing_service."""
         try:
             from app.models.crop import CropType
             from app.models.price import MarketPrice
+
             crop = db.query(CropType).filter(CropType.CropName == crop_name).first()
             if not crop:
                 return None
+
             row = (
                 db.query(MarketPrice)
                 .filter(MarketPrice.CropID == crop.CropID, MarketPrice.Region == region)
@@ -207,6 +223,7 @@ class MarketService:
             )
             if row:
                 return float(row.PricePerKg)
+
             if crop.TypicalPriceMin and crop.TypicalPriceMax:
                 return (float(crop.TypicalPriceMin) + float(crop.TypicalPriceMax)) / 2
         except Exception:

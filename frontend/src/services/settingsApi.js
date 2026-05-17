@@ -3,6 +3,51 @@ import api from './api';
 const unwrap = (response) => response.data?.data ?? response.data;
 
 export const settingsApi = {
+  getProfile: async () => {
+    const response = await api.get('/api/settings/profile');
+    return unwrap(response);
+  },
+
+  saveProfile: async (payload) => {
+    const response = await api.post('/api/settings/profile', payload);
+    return unwrap(response);
+  },
+
+  getFarm: async () => {
+    const response = await api.get('/api/settings/farm');
+    return unwrap(response);
+  },
+
+  saveFarm: async (payload) => {
+    const response = await api.post('/api/settings/farm', payload);
+    return unwrap(response);
+  },
+
+  getAlertPreferences: async () => {
+    const response = await api.get('/api/settings/alert-preferences');
+    return unwrap(response);
+  },
+
+  saveAlertPreferences: async (payload) => {
+    const response = await api.post('/api/settings/alert-preferences', payload);
+    return unwrap(response);
+  },
+
+  getAiPreferences: async () => {
+    const response = await api.get('/api/settings/ai-preferences');
+    return unwrap(response);
+  },
+
+  saveAiPreferences: async (payload) => {
+    const response = await api.post('/api/settings/ai-preferences', payload);
+    return unwrap(response);
+  },
+
+  testNotificationChannel: async ({ channel, receiver }) => {
+    const response = await api.post('/api/settings/test-notification-channel', { channel, receiver });
+    return unwrap(response);
+  },
+
   getMe: async () => {
     const response = await api.get('/api/settings/me');
     return unwrap(response);

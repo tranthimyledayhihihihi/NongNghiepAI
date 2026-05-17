@@ -19,7 +19,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api import (
-    ai, alert, auth, chat, crawler, crops, dashboard,
+    ai, ai_chat, alert, auth, chat, crawler, crops, dashboard,
     harvest, locations, market, market_news, news, notifications, prices,
     price_forecast, pricing, quality, reports, weather,
 )
@@ -38,19 +38,29 @@ async def lifespan(_app: FastAPI):
     except Exception as exc:
         logger.warning("Database initialization warning: %s", exc)
 
+    from app.tasks.alert_tasks import auto_alert_loop
     from app.tasks.crawler_tasks import auto_crawl_loop
     interval = os.getenv("CRAWL_INTERVAL_SECONDS", "3600")
     crawl_task = asyncio.create_task(auto_crawl_loop())
+    alert_task = asyncio.create_task(auto_alert_loop())
     logger.info("[Crawler] Started — seed 7 days on startup, update interval=%ss", interval)
+
+    logger.info("[Alerts] Started scheduled evaluator")
 
     yield
 
     crawl_task.cancel()
+    alert_task.cancel()
     try:
         await crawl_task
     except asyncio.CancelledError:
         pass
+    try:
+        await alert_task
+    except asyncio.CancelledError:
+        pass
     logger.info("[Crawler] Auto-crawl task stopped.")
+    logger.info("[Alerts] Scheduled evaluator stopped.")
 
 app = FastAPI(
     title="AgriAI Backend",
@@ -70,6 +80,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(chat.router)
 app.include_router(ai.router)
+app.include_router(ai_chat.router)
 app.include_router(crops.router)
 app.include_router(harvest.router)
 app.include_router(quality.router)

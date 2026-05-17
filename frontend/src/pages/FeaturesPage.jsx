@@ -1,203 +1,278 @@
-import {
-  BarChart3,
-  BellRing,
-  Bot,
-  Camera,
-  CheckCircle2,
-  CloudSun,
-  LineChart,
-  Sprout,
-  Store,
-} from 'lucide-react';
-import { Link } from 'react-router-dom';
-import PublicFooter from '../components/PublicFooter';
-import PublicHeader from '../components/PublicHeader';
+import React, { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import AgriNavbar from "../components/AgriNavbar";
+import logo from "../assets/agri-ai-logo.png";
 
-const featureGroups = [
+const categories = ["Tất cả", "Thời tiết", "Giá nông sản", "Thu hoạch", "Thị trường", "AI Chat"];
+
+const featureCards = [
   {
-    icon: LineChart,
-    title: 'Định giá nông sản',
-    description: 'Theo dõi giá hiện tại, lịch sử biến động và dự báo ngắn hạn theo từng vùng.',
-    points: ['Biểu đồ giá theo ngày', 'So sánh vùng bán', 'Khuyến nghị thời điểm bán'],
+    title: "Thời tiết nông nghiệp realtime",
+    category: "Thời tiết",
+    icon: "🌦️",
+    route: "/weather",
+    badge: "Realtime API",
+    description: "Theo dõi nhiệt độ, lượng mưa, độ ẩm, gió và cảnh báo rủi ro thời tiết theo khu vực canh tác.",
+    highlights: ["Dự báo 7 ngày", "Cảnh báo mưa lớn", "Gợi ý tưới tiêu"],
   },
   {
-    icon: Camera,
-    title: 'Kiểm định chất lượng',
-    description: 'Upload ảnh nông sản để AI nhận diện chất lượng, bệnh hại và gợi ý xử lý.',
-    points: ['Phân loại theo lô', 'Nhận diện rủi ro', 'Gợi ý cải thiện chất lượng'],
+    title: "Định giá nông sản thông minh",
+    category: "Giá nông sản",
+    icon: "📈",
+    route: "/pricing",
+    badge: "AI Pricing",
+    description: "Cập nhật giá nông sản, so sánh vùng miền và hỗ trợ nông dân quyết định nên bán hay theo dõi thêm.",
+    highlights: ["Giá hiện tại", "Biểu đồ xu hướng", "So sánh khu vực"],
   },
   {
-    icon: Sprout,
-    title: 'Dự báo thu hoạch',
-    description: 'Ước tính ngày thu hoạch, sản lượng và việc cần làm dựa trên lịch canh tác.',
-    points: ['Lịch mùa vụ', 'Dự báo sản lượng', 'Nhắc việc trước mốc quan trọng'],
+    title: "Dự báo ngày thu hoạch",
+    category: "Thu hoạch",
+    icon: "🌾",
+    route: "/harvest",
+    badge: "Forecast",
+    description: "Ước tính ngày thu hoạch dựa trên cây trồng, ngày xuống giống, khu vực, thời tiết và lịch sử mùa vụ.",
+    highlights: ["Timeline mùa vụ", "Độ tin cậy", "Checklist chuẩn bị"],
   },
   {
-    icon: Store,
-    title: 'Chiến lược thị trường',
-    description: 'So sánh kênh bán buôn, bán lẻ, xuất khẩu và đề xuất kênh có lợi nhất.',
-    points: ['Biên lợi nhuận từng kênh', 'Nhu cầu theo khu vực', 'Gợi ý B2B'],
+    title: "Phân tích thị trường tiêu thụ",
+    category: "Thị trường",
+    icon: "🛒",
+    route: "/market",
+    badge: "Market Data",
+    description: "Theo dõi nhu cầu thị trường, tin tức nông sản và gợi ý kênh bán phù hợp với sản lượng thực tế.",
+    highlights: ["Tin tức thị trường", "Kênh bán hàng", "Chiến lược tiêu thụ"],
   },
   {
-    icon: BellRing,
-    title: 'Cảnh báo tự động',
-    description: 'Nhận thông báo khi giá vượt ngưỡng, thời tiết xấu hoặc lịch mùa vụ đến hạn.',
-    points: ['Cảnh báo giá', 'Thông báo thời tiết', 'Lọc theo mức ưu tiên'],
+    title: "Trợ lý AI nông nghiệp",
+    category: "AI Chat",
+    icon: "🤖",
+    route: "/ai-chat",
+    badge: "GenAI",
+    description: "Cho phép người dùng hỏi về thời tiết, giá cả, sâu bệnh, thu hoạch, thị trường và nhận tư vấn dễ hiểu.",
+    highlights: ["Gợi ý câu hỏi", "Trả lời có ngữ cảnh", "Nút hành động nhanh"],
   },
   {
-    icon: Bot,
-    title: 'Trợ lý AI nông nghiệp',
-    description: 'Hỏi đáp kỹ thuật canh tác, sâu bệnh, thị trường và vận hành trang trại.',
-    points: ['Gợi ý câu hỏi nhanh', 'Lịch sử hội thoại', 'Tư vấn theo ngữ cảnh trang trại'],
+    title: "Bài viết và kiến thức nông nghiệp",
+    category: "Thị trường",
+    icon: "📰",
+    route: "/articles",
+    badge: "Content",
+    description: "Tập hợp bài viết, hướng dẫn và tin tức giúp người dùng hiểu thị trường và cách vận hành hệ thống.",
+    highlights: ["Bộ lọc chủ đề", "Tóm tắt nội dung", "Liên kết module"],
   },
 ];
 
-const workflow = [
+const dataLayers = [
   {
-    title: 'Nhập dữ liệu trang trại',
-    description: 'Khai báo cây trồng, diện tích, khu vực, lịch gieo trồng và mục tiêu bán hàng.',
+    name: "Realtime API",
+    value: "Dữ liệu bên ngoài",
+    description: "Dùng cho thời tiết, giá thị trường, tin tức hoặc các nguồn dữ liệu thay đổi liên tục theo ngày.",
   },
   {
-    title: 'AI phân tích',
-    description: 'Hệ thống kết hợp giá thị trường, thời tiết, ảnh chất lượng và lịch mùa vụ.',
+    name: "Database",
+    value: "Dữ liệu nội bộ",
+    description: "Lưu hồ sơ mùa vụ, lịch sử giá, lịch sử chat, thông tin người dùng và các cảnh báo đã tạo.",
   },
   {
-    title: 'Ra quyết định',
-    description: 'Người dùng nhận khuyến nghị hành động, cảnh báo và báo cáo để theo dõi.',
+    name: "AI Model",
+    value: "Dự báo và khuyến nghị",
+    description: "AI dùng dữ liệu đầu vào để dự báo thu hoạch, gợi ý bán hàng và tư vấn nông nghiệp có ngữ cảnh.",
   },
 ];
 
-const FeaturesPage = () => {
+const roadmap = [
+  "Tạo bộ lọc cây trồng/khu vực dùng chung cho các trang chính.",
+  "Hiển thị badge nguồn dữ liệu: API realtime, DB, AI Model.",
+  "Thêm trạng thái loading skeleton, empty state và error state.",
+  "Cho phép lưu cảnh báo giá/thời tiết trực tiếp từ từng tính năng.",
+  "Liên kết AI Chat với dữ liệu trang hiện tại để tư vấn có ngữ cảnh.",
+];
+
+export default function FeaturesPage() {
+  const [selectedCategory, setSelectedCategory] = useState("Tất cả");
+
+  const filteredFeatures = useMemo(() => {
+    if (selectedCategory === "Tất cả") return featureCards;
+    return featureCards.filter((feature) => feature.category === selectedCategory);
+  }, [selectedCategory]);
+
   return (
-    <div className="min-h-screen bg-white">
-      <PublicHeader />
+    <main className="min-h-screen bg-slate-50 text-slate-900">
+      <AgriNavbar />
 
-      <main>
-        <section className="relative isolate overflow-hidden bg-gray-950">
-          <img
-            src="https://images.unsplash.com/photo-1464226184884-fa280b87c399?auto=format&fit=crop&w=1800&q=85"
-            alt="Nông trại ứng dụng công nghệ"
-            className="absolute inset-0 -z-10 h-full w-full object-cover opacity-55"
-          />
-          <div className="absolute inset-0 -z-10 bg-gray-950/35" />
-          <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
-            <div className="max-w-3xl text-white">
-              <p className="mb-4 text-sm font-semibold uppercase tracking-wide text-green-200">
-                Bộ công cụ FE đã sẵn sàng nối BE
-              </p>
-              <h1 className="text-4xl font-bold leading-tight md:text-5xl">
-                Tính năng quản trị nông nghiệp từ mùa vụ đến thị trường
-              </h1>
-              <p className="mt-5 max-w-2xl text-lg leading-8 text-gray-100">
-                AgriAI gom các nghiệp vụ quan trọng vào một giao diện thống nhất: dự báo, kiểm định, giá,
-                cảnh báo và tư vấn AI cho nông dân, hợp tác xã và đơn vị thu mua.
-              </p>
-              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                <Link
-                  to="/dashboard"
-                  className="rounded-lg bg-green-700 px-6 py-3 text-center font-semibold text-white hover:bg-green-800"
-                >
-                  Mở bảng điều khiển
-                </Link>
-                <Link
-                  to="/contact"
-                  className="rounded-lg border border-white/70 px-6 py-3 text-center font-semibold text-white hover:bg-white/10"
-                >
-                  Trao đổi triển khai
-                </Link>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="bg-gray-50 py-16">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div className="mb-10 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-wide text-green-700">Module chính</p>
-                <h2 className="mt-2 text-3xl font-bold text-gray-900">Một hệ thống cho nhiều nghiệp vụ</h2>
-              </div>
-              <p className="max-w-2xl text-gray-600">
-                Các màn hình này đang dùng dữ liệu mẫu hoặc API hiện có. Khi BE bổ sung auth, notification và billing,
-                FE có thể nối service mà không cần đổi luồng chính.
-              </p>
-            </div>
-
-            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-              {featureGroups.map((feature) => {
-                const Icon = feature.icon;
-                return (
-                  <article key={feature.title} className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-                    <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-lg bg-green-50 text-green-700">
-                      <Icon className="h-6 w-6" />
-                    </div>
-                    <h3 className="text-lg font-bold text-gray-900">{feature.title}</h3>
-                    <p className="mt-2 text-sm leading-6 text-gray-600">{feature.description}</p>
-                    <div className="mt-5 space-y-2">
-                      {feature.points.map((point) => (
-                        <div key={point} className="flex items-center gap-2 text-sm text-gray-700">
-                          <CheckCircle2 className="h-4 w-4 text-green-600" />
-                          <span>{point}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-
-        <section className="py-16">
-          <div className="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:px-8">
+      <section className="relative overflow-hidden bg-gradient-to-br from-emerald-950 via-green-900 to-lime-700 text-white">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.20),transparent_30%),radial-gradient(circle_at_bottom_right,rgba(190,242,100,0.24),transparent_34%)]" />
+        <div className="relative mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8 lg:py-20">
+          <div className="grid gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-wide text-green-700">Quy trình sử dụng</p>
-              <h2 className="mt-2 text-3xl font-bold text-gray-900">Từ dữ liệu rời rạc thành hành động cụ thể</h2>
-              <p className="mt-4 leading-7 text-gray-600">
-                Thiết kế ưu tiên thao tác nhanh trong môi trường vận hành: ít trang trí, dễ quét thông tin,
-                có trạng thái rõ ràng cho cảnh báo, giá và chất lượng.
+              <span className="inline-flex rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-bold text-emerald-50 backdrop-blur">
+                ✨ Trung tâm tính năng AgriAI
+              </span>
+              <h1 className="mt-6 max-w-3xl text-4xl font-black tracking-tight sm:text-5xl">
+                Tất cả công cụ cần thiết để nông dân ra quyết định nhanh hơn
+              </h1>
+              <p className="mt-5 max-w-2xl text-base leading-8 text-emerald-50 sm:text-lg">
+                Trang features được bổ sung thanh menu, logo và bố cục đồng bộ với trang chủ, bài viết, bảng giá và liên hệ. Người dùng có thể hiểu từng module dùng dữ liệu gì và bấm sang dùng ngay.
               </p>
-              <div className="mt-6 grid gap-3 sm:grid-cols-3">
-                <div className="rounded-lg border border-gray-200 p-4">
-                  <BarChart3 className="mb-3 h-5 w-5 text-blue-600" />
-                  <div className="text-2xl font-bold text-gray-900">8+</div>
-                  <div className="text-sm text-gray-600">màn hình nghiệp vụ</div>
-                </div>
-                <div className="rounded-lg border border-gray-200 p-4">
-                  <CloudSun className="mb-3 h-5 w-5 text-amber-600" />
-                  <div className="text-2xl font-bold text-gray-900">24/7</div>
-                  <div className="text-sm text-gray-600">cảnh báo tự động</div>
-                </div>
-                <div className="rounded-lg border border-gray-200 p-4">
-                  <Bot className="mb-3 h-5 w-5 text-green-700" />
-                  <div className="text-2xl font-bold text-gray-900">AI</div>
-                  <div className="text-sm text-gray-600">tư vấn theo ngữ cảnh</div>
-                </div>
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Link to="/ai-chat" className="rounded-2xl bg-white px-5 py-3 font-bold text-emerald-800 shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:bg-emerald-50">
+                  Dùng thử AI Chat
+                </Link>
+                <Link to="/pricing-plans" className="rounded-2xl border border-white/30 px-5 py-3 font-bold text-white transition hover:bg-white/10">
+                  Xem gói dịch vụ
+                </Link>
+                <Link to="/contact" className="rounded-2xl border border-white/30 px-5 py-3 font-bold text-white transition hover:bg-white/10">
+                  Liên hệ hỗ trợ
+                </Link>
               </div>
             </div>
 
-            <div className="space-y-4">
-              {workflow.map((step, index) => (
-                <div key={step.title} className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-                  <div className="flex gap-4">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gray-900 text-sm font-bold text-white">
-                      {index + 1}
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-gray-900">{step.title}</h3>
-                      <p className="mt-1 text-sm leading-6 text-gray-600">{step.description}</p>
-                    </div>
+            <div className="rounded-[2rem] border border-white/20 bg-white/10 p-5 shadow-2xl backdrop-blur">
+              <div className="rounded-[1.5rem] bg-white p-6 text-slate-900">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-black uppercase tracking-wide text-emerald-600">Tổng quan hệ thống</p>
+                    <h2 className="mt-2 text-2xl font-black">5 module chính + AI hỗ trợ</h2>
                   </div>
+                  <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-[1.5rem] border border-emerald-100 bg-white shadow-sm">
+                    <img src={logo} alt="AgriAI" className="h-full w-full object-cover object-center" />
+                  </div>
+                </div>
+
+                <div className="mt-6 grid grid-cols-2 gap-3">
+                  <div className="rounded-2xl bg-emerald-50 p-4">
+                    <p className="text-2xl font-black text-emerald-700">API</p>
+                    <p className="text-sm text-slate-600">Dữ liệu realtime</p>
+                  </div>
+                  <div className="rounded-2xl bg-lime-50 p-4">
+                    <p className="text-2xl font-black text-lime-700">AI</p>
+                    <p className="text-sm text-slate-600">Tư vấn thông minh</p>
+                  </div>
+                  <div className="rounded-2xl bg-amber-50 p-4">
+                    <p className="text-2xl font-black text-amber-700">DB</p>
+                    <p className="text-sm text-slate-600">Lưu lịch sử</p>
+                  </div>
+                  <div className="rounded-2xl bg-sky-50 p-4">
+                    <p className="text-2xl font-black text-sky-700">UX</p>
+                    <p className="text-sm text-slate-600">Dễ dùng hơn</p>
+                  </div>
+                </div>
+
+                <div className="mt-6 rounded-2xl bg-slate-900 p-4 text-white">
+                  <p className="text-sm font-bold text-emerald-200">Luồng trải nghiệm đề xuất</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-200">
+                    Chọn khu vực → xem dữ liệu realtime → nhận phân tích AI → lưu cảnh báo hoặc hành động.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+        <div className="rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-black uppercase tracking-wide text-emerald-600">Danh sách tính năng</p>
+              <h2 className="mt-1 text-2xl font-black">Lọc theo nhóm chức năng</h2>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {categories.map((category) => (
+                <button
+                  key={category}
+                  type="button"
+                  onClick={() => setSelectedCategory(category)}
+                  className={`rounded-2xl px-4 py-3 text-sm font-bold transition ${
+                    selectedCategory === category
+                      ? "bg-emerald-600 text-white shadow-lg shadow-emerald-600/20"
+                      : "bg-slate-100 text-slate-600 hover:bg-emerald-50 hover:text-emerald-700"
+                  }`}
+                >
+                  {category}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-8 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+          {filteredFeatures.map((feature) => (
+            <article key={feature.title} className="group rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:border-emerald-200 hover:shadow-xl hover:shadow-emerald-900/5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-3xl transition group-hover:scale-105">
+                  {feature.icon}
+                </div>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-500">
+                  {feature.badge}
+                </span>
+              </div>
+              <p className="mt-5 text-sm font-black uppercase tracking-wide text-emerald-600">{feature.category}</p>
+              <h3 className="mt-2 text-xl font-black leading-snug group-hover:text-emerald-700">{feature.title}</h3>
+              <p className="mt-3 leading-7 text-slate-600">{feature.description}</p>
+              <div className="mt-5 space-y-2">
+                {feature.highlights.map((item) => (
+                  <div key={item} className="flex items-center gap-2 rounded-2xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+                    <span className="text-emerald-600">✓</span>
+                    {item}
+                  </div>
+                ))}
+              </div>
+              <Link to={feature.route} className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-slate-900 px-4 py-3 font-bold text-white transition hover:bg-emerald-700">
+                Mở tính năng
+              </Link>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="bg-white py-12">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="grid gap-6 lg:grid-cols-3">
+            {dataLayers.map((layer) => (
+              <div key={layer.name} className="rounded-[2rem] border border-slate-200 bg-slate-50 p-6">
+                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-700">
+                  {layer.name}
+                </span>
+                <h3 className="mt-4 text-2xl font-black">{layer.value}</h3>
+                <p className="mt-3 leading-7 text-slate-600">{layer.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+        <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
+          <div>
+            <p className="text-sm font-black uppercase tracking-wide text-emerald-600">Nâng cấp nên làm tiếp</p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">Biến trang features thành trung tâm điều hướng thật sự</h2>
+            <p className="mt-4 leading-8 text-slate-600">
+              Không nên chỉ liệt kê tính năng. Hãy cho người dùng thấy mỗi tính năng lấy dữ liệu từ đâu, giải quyết vấn đề gì và có thể bấm sang dùng ngay.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link to="/weather" className="rounded-2xl bg-emerald-600 px-5 py-3 font-bold text-white transition hover:bg-emerald-700">
+                Xem thời tiết
+              </Link>
+              <Link to="/market" className="rounded-2xl border border-slate-200 bg-white px-5 py-3 font-bold text-slate-700 transition hover:border-emerald-200 hover:text-emerald-700">
+                Xem thị trường
+              </Link>
+            </div>
+          </div>
+
+          <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+            <h3 className="text-2xl font-black">Checklist chỉnh sửa / nâng cấp</h3>
+            <div className="mt-5 space-y-3">
+              {roadmap.map((item) => (
+                <div key={item} className="flex gap-3 rounded-2xl bg-slate-50 p-4 text-sm font-semibold text-slate-700">
+                  <span className="mt-0.5 text-emerald-600">✓</span>
+                  <span>{item}</span>
                 </div>
               ))}
             </div>
           </div>
-        </section>
-      </main>
-
-      <PublicFooter />
-    </div>
+        </div>
+      </section>
+    </main>
   );
-};
-
-export default FeaturesPage;
+}

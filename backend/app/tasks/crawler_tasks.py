@@ -791,7 +791,17 @@ async def _scrape_web() -> List[Dict]:
                 resp = await client.get(url)
                 if resp.status_code == 200:
                     # Ép UTF-8 để tránh lỗi encoding trên Windows (cp1252 garble tiếng Việt)
-                    html = resp.content.decode("utf-8", errors="replace")
+                    content = resp.content
+                    try:
+                        html = content.decode("utf-8")
+                        if "" in html:
+                            raise UnicodeError("utf-8 produced replacement characters")
+                    except Exception:
+                        try:
+                            html = content.decode("cp1252")
+                        except Exception:
+                            html = content.decode("latin1", errors="replace")
+
                     items = parser_fn(html, default_region=default_region, source=source_name)
                     raw.extend(items)
                     logger.info(f"[Crawler] {source_name} ({url}): {len(items)} mục raw")

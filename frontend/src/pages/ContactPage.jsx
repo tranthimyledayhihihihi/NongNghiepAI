@@ -1,213 +1,225 @@
-import { Clock, Mail, MapPin, MessageCircle, Phone, Send } from 'lucide-react';
-import { useState } from 'react';
-import PublicFooter from '../components/PublicFooter';
-import PublicHeader from '../components/PublicHeader';
+import React, { useState } from "react";
+import { Link } from "react-router-dom";
+import AgriNavbar from "../components/AgriNavbar";
 
-const contactChannels = [
+const supportChannels = [
   {
-    icon: Phone,
-    title: 'Hotline',
-    value: '1900 888 168',
-    description: 'Tư vấn gói dịch vụ và hỗ trợ vận hành trong giờ hành chính.',
+    title: "Tư vấn sử dụng hệ thống",
+    value: "support@agriai.vn",
+    description: "Hỏi về tài khoản, gói dịch vụ, dashboard và cách dùng AI.",
+    icon: "💬",
   },
   {
-    icon: Mail,
-    title: 'Email',
-    value: 'support@agriai.vn',
-    description: 'Gửi yêu cầu tích hợp, phản hồi lỗi hoặc đề xuất tính năng.',
+    title: "Hỗ trợ kỹ thuật",
+    value: "tech@agriai.vn",
+    description: "Báo lỗi API, dữ liệu thời tiết, giá nông sản hoặc cảnh báo.",
+    icon: "🛠️",
   },
   {
-    icon: MessageCircle,
-    title: 'Zalo OA',
-    value: 'AgriAI Việt Nam',
-    description: 'Kênh phù hợp cho thông báo giá, thời tiết và nhắc việc mùa vụ.',
+    title: "Hợp tác dữ liệu",
+    value: "partner@agriai.vn",
+    description: "Kết nối nguồn giá, tin tức thị trường, vùng nguyên liệu và doanh nghiệp thu mua.",
+    icon: "🤝",
   },
 ];
 
-const ContactPage = () => {
-  const [formData, setFormData] = useState({
-    fullName: '',
-    phone: '',
-    email: '',
-    topic: 'Tư vấn triển khai',
-    message: '',
-  });
-  const [submitted, setSubmitted] = useState(false);
+const topics = [
+  "Tư vấn gói dịch vụ",
+  "Báo lỗi hệ thống",
+  "Kết nối API dữ liệu",
+  "Triển khai cho hợp tác xã",
+  "Góp ý giao diện / tính năng",
+];
 
-  const handleChange = (event) => {
-    const { name, value } = event.target;
-    setFormData((current) => ({ ...current, [name]: value }));
+export default function ContactPage() {
+  const [submitted, setSubmitted] = useState(false);
+  const [form, setForm] = useState({
+    name: "",
+    phone: "",
+    email: "",
+    topic: topics[0],
+    region: "",
+    message: "",
+  });
+
+  const updateField = (field, value) => {
+    setForm((current) => ({ ...current, [field]: value }));
   };
 
   const handleSubmit = (event) => {
     event.preventDefault();
+    // Có thể thay bằng API thật: await contactApi.createMessage(form)
     setSubmitted(true);
   };
 
   return (
-    <div className="min-h-screen bg-white">
-      <PublicHeader />
-
-      <main>
-        <section className="relative isolate overflow-hidden bg-gray-950">
-          <img
-            src="https://images.unsplash.com/photo-1495107334309-fcf20504a5ab?auto=format&fit=crop&w=1800&q=85"
-            alt="Cánh đồng nông nghiệp"
-            className="absolute inset-0 -z-10 h-full w-full object-cover opacity-55"
-          />
-          <div className="absolute inset-0 -z-10 bg-gray-950/40" />
-          <div className="mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
-            <div className="max-w-3xl text-white">
-              <p className="text-sm font-semibold uppercase tracking-wide text-green-200">Liên hệ</p>
-              <h1 className="mt-3 text-4xl font-bold md:text-5xl">Trao đổi về nhu cầu triển khai AgriAI</h1>
-              <p className="mt-5 max-w-2xl text-lg leading-8 text-gray-100">
-                Gửi thông tin trang trại, hợp tác xã hoặc bài toán tích hợp. FE sẽ ghi nhận form ngay bây giờ,
-                BE có thể bổ sung API gửi yêu cầu sau.
+    <main className="min-h-screen bg-slate-50 text-slate-900">
+      <AgriNavbar />
+      <section className="relative overflow-hidden bg-gradient-to-br from-emerald-900 via-green-800 to-lime-700 text-white">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.18),transparent_30%),radial-gradient(circle_at_80%_10%,rgba(132,204,22,0.22),transparent_35%)]" />
+        <div className="relative mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+          <div className="grid gap-10 lg:grid-cols-[1fr_420px] lg:items-center">
+            <div>
+              <span className="inline-flex rounded-full border border-white/25 bg-white/10 px-4 py-2 text-sm font-bold backdrop-blur">
+                📞 Trung tâm hỗ trợ AgriAI
+              </span>
+              <h1 className="mt-6 text-4xl font-black tracking-tight sm:text-5xl">
+                Liên hệ để được hỗ trợ về AI nông nghiệp, dữ liệu và triển khai hệ thống
+              </h1>
+              <p className="mt-5 max-w-2xl text-lg leading-8 text-emerald-50">
+                Trang liên hệ nên giúp người dùng gửi yêu cầu nhanh, chọn đúng nhóm hỗ trợ và đi tiếp sang các tính năng chính như AI Chat, thời tiết, giá nông sản hoặc gói dịch vụ.
               </p>
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Link to="/ai-chat" className="rounded-2xl bg-white px-5 py-3 font-black text-emerald-800 shadow-lg shadow-black/10 hover:bg-emerald-50">
+                  Hỏi AI trước
+                </Link>
+                <Link to="/pricing-plans" className="rounded-2xl border border-white/30 px-5 py-3 font-black text-white hover:bg-white/10">
+                  Xem gói dịch vụ
+                </Link>
+              </div>
+            </div>
+
+            <div className="rounded-[2rem] border border-white/20 bg-white/10 p-5 shadow-2xl backdrop-blur">
+              <div className="rounded-[1.5rem] bg-white p-6 text-slate-900">
+                <p className="text-sm font-black uppercase tracking-wide text-emerald-700">Cam kết hỗ trợ</p>
+                <div className="mt-5 grid gap-3">
+                  <div className="rounded-2xl bg-emerald-50 p-4">
+                    <p className="text-2xl font-black text-emerald-700">24h</p>
+                    <p className="text-sm text-slate-600">phản hồi yêu cầu thông thường</p>
+                  </div>
+                  <div className="rounded-2xl bg-lime-50 p-4">
+                    <p className="text-2xl font-black text-lime-700">3 nhóm</p>
+                    <p className="text-sm text-slate-600">hỗ trợ: sử dụng, kỹ thuật, hợp tác dữ liệu</p>
+                  </div>
+                  <div className="rounded-2xl bg-amber-50 p-4">
+                    <p className="text-2xl font-black text-amber-700">API-ready</p>
+                    <p className="text-sm text-slate-600">có thể lưu yêu cầu vào DB và gửi email/Zalo</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <section className="py-14">
-          <div className="mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.95fr_1.05fr] lg:px-8">
-            <div>
-              <div className="grid gap-4">
-                {contactChannels.map((channel) => {
-                  const Icon = channel.icon;
-                  return (
-                    <div key={channel.title} className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-                      <div className="flex gap-4">
-                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-green-50 text-green-700">
-                          <Icon className="h-6 w-6" />
-                        </div>
-                        <div>
-                          <h2 className="font-bold text-gray-900">{channel.title}</h2>
-                          <p className="mt-1 font-semibold text-green-700">{channel.value}</p>
-                          <p className="mt-2 text-sm leading-6 text-gray-600">{channel.description}</p>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+      <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+        <div className="grid gap-6 lg:grid-cols-3">
+          {supportChannels.map((channel) => (
+            <div key={channel.title} className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:border-emerald-200 hover:shadow-xl hover:shadow-emerald-900/5">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-2xl">{channel.icon}</div>
+              <h2 className="mt-5 text-xl font-black">{channel.title}</h2>
+              <p className="mt-2 font-bold text-emerald-700">{channel.value}</p>
+              <p className="mt-3 leading-7 text-slate-600">{channel.description}</p>
+            </div>
+          ))}
+        </div>
 
-              <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-5">
-                <div className="flex gap-4">
-                  <Clock className="h-6 w-6 text-amber-600" />
-                  <div>
-                    <h2 className="font-bold text-gray-900">Thời gian phản hồi</h2>
-                    <p className="mt-2 text-sm leading-6 text-gray-600">
-                      Yêu cầu tư vấn thường được phản hồi trong 1 ngày làm việc. Các yêu cầu lỗi hệ thống sẽ được
-                      ưu tiên theo mức ảnh hưởng vận hành.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-6 rounded-lg border border-gray-200 p-5">
-                <div className="flex gap-4">
-                  <MapPin className="h-6 w-6 text-blue-600" />
-                  <div>
-                    <h2 className="font-bold text-gray-900">Khu vực hỗ trợ</h2>
-                    <p className="mt-2 text-sm leading-6 text-gray-600">
-                      Ưu tiên triển khai dữ liệu thử nghiệm cho Đồng bằng sông Cửu Long, Tây Nguyên và các vùng rau
-                      màu quanh đô thị lớn.
-                    </p>
-                  </div>
-                </div>
-              </div>
+        <div className="mt-10 grid gap-8 lg:grid-cols-[1fr_0.85fr]">
+          <form onSubmit={handleSubmit} className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+            <div className="mb-7">
+              <p className="text-sm font-black uppercase tracking-wide text-emerald-700">Gửi yêu cầu hỗ trợ</p>
+              <h2 className="mt-2 text-3xl font-black">Chúng tôi có thể giúp gì cho bạn?</h2>
+              <p className="mt-2 text-slate-600">Biểu mẫu này có thể nối backend để lưu vào bảng contact_messages và gửi thông báo qua email/Zalo.</p>
             </div>
 
-            <form onSubmit={handleSubmit} className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-              <h2 className="text-2xl font-bold text-gray-900">Gửi yêu cầu</h2>
-              <p className="mt-2 text-sm text-gray-600">Các trường này đang xử lý ở FE, chưa gửi về server.</p>
-
-              {submitted && (
-                <div className="mt-5 rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
-                  Đã ghi nhận yêu cầu của {formData.fullName || 'bạn'} trên giao diện FE.
-                </div>
-              )}
-
-              <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-gray-700">Họ và tên</label>
-                  <input
-                    name="fullName"
-                    value={formData.fullName}
-                    onChange={handleChange}
-                    required
-                    className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
-                    placeholder="Nguyễn Văn An"
-                  />
-                </div>
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-gray-700">Số điện thoại</label>
-                  <input
-                    name="phone"
-                    value={formData.phone}
-                    onChange={handleChange}
-                    required
-                    className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
-                    placeholder="0912 345 678"
-                  />
-                </div>
+            {submitted && (
+              <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-700">
+                ✅ Đã ghi nhận yêu cầu mẫu. Khi nối API thật, nội dung này sẽ được lưu vào database và gửi cho đội hỗ trợ.
               </div>
+            )}
 
-              <div className="mt-4">
-                <label className="mb-2 block text-sm font-medium text-gray-700">Email</label>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="space-y-2">
+                <span className="text-sm font-bold text-slate-700">Họ tên</span>
                 <input
-                  name="email"
+                  value={form.name}
+                  onChange={(event) => updateField("name", event.target.value)}
+                  required
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-4 focus:ring-emerald-100"
+                  placeholder="Nguyễn Văn A"
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="text-sm font-bold text-slate-700">Số điện thoại</span>
+                <input
+                  value={form.phone}
+                  onChange={(event) => updateField("phone", event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-4 focus:ring-emerald-100"
+                  placeholder="09xx xxx xxx"
+                />
+              </label>
+              <label className="space-y-2">
+                <span className="text-sm font-bold text-slate-700">Email</span>
+                <input
                   type="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
+                  value={form.email}
+                  onChange={(event) => updateField("email", event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-4 focus:ring-emerald-100"
                   placeholder="email@example.com"
                 />
-              </div>
-
-              <div className="mt-4">
-                <label className="mb-2 block text-sm font-medium text-gray-700">Chủ đề</label>
-                <select
-                  name="topic"
-                  value={formData.topic}
-                  onChange={handleChange}
-                  className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
-                >
-                  <option>Tư vấn triển khai</option>
-                  <option>Hỗ trợ kỹ thuật</option>
-                  <option>Tích hợp API</option>
-                  <option>Góp ý sản phẩm</option>
-                </select>
-              </div>
-
-              <div className="mt-4">
-                <label className="mb-2 block text-sm font-medium text-gray-700">Nội dung</label>
-                <textarea
-                  name="message"
-                  value={formData.message}
-                  onChange={handleChange}
-                  required
-                  rows={6}
-                  className="w-full resize-none rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
-                  placeholder="Mô tả quy mô trang trại, cây trồng, khu vực và nhu cầu chính..."
+              </label>
+              <label className="space-y-2">
+                <span className="text-sm font-bold text-slate-700">Khu vực</span>
+                <input
+                  value={form.region}
+                  onChange={(event) => updateField("region", event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-4 focus:ring-emerald-100"
+                  placeholder="VD: Đà Lạt, Lâm Đồng"
                 />
+              </label>
+              <label className="space-y-2 sm:col-span-2">
+                <span className="text-sm font-bold text-slate-700">Chủ đề</span>
+                <select
+                  value={form.topic}
+                  onChange={(event) => updateField("topic", event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-4 focus:ring-emerald-100"
+                >
+                  {topics.map((topic) => (
+                    <option key={topic}>{topic}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-2 sm:col-span-2">
+                <span className="text-sm font-bold text-slate-700">Nội dung</span>
+                <textarea
+                  value={form.message}
+                  onChange={(event) => updateField("message", event.target.value)}
+                  required
+                  rows={5}
+                  className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-4 focus:ring-emerald-100"
+                  placeholder="Mô tả nhu cầu, lỗi gặp phải hoặc tính năng muốn được tư vấn..."
+                />
+              </label>
+            </div>
+
+            <button type="submit" className="mt-6 w-full rounded-2xl bg-emerald-600 px-5 py-4 font-black text-white shadow-lg shadow-emerald-600/20 transition hover:bg-emerald-700">
+              Gửi yêu cầu hỗ trợ
+            </button>
+          </form>
+
+          <aside className="space-y-6">
+            <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-2xl font-black">Đi nhanh đến tính năng liên quan</h2>
+              <div className="mt-5 grid gap-3">
+                <Link to="/weather" className="rounded-2xl bg-slate-50 p-4 font-bold text-slate-700 transition hover:bg-emerald-50 hover:text-emerald-700">🌦️ Kiểm tra thời tiết</Link>
+                <Link to="/pricing" className="rounded-2xl bg-slate-50 p-4 font-bold text-slate-700 transition hover:bg-emerald-50 hover:text-emerald-700">💰 Xem giá nông sản</Link>
+                <Link to="/harvest" className="rounded-2xl bg-slate-50 p-4 font-bold text-slate-700 transition hover:bg-emerald-50 hover:text-emerald-700">🌾 Dự báo thu hoạch</Link>
+                <Link to="/market" className="rounded-2xl bg-slate-50 p-4 font-bold text-slate-700 transition hover:bg-emerald-50 hover:text-emerald-700">🛒 Chiến lược thị trường</Link>
               </div>
+            </div>
 
-              <button
-                type="submit"
-                className="mt-6 flex w-full items-center justify-center gap-2 rounded-lg bg-green-700 px-5 py-3 font-semibold text-white hover:bg-green-800"
-              >
-                <Send className="h-5 w-5" />
-                Gửi yêu cầu
-              </button>
-            </form>
-          </div>
-        </section>
-      </main>
-
-      <PublicFooter />
-    </div>
+            <div className="rounded-[2rem] border border-amber-200 bg-amber-50 p-6">
+              <h2 className="text-2xl font-black">Nâng cấp backend nên có</h2>
+              <ul className="mt-4 space-y-3 text-sm leading-6 text-slate-700">
+                <li>• Tạo bảng contact_messages để lưu yêu cầu.</li>
+                <li>• Gửi email/Zalo OA khi có yêu cầu mới.</li>
+                <li>• Thêm trạng thái: new, processing, done.</li>
+                <li>• Cho admin xem và phản hồi trong dashboard.</li>
+              </ul>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </main>
   );
-};
-
-export default ContactPage;
+}

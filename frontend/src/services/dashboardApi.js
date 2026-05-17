@@ -3,6 +3,56 @@ import api from './api';
 const unwrap = (response) => response.data?.data ?? response.data;
 
 export const dashboardApi = {
+  getOverview: async (region, { cropName = 'lua' } = {}) => {
+    const response = await api.get('/api/dashboard/overview', {
+      params: {
+        region: region || undefined,
+        crop_name: cropName,
+      },
+    });
+    return unwrap(response);
+  },
+
+  getRealtimeStatus: async (region, { cropName = 'lua' } = {}) => {
+    const response = await api.get('/api/dashboard/realtime-status', {
+      params: {
+        region: region || undefined,
+        crop_name: cropName,
+      },
+    });
+    return unwrap(response);
+  },
+
+  getAiInsights: async (region, { cropName = 'lua' } = {}) => {
+    const response = await api.get('/api/dashboard/ai-insights', {
+      params: {
+        region: region || undefined,
+        crop_name: cropName,
+      },
+    });
+    return unwrap(response);
+  },
+
+  getRiskSummary: async (region, { cropName = 'lua' } = {}) => {
+    const response = await api.get('/api/dashboard/risk-summary', {
+      params: {
+        region: region || undefined,
+        crop_name: cropName,
+      },
+    });
+    return unwrap(response);
+  },
+
+  getActionToday: async (region, { cropName = 'lua' } = {}) => {
+    const response = await api.get('/api/dashboard/action-today', {
+      params: {
+        region: region || undefined,
+        crop_name: cropName,
+      },
+    });
+    return unwrap(response);
+  },
+
   getSummary: async (region, { cropName = 'lua', forceRefresh = false } = {}) => {
     const response = await api.get('/api/dashboard/summary', {
       params: {

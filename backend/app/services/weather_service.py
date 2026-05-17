@@ -9,7 +9,12 @@ from datetime import date, datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.integrations.weather_client import WeatherClient
-from app.repositories.weather_repository import create_weather_data, get_latest_weather, get_weather_forecast
+from app.repositories.weather_repository import (
+    create_weather_data,
+    get_latest_weather,
+    get_weather_forecast,
+    upsert_weather_cache,
+)
 from app.schemas.weather_schema import WeatherCreateRequest
 
 _weather_client = WeatherClient()
@@ -73,6 +78,24 @@ class WeatherService:
             temp_max = live.get("temp_max")
             rain = live.get("rainfall") or 0.0
             hum = live.get("humidity") or 70.0
+            upsert_weather_cache(
+                db,
+                region=region,
+                record_date=date.today(),
+                temp_min=temp_min,
+                temp_max=temp_max,
+                rainfall=rain,
+                humidity=hum,
+                condition=live.get("condition"),
+                latitude=live.get("latitude"),
+                longitude=live.get("longitude"),
+                wind_speed=live.get("wind_speed"),
+                uv_index=live.get("uv_index"),
+                pressure=live.get("pressure"),
+                weather_code=live.get("weather_code"),
+                source_name=live.get("source_name") or "Open-Meteo",
+                source_updated_at=live.get("source_updated_at") or now,
+            )
             return {
                 "region":           region,
                 "temperature":      temp,
@@ -682,6 +705,185 @@ class WeatherService:
             "data_note": "Dữ liệu thời tiết từ Open-Meteo (nguồn mở, cập nhật mỗi giờ). Khuyến nghị dựa trên rule-based engine.",
         }
 
+
+    def get_forecast(self, db: Session, region: str, days: int = 7) -> list[dict]:
+        """7-day forecast: realtime API, cached DB fallback, then mock fallback."""
+        norm = _normalize_region(region)
+        try:
+            live_items = _weather_client.get_forecast(norm, days)
+            humidity_hint = None
+            try:
+                humidity_hint = self.get_current_weather(db, norm).get("humidity")
+            except Exception:
+                humidity_hint = None
+            result = []
+            for item in live_items[:days]:
+                temp_max = item.get("temp_max")
+                temp_min = item.get("temp_min")
+                rain = float(item.get("rainfall") or 0)
+                hum = item.get("humidity") if item.get("humidity") is not None else humidity_hint
+                hum = float(hum if hum is not None else 70)
+                record_date = date.fromisoformat(str(item["date"])[:10])
+                upsert_weather_cache(
+                    db,
+                    region=norm,
+                    record_date=record_date,
+                    temp_min=temp_min,
+                    temp_max=temp_max,
+                    rainfall=rain,
+                    humidity=hum,
+                    condition=item.get("condition"),
+                    wind_speed=item.get("wind_speed"),
+                    uv_index=item.get("uv_index"),
+                    weather_code=item.get("weather_code"),
+                    source_name=item.get("source_name") or "Open-Meteo",
+                    source_updated_at=item.get("last_updated") or datetime.now(),
+                )
+                result.append({
+                    **item,
+                    "humidity": round(hum, 1),
+                    "warnings": self._analyze_warnings(
+                        float(temp_max or item.get("temperature") or 30),
+                        float(temp_min or item.get("temperature") or 20),
+                        rain,
+                        hum,
+                    ),
+                    "source": "realtime_api",
+                    "source_name": item.get("source_name") or "Open-Meteo",
+                    "is_realtime": True,
+                    "is_mock": False,
+                    "cache_status": "live",
+                    "last_updated": item.get("last_updated") or datetime.now(),
+                })
+            if result:
+                return result
+        except Exception:
+            pass
+
+        rows = get_weather_forecast(db, norm, days)
+        if rows:
+            result = []
+            for w in rows[:days]:
+                temp_max = float(w.TempMax or 30)
+                temp_min = float(w.TempMin or 20)
+                rain = float(w.Rainfall or 0)
+                hum = float(w.Humidity or 70)
+                updated = w.SourceUpdatedAt or w.CreatedAt or datetime.now()
+                result.append({
+                    "date": str(w.RecordDate),
+                    "temperature": round((temp_max + temp_min) / 2, 1),
+                    "temp_min": temp_min,
+                    "temp_max": temp_max,
+                    "humidity": round(hum, 1),
+                    "rainfall": round(rain, 1),
+                    "condition": w.WeatherDesc or "unknown",
+                    "wind_speed": float(w.WindSpeed) if w.WindSpeed is not None else None,
+                    "uv_index": float(w.UVIndex) if w.UVIndex is not None else None,
+                    "weather_code": w.WeatherCode,
+                    "source": "cached",
+                    "source_name": w.SourceName or "Open-Meteo cache",
+                    "is_realtime": False,
+                    "is_mock": False,
+                    "cache_status": "from_db",
+                    "last_updated": updated,
+                    "warnings": self._analyze_warnings(temp_max, temp_min, rain, hum),
+                })
+            return result
+
+        base = MOCK_WEATHER.get(norm, MOCK_WEATHER["default"])
+        result = []
+        for i in range(1, days + 1):
+            dt = (date.today() + timedelta(days=i)).isoformat()
+            variation = random.uniform(-2, 2)
+            rain = max(0.0, base["rainfall"] + random.uniform(-5, 10))
+            hum = min(100.0, max(30.0, base["humidity"] + random.uniform(-5, 5)))
+            temp = base["temperature"] + variation
+            result.append({
+                "date": dt,
+                "temperature": round(temp, 1),
+                "temp_min": round(base["temp_min"] + variation, 1),
+                "temp_max": round(base["temp_max"] + variation, 1),
+                "humidity": round(hum, 1),
+                "rainfall": round(rain, 1),
+                "condition": base["condition"],
+                "source": "mock",
+                "source_name": "Weather demo fallback",
+                "is_realtime": False,
+                "is_mock": True,
+                "cache_status": "mock",
+                "last_updated": datetime.now(),
+                "warnings": self._analyze_warnings(temp, base["temp_min"] + variation, rain, hum),
+            })
+        return result
+
+    def analyze_agriculture_risk(self, db: Session, region: str, crop_name: str) -> dict:
+        current = self.get_current_weather(db, region)
+        forecast = self.get_forecast(db, region, 7)
+        alerts = self.generate_alerts(current, forecast, crop_name=crop_name)
+        temp = float(current.get("temperature") or current.get("temp_max") or 0)
+        humidity = float(current.get("humidity") or 0)
+        wind = float(current.get("wind_speed") or 0)
+        rain_3d = sum(float(item.get("rainfall") or 0) for item in forecast[:3])
+        risk_items = [
+            {"type": "heavy_rain", "risk": "high" if rain_3d >= 60 else "medium" if rain_3d >= 25 else "low", "value": rain_3d, "unit": "mm/3d"},
+            {"type": "heat", "risk": "high" if temp >= 37 else "medium" if temp >= 34 else "low", "value": temp, "unit": "C"},
+            {"type": "strong_wind", "risk": "high" if wind >= 30 else "medium" if wind >= 20 else "low", "value": wind, "unit": "km/h"},
+            {"type": "high_humidity", "risk": "high" if humidity >= 90 else "medium" if humidity >= 82 else "low", "value": humidity, "unit": "%"},
+        ]
+        disease_risk = "high" if humidity >= 88 and rain_3d >= 25 else "medium" if humidity >= 82 else "low"
+        score = sum({"low": 10, "medium": 25, "high": 40}[item["risk"]] for item in risk_items)
+        score = min(100, score + min(len(alerts) * 5, 20))
+        risk_level = "high" if score >= 70 else "medium" if score >= 40 else "low"
+        confidence = 0.88 if current.get("is_realtime") else 0.72 if not current.get("is_mock") else 0.45
+        return {
+            "region": _normalize_region(region),
+            "crop": crop_name,
+            "risk_level": risk_level,
+            "risk_score": score,
+            "disease_risk": disease_risk,
+            "risks": risk_items,
+            "alerts": alerts,
+            "confidence": confidence,
+            "reasons": [
+                f"Rain next 3 days: {rain_3d:.1f} mm",
+                f"Temperature: {temp:.1f} C",
+                f"Humidity: {humidity:.1f}%",
+                f"Wind: {wind:.1f} km/h",
+            ],
+            "source": "ai_generated",
+            "source_name": "Rule-based weather risk engine",
+            "is_mock": bool(current.get("is_mock")),
+            "cache_status": current.get("cache_status", "unknown"),
+            "last_updated": datetime.now(),
+        }
+
+    def farming_recommendation(self, db: Session, region: str, crop_name: str) -> dict:
+        current = self.get_current_weather(db, region)
+        forecast = self.get_forecast(db, region, 7)
+        hourly = self.get_hourly_forecast(db, region, 24)
+        recommendations = self.build_activity_recommendations(current, forecast, hourly, crop_name=crop_name)
+        risk = self.analyze_agriculture_risk(db, region, crop_name)
+        should_irrigate = next((item for item in recommendations if item.get("action_type") == "irrigation"), None)
+        should_spray = next((item for item in recommendations if item.get("action_type") == "spraying"), None)
+        actions = [item.get("reason") for item in recommendations[:4] if item.get("reason")]
+        if risk["risk_level"] == "high":
+            actions.insert(0, "Prioritize field safety checks before spraying or fertilizing.")
+        return {
+            "region": _normalize_region(region),
+            "crop": crop_name,
+            "risk_level": risk["risk_level"],
+            "confidence": risk["confidence"],
+            "should_irrigate": should_irrigate,
+            "should_spray": should_spray,
+            "recommendations": recommendations,
+            "recommended_actions": actions,
+            "message": "Weather recommendation generated from realtime/cache weather plus rule-based agronomy thresholds.",
+            "source": "ai_generated",
+            "source_name": "AI Weather Advisor fallback engine",
+            "is_mock": bool(current.get("is_mock")),
+            "cache_status": current.get("cache_status", "unknown"),
+            "last_updated": datetime.now(),
+        }
 
     def generate_alerts(self, _current: dict, forecast: list[dict], crop_name: str | None = None, growth_stage: str | None = None) -> list[dict]:
         """Public wrapper để dashboard_service có thể gọi được."""

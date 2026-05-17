@@ -1,219 +1,217 @@
-import { Check, HelpCircle, ShieldCheck, Sparkles, Users } from 'lucide-react';
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import PublicFooter from '../components/PublicFooter';
-import PublicHeader from '../components/PublicHeader';
+import React, { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import AgriNavbar from "../components/AgriNavbar";
 
 const plans = [
   {
-    name: 'Cơ bản',
+    name: "Miễn phí",
+    audience: "Nông hộ mới dùng thử",
     monthly: 0,
     yearly: 0,
-    description: 'Phù hợp để trải nghiệm các nghiệp vụ chính trên một trang trại nhỏ.',
-    badge: 'Bắt đầu nhanh',
-    features: ['1 khu canh tác', 'Tra cứu giá cơ bản', '5 lượt kiểm định ảnh/tháng', 'Thông báo trong ứng dụng'],
+    description: "Phù hợp để trải nghiệm các tính năng cơ bản của hệ thống.",
+    features: ["Xem thời tiết cơ bản", "Tra cứu giá mẫu", "5 lượt hỏi AI/ngày", "Bài viết hướng dẫn", "Lưu 1 mùa vụ"],
+    cta: "Bắt đầu miễn phí",
+    route: "/ai-chat",
   },
   {
-    name: 'Nông trại',
-    monthly: 249000,
-    yearly: 2490000,
-    description: 'Dành cho hộ sản xuất cần theo dõi mùa vụ, chất lượng và cảnh báo thường xuyên.',
-    badge: 'Phổ biến',
-    highlighted: true,
-    features: [
-      '10 khu canh tác',
-      'Dự báo giá và thu hoạch',
-      '200 lượt kiểm định ảnh/tháng',
-      'Cảnh báo qua email/Zalo',
-      'Báo cáo mùa vụ định kỳ',
-    ],
+    name: "Nhà nông Pro",
+    audience: "Nông dân cá nhân",
+    monthly: 99000,
+    yearly: 990000,
+    popular: true,
+    description: "Gói cân bằng giữa chi phí và khả năng hỗ trợ ra quyết định hằng ngày.",
+    features: ["Dự báo thời tiết nông nghiệp 7 ngày", "Cảnh báo mưa, gió, độ ẩm", "Dự báo ngày thu hoạch", "AI tư vấn không giới hạn hợp lý", "Theo dõi giá theo khu vực", "Tạo cảnh báo giá"],
+    cta: "Chọn gói Pro",
+    route: "/contact",
   },
   {
-    name: 'Hợp tác xã',
-    monthly: 990000,
-    yearly: 9900000,
-    description: 'Cho đội vận hành nhiều vùng trồng, nhiều người dùng và nhu cầu báo cáo tổng hợp.',
-    badge: 'Mở rộng',
-    features: [
-      'Không giới hạn khu canh tác',
-      'Quản lý thành viên',
-      'API tích hợp dữ liệu',
-      'Dashboard tổng hợp vùng trồng',
-      'Hỗ trợ ưu tiên',
-    ],
+    name: "Hợp tác xã",
+    audience: "Nhóm hộ và HTX",
+    monthly: 299000,
+    yearly: 2990000,
+    description: "Quản lý nhiều mùa vụ, nhiều khu vực và hỗ trợ ra quyết định theo nhóm.",
+    features: ["Quản lý nhiều nông hộ", "Báo cáo mùa vụ", "So sánh giá vùng miền", "Gợi ý kênh bán hàng", "Lịch nhắc công việc", "Xuất báo cáo PDF/Excel"],
+    cta: "Tư vấn gói HTX",
+    route: "/contact",
+  },
+  {
+    name: "Doanh nghiệp",
+    audience: "Đơn vị thu mua / phân phối",
+    monthly: null,
+    yearly: null,
+    description: "Tùy chỉnh API, dashboard và tích hợp dữ liệu theo quy trình doanh nghiệp.",
+    features: ["Dashboard tùy chỉnh", "Tích hợp API nội bộ", "Theo dõi vùng nguyên liệu", "Phân quyền tài khoản", "Hỗ trợ kỹ thuật ưu tiên", "Tư vấn triển khai riêng"],
+    cta: "Liên hệ triển khai",
+    route: "/contact",
   },
 ];
 
-const faqs = [
-  {
-    question: 'Bảng giá này đã kết nối thanh toán chưa?',
-    answer: 'Chưa. Đây là phần FE hoàn chỉnh để hiển thị gói dịch vụ; BE billing/payment có thể nối sau.',
-  },
-  {
-    question: 'Có thể đổi gói sau khi dùng thử không?',
-    answer: 'Có. Luồng đổi gói sẽ được xử lý khi có API tài khoản và thanh toán.',
-  },
-  {
-    question: 'Dữ liệu cảnh báo qua Zalo lấy từ đâu?',
-    answer: 'FE đã chuẩn bị luồng hiển thị. BE cần cung cấp cấu hình kênh nhận và trạng thái gửi thông báo.',
-  },
+const comparisonRows = [
+  ["Thời tiết realtime", "Cơ bản", "Nâng cao", "Nâng cao", "Tùy chỉnh"],
+  ["Dự báo thu hoạch", "1 mùa vụ", "Không giới hạn hợp lý", "Nhiều mùa vụ", "Theo vùng nguyên liệu"],
+  ["Giá nông sản", "Dữ liệu mẫu", "Theo khu vực", "So sánh vùng miền", "API riêng"],
+  ["AI Chat", "5 lượt/ngày", "Ưu tiên", "Ưu tiên nhóm", "Tùy chỉnh tri thức"],
+  ["Báo cáo", "Không", "Cơ bản", "PDF/Excel", "Theo yêu cầu"],
 ];
 
-const formatPrice = (value) => {
-  if (value === 0) return 'Miễn phí';
-  return new Intl.NumberFormat('vi-VN').format(value);
+const formatPrice = (price) => {
+  if (price === null) return "Liên hệ";
+  if (price === 0) return "0đ";
+  return new Intl.NumberFormat("vi-VN").format(price) + "đ";
 };
 
-const SubscriptionPricingPage = () => {
-  const [billingCycle, setBillingCycle] = useState('monthly');
+export default function SubscriptionPricingPage() {
+  const [billing, setBilling] = useState("monthly");
+
+  const billingText = useMemo(() => (billing === "monthly" ? "/tháng" : "/năm"), [billing]);
 
   return (
-    <div className="min-h-screen bg-white">
-      <PublicHeader />
-
-      <main>
-        <section className="bg-gray-50 py-16">
-          <div className="mx-auto max-w-7xl px-4 text-center sm:px-6 lg:px-8">
-            <p className="text-sm font-semibold uppercase tracking-wide text-green-700">Bảng giá</p>
-            <h1 className="mx-auto mt-3 max-w-3xl text-4xl font-bold text-gray-900">
-              Chọn gói phù hợp với quy mô canh tác
+    <main className="min-h-screen bg-slate-50 text-slate-900">
+      <AgriNavbar />
+      <section className="overflow-hidden bg-gradient-to-br from-slate-950 via-emerald-950 to-green-800 text-white">
+        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-3xl text-center">
+            <span className="inline-flex rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sm font-bold text-emerald-50">
+              💳 Gói dịch vụ AgriAI
+            </span>
+            <h1 className="mt-6 text-4xl font-black tracking-tight sm:text-5xl">
+              Chọn gói phù hợp với quy mô sản xuất của bạn
             </h1>
-            <p className="mx-auto mt-4 max-w-2xl leading-7 text-gray-600">
-              Các gói dưới đây phục vụ phần đăng ký và nâng cấp phía FE. Khi BE sẵn sàng, form có thể nối
-              vào auth, subscription và payment API.
+            <p className="mt-5 text-lg leading-8 text-emerald-50">
+              Trang pricing nên thể hiện rõ giá trị của hệ thống: thời tiết realtime, dự báo thu hoạch, định giá nông sản, thị trường và AI tư vấn.
             </p>
 
-            <div className="mt-8 inline-flex rounded-lg border border-gray-300 bg-white p-1">
+            <div className="mt-8 inline-flex rounded-2xl border border-white/15 bg-white/10 p-1 backdrop-blur">
               <button
-                type="button"
-                onClick={() => setBillingCycle('monthly')}
-                className={`rounded-md px-5 py-2 text-sm font-semibold ${
-                  billingCycle === 'monthly' ? 'bg-green-700 text-white' : 'text-gray-700'
-                }`}
+                onClick={() => setBilling("monthly")}
+                className={`rounded-xl px-5 py-3 font-bold transition ${billing === "monthly" ? "bg-white text-emerald-800" : "text-white hover:bg-white/10"}`}
               >
                 Theo tháng
               </button>
               <button
-                type="button"
-                onClick={() => setBillingCycle('yearly')}
-                className={`rounded-md px-5 py-2 text-sm font-semibold ${
-                  billingCycle === 'yearly' ? 'bg-green-700 text-white' : 'text-gray-700'
-                }`}
+                onClick={() => setBilling("yearly")}
+                className={`rounded-xl px-5 py-3 font-bold transition ${billing === "yearly" ? "bg-white text-emerald-800" : "text-white hover:bg-white/10"}`}
               >
-                Theo năm
+                Theo năm <span className="ml-1 rounded-full bg-lime-300 px-2 py-0.5 text-xs text-lime-950">tiết kiệm</span>
               </button>
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <section className="py-12">
-          <div className="mx-auto grid max-w-7xl gap-6 px-4 sm:px-6 lg:grid-cols-3 lg:px-8">
-            {plans.map((plan) => {
-              const price = billingCycle === 'monthly' ? plan.monthly : plan.yearly;
-              return (
-                <article
-                  key={plan.name}
-                  className={`rounded-lg border p-6 shadow-sm ${
-                    plan.highlighted ? 'border-green-700 bg-green-50' : 'border-gray-200 bg-white'
+      <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+        <div className="grid gap-6 lg:grid-cols-4">
+          {plans.map((plan) => {
+            const price = plan[billing];
+            return (
+              <article
+                key={plan.name}
+                className={`relative flex flex-col rounded-[2rem] border bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-xl ${
+                  plan.popular ? "border-emerald-400 ring-4 ring-emerald-100" : "border-slate-200"
+                }`}
+              >
+                {plan.popular && (
+                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 rounded-full bg-emerald-600 px-4 py-2 text-xs font-black text-white shadow-lg">
+                    Đề xuất tốt nhất
+                  </div>
+                )}
+                <div className="min-h-[155px]">
+                  <p className="text-sm font-bold text-emerald-700">{plan.audience}</p>
+                  <h2 className="mt-2 text-2xl font-black">{plan.name}</h2>
+                  <p className="mt-3 text-sm leading-6 text-slate-600">{plan.description}</p>
+                </div>
+
+                <div className="mt-5 rounded-2xl bg-slate-50 p-4">
+                  <p className="text-3xl font-black text-slate-950">
+                    {formatPrice(price)}
+                    {price !== null && price !== 0 && <span className="text-sm font-bold text-slate-500"> {billingText}</span>}
+                  </p>
+                </div>
+
+                <ul className="mt-6 flex-1 space-y-3 text-sm leading-6 text-slate-700">
+                  {plan.features.map((feature) => (
+                    <li key={feature} className="flex gap-2">
+                      <span className="mt-0.5 text-emerald-600">✓</span>
+                      <span>{feature}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <Link
+                  to={plan.route}
+                  className={`mt-7 inline-flex items-center justify-center rounded-2xl px-4 py-3 font-black transition ${
+                    plan.popular ? "bg-emerald-600 text-white hover:bg-emerald-700" : "bg-slate-900 text-white hover:bg-emerald-700"
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <h2 className="text-xl font-bold text-gray-900">{plan.name}</h2>
-                      <p className="mt-2 text-sm leading-6 text-gray-600">{plan.description}</p>
-                    </div>
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                        plan.highlighted ? 'bg-green-700 text-white' : 'bg-gray-100 text-gray-700'
-                      }`}
-                    >
-                      {plan.badge}
-                    </span>
-                  </div>
+                  {plan.cta}
+                </Link>
+              </article>
+            );
+          })}
+        </div>
 
-                  <div className="mt-6">
-                    <div className="flex items-end gap-2">
-                      <span className="text-4xl font-bold text-gray-900">{formatPrice(price)}</span>
-                      {price > 0 && (
-                        <span className="pb-1 text-sm text-gray-600">
-                          đ/{billingCycle === 'monthly' ? 'tháng' : 'năm'}
-                        </span>
-                      )}
-                    </div>
-                    {billingCycle === 'yearly' && price > 0 && (
-                      <p className="mt-2 text-sm font-medium text-green-700">Tiết kiệm khoảng 2 tháng phí.</p>
-                    )}
-                  </div>
-
-                  <div className="mt-6 space-y-3">
-                    {plan.features.map((feature) => (
-                      <div key={feature} className="flex items-start gap-3 text-sm text-gray-700">
-                        <Check className="mt-0.5 h-4 w-4 text-green-700" />
-                        <span>{feature}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <Link
-                    to={plan.monthly === 0 ? '/register' : '/contact'}
-                    className={`mt-8 block rounded-lg px-5 py-3 text-center font-semibold ${
-                      plan.highlighted
-                        ? 'bg-green-700 text-white hover:bg-green-800'
-                        : 'border border-gray-300 text-gray-800 hover:bg-gray-50'
-                    }`}
-                  >
-                    {plan.monthly === 0 ? 'Dùng thử' : 'Tư vấn gói này'}
-                  </Link>
-                </article>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="bg-gray-50 py-14">
-          <div className="mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:px-8">
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-wide text-green-700">Bao gồm trong mọi gói</p>
-              <h2 className="mt-2 text-3xl font-bold text-gray-900">Nền tảng vận hành ổn định trước khi mở rộng BE</h2>
-              <div className="mt-6 grid gap-4 sm:grid-cols-3 lg:grid-cols-1">
-                <div className="rounded-lg border border-gray-200 bg-white p-4">
-                  <Sparkles className="mb-3 h-5 w-5 text-green-700" />
-                  <h3 className="font-semibold text-gray-900">Giao diện AI-first</h3>
-                  <p className="mt-1 text-sm text-gray-600">Các màn hình đã chuẩn bị vị trí cho dự báo và gợi ý AI.</p>
-                </div>
-                <div className="rounded-lg border border-gray-200 bg-white p-4">
-                  <Users className="mb-3 h-5 w-5 text-blue-600" />
-                  <h3 className="font-semibold text-gray-900">Sẵn sàng phân quyền</h3>
-                  <p className="mt-1 text-sm text-gray-600">Có thể nối user, role và team khi BE hoàn thiện auth.</p>
-                </div>
-                <div className="rounded-lg border border-gray-200 bg-white p-4">
-                  <ShieldCheck className="mb-3 h-5 w-5 text-amber-600" />
-                  <h3 className="font-semibold text-gray-900">Theo dõi cảnh báo</h3>
-                  <p className="mt-1 text-sm text-gray-600">Luồng thông báo và cài đặt kênh nhận đã có ở FE.</p>
-                </div>
+        <div className="mt-12 grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
+          <div className="rounded-[2rem] border border-emerald-100 bg-emerald-50 p-6">
+            <p className="text-sm font-black uppercase tracking-wide text-emerald-700">Nâng cấp tính năng</p>
+            <h2 className="mt-2 text-3xl font-black">Nên làm thêm để trang pricing chuyên nghiệp hơn</h2>
+            <div className="mt-6 space-y-4">
+              <div className="rounded-2xl bg-white p-4 shadow-sm">
+                <h3 className="font-black">Tính giá theo nhu cầu</h3>
+                <p className="mt-1 text-sm leading-6 text-slate-600">Cho người dùng chọn diện tích, số mùa vụ, số cảnh báo, số tài khoản để hệ thống gợi ý gói phù hợp.</p>
+              </div>
+              <div className="rounded-2xl bg-white p-4 shadow-sm">
+                <h3 className="font-black">Liên kết thanh toán sau</h3>
+                <p className="mt-1 text-sm leading-6 text-slate-600">Hiện tại có thể để nút liên hệ. Sau này có thể nối VNPay, Momo hoặc quản lý subscription trong DB.</p>
+              </div>
+              <div className="rounded-2xl bg-white p-4 shadow-sm">
+                <h3 className="font-black">Phân quyền theo gói</h3>
+                <p className="mt-1 text-sm leading-6 text-slate-600">Ẩn/hiện tính năng AI, cảnh báo giá, báo cáo và số mùa vụ theo plan của tài khoản.</p>
               </div>
             </div>
+          </div>
 
-            <div className="space-y-4">
-              {faqs.map((faq) => (
-                <div key={faq.question} className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-                  <div className="flex gap-3">
-                    <HelpCircle className="mt-0.5 h-5 w-5 text-green-700" />
-                    <div>
-                      <h3 className="font-bold text-gray-900">{faq.question}</h3>
-                      <p className="mt-2 text-sm leading-6 text-gray-600">{faq.answer}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
+          <div className="overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-200 p-6">
+              <h2 className="text-2xl font-black">So sánh tính năng</h2>
+              <p className="mt-2 text-slate-600">Bảng này giúp người dùng hiểu rõ vì sao nên nâng cấp gói.</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-left text-sm">
+                <thead className="bg-slate-50 text-slate-500">
+                  <tr>
+                    <th className="p-4 font-black">Tính năng</th>
+                    {plans.map((plan) => (
+                      <th key={plan.name} className="p-4 font-black">{plan.name}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {comparisonRows.map((row) => (
+                    <tr key={row[0]} className="border-t border-slate-100">
+                      {row.map((cell, index) => (
+                        <td key={`${row[0]}-${index}`} className={`p-4 ${index === 0 ? "font-bold text-slate-900" : "text-slate-600"}`}>
+                          {cell}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
-        </section>
-      </main>
+        </div>
 
-      <PublicFooter />
-    </div>
+        <div className="mt-12 rounded-[2rem] bg-slate-900 p-8 text-white lg:flex lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-3xl font-black">Chưa biết chọn gói nào?</h2>
+            <p className="mt-2 max-w-2xl text-slate-300">Hãy để AI hoặc đội hỗ trợ tư vấn theo loại cây trồng, diện tích, khu vực và nhu cầu cảnh báo.</p>
+          </div>
+          <div className="mt-6 flex flex-wrap gap-3 lg:mt-0">
+            <Link to="/ai-chat" className="rounded-2xl bg-white px-5 py-3 font-black text-slate-900 hover:bg-emerald-50">Hỏi AI tư vấn</Link>
+            <Link to="/contact" className="rounded-2xl bg-emerald-600 px-5 py-3 font-black text-white hover:bg-emerald-700">Liên hệ hỗ trợ</Link>
+          </div>
+        </div>
+      </section>
+    </main>
   );
-};
-
-export default SubscriptionPricingPage;
+}

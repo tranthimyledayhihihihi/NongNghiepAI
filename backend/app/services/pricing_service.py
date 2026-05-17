@@ -97,23 +97,49 @@ class PricingService:
         cache_key = f"price:{crop_name}:{region}:{quality_grade}"
         cached = redis_client.get(cache_key)
         if cached:
-            return cached
+            return {
+                **cached,
+                "source": "cached",
+                "source_name": cached.get("source_name") or "Redis price cache",
+                "cache_status": "cached",
+                "is_mock": bool(cached.get("is_mock")),
+                "confidence": cached.get("confidence", 0.72),
+            }
 
         latest_price = get_latest_price(db, crop_name, region, quality_grade)
         if latest_price:
             current_price = float(latest_price.price)
             last_updated = latest_price.collected_at
+            source_name = latest_price.SourceName or "MarketPrices DB"
+            source_url = latest_price.SourceURL
+            price_date = latest_price.PriceDate
+            is_mock = False
+            cache_status = "from_db"
         else:
             current_price = self._get_price_from_db(db, crop_name, region, quality_grade)
             last_updated = datetime.now()
+            source_name = "Pricing fallback"
+            source_url = None
+            price_date = None
+            is_mock = True
+            cache_status = "mock"
 
         result = {
             "crop_name": crop_name,
+            "crop": crop_name,
             "region": region,
             "current_price": current_price,
+            "market_price": current_price,
             "quality_grade": quality_grade,
             "price_trend": self.analyze_price_trend(db, crop_name, region),
             "last_updated": last_updated,
+            "source": "database" if not is_mock else "mock",
+            "source_name": source_name,
+            "source_url": source_url,
+            "price_date": price_date,
+            "cache_status": cache_status,
+            "is_mock": is_mock,
+            "confidence": 0.82 if not is_mock else 0.45,
         }
 
         # Bổ sung điều chỉnh thời tiết
@@ -264,6 +290,140 @@ class PricingService:
         return "stable"
 
     # ------------------------------------------------------------------ #
+    def forecast_price(self, crop_name: str, region: str, days: int = 7) -> dict:
+        base_price = self._mock_price(crop_name, region, "grade_1")
+        forecast_data = []
+        for offset in range(1, days + 1):
+            predicted = round(base_price * (1 + offset * 0.006), 2)
+            forecast_data.append({
+                "date": (datetime.now() + timedelta(days=offset)).date().isoformat(),
+                "predicted_price": predicted,
+                "confidence_lower": round(predicted * 0.92, 2),
+                "confidence_upper": round(predicted * 1.08, 2),
+            })
+        return {
+            "crop_name": crop_name,
+            "crop": crop_name,
+            "region": region,
+            "forecast_data": forecast_data,
+            "forecast_price_7d": forecast_data[min(days, 7) - 1]["predicted_price"] if forecast_data else base_price,
+            "trend": "increasing" if days >= 3 else "stable",
+            "recommendation": "Gia du bao tang nhe, co the can nhac giu hang neu bao quan duoc.",
+            "confidence": 0.62,
+            "source": "mock",
+            "source_name": "Rule-based moving average forecast",
+            "cache_status": "mock",
+            "is_mock": True,
+            "last_updated": datetime.now(),
+        }
+
+    def build_pricing_engine(
+        self,
+        db: Session,
+        *,
+        crop_name: str,
+        region: str,
+        quantity: float = 1,
+        quality_grade: str = "grade_1",
+        days: int = 7,
+    ) -> dict:
+        current = self.get_current_price(db, crop_name, region, quality_grade)
+        forecast = self.forecast_price(crop_name, region, days)
+        suggestion = self.suggest_price(
+            db,
+            PricingSuggestRequest(
+                crop_name=crop_name,
+                region=region,
+                quantity=max(float(quantity or 1), 1),
+                quality_grade=quality_grade,
+            ),
+        )
+        history = self.get_price_history(db, crop_name, region, 30)
+        trend = current.get("price_trend") or forecast.get("trend") or "stable"
+        market_price = float(current["current_price"])
+        forecast_price_7d = float(forecast.get("forecast_price_7d") or market_price)
+        suggested_price = float(suggestion.get("weather_suggested_price") or suggestion.get("suggested_price") or market_price)
+        reasons = [
+            f"Market price from {current.get('source_name', 'backend')}: {market_price:,.0f} VND/kg",
+            f"Trend is {trend} from recent DB/history signals",
+            f"Quality grade {quality_grade} and quantity {quantity:g} kg adjusted selling price",
+        ]
+        if suggestion.get("weather_summary"):
+            reasons.append(suggestion["weather_summary"])
+        recommendation = (
+            "Sell in small batches and enable a price alert."
+            if trend == "stable"
+            else "Consider holding part of the stock for 7 days."
+            if trend == "increasing"
+            else "Prioritize selling soon or locking buyer commitments."
+        )
+        is_mock = bool(current.get("is_mock")) or bool(forecast.get("is_mock"))
+        confidence = 0.76 if not is_mock else 0.48
+        return {
+            "crop": crop_name,
+            "crop_name": crop_name,
+            "region": region,
+            "market_price": market_price,
+            "current_price": market_price,
+            "forecast_price_7d": forecast_price_7d,
+            "suggested_price": suggested_price,
+            "trend": trend,
+            "confidence": confidence,
+            "reasons": reasons,
+            "recommendation": recommendation,
+            "history": history,
+            "forecast": forecast.get("forecast_data", []),
+            "nearby_region_prices": suggestion.get("nearby_region_prices", []),
+            "source": "ai_generated" if not is_mock else "mock",
+            "source_name": "AI Pricing Engine rule fallback",
+            "is_mock": is_mock,
+            "cache_status": current.get("cache_status", "computed"),
+            "last_updated": datetime.now(),
+        }
+
+    def compare_regions(self, db: Session, crop_name: str, region: str = "Ha Noi") -> dict:
+        suggestion = self.suggest_price(
+            db,
+            PricingSuggestRequest(
+                crop_name=crop_name,
+                region=region,
+                quantity=1,
+                quality_grade="grade_1",
+            ),
+        )
+        regions = suggestion.get("nearby_region_prices", [])
+        return {
+            "crop_name": crop_name,
+            "crop": crop_name,
+            "base_region": region,
+            "regions": regions,
+            "best_region": max(regions, key=lambda item: item.get("price", 0), default=None),
+            "source": "database" if regions else "mock",
+            "source_name": "MarketPrices DB / pricing fallback",
+            "is_mock": not bool(regions),
+            "cache_status": "from_db" if regions else "mock",
+            "confidence": 0.72 if regions else 0.42,
+            "last_updated": datetime.now(),
+        }
+
+    def explain_pricing(self, db: Session, crop_name: str, region: str, quality_grade: str = "grade_1") -> dict:
+        engine = self.build_pricing_engine(
+            db,
+            crop_name=crop_name,
+            region=region,
+            quality_grade=quality_grade,
+            quantity=1,
+            days=7,
+        )
+        return {
+            **engine,
+            "explanation": {
+                "summary": engine["recommendation"],
+                "factors": engine["reasons"],
+                "confidence_note": "Confidence drops when market API/DB is missing and demo fallback is used.",
+            },
+        }
+
     # Helpers - kết hợp cả Tien và Quang
     # ------------------------------------------------------------------ #
 

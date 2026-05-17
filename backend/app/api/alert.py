@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.auth import get_optional_current_user
+from app.api.response import api_response
 from app.core.database import get_db
 from app.models.user import User
 from app.schemas.alert_schema import (
@@ -122,6 +123,156 @@ class WeatherAlertCreateRequest(BaseModel):
     recommendation: str | None = None
     notification_channel: str = "email"
     receiver: str | None = None
+
+
+class SmartAlertRequest(BaseModel):
+    alert_type: str = "price"
+    crop_name: str | None = None
+    region: str = "Ha Noi"
+    severity: str = "medium"
+    title: str | None = None
+    message: str | None = None
+    recommended_action: list[str] | None = None
+    target_price: float | None = None
+    condition: str = "above"
+    send_channels: list[str] = ["app"]
+    receiver: str | None = None
+
+
+class TestChannelRequest(BaseModel):
+    channel: str = "app"
+    receiver: str | None = None
+
+
+@alerts_router.post("/create")
+async def smart_alert_create(
+    request: SmartAlertRequest,
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
+):
+    if request.alert_type == "weather":
+        payload = {
+            "region": request.region,
+            "condition": request.condition if request.condition in {"rainfall", "temperature", "wind", "humidity", "air_quality"} else "rainfall",
+            "threshold": request.target_price or 20,
+            "severity": request.severity,
+            "title": request.title,
+            "message": request.message,
+            "recommendation": "; ".join(request.recommended_action or []),
+            "notification_channel": (request.send_channels or ["app"])[0],
+            "receiver": request.receiver,
+        }
+        data = alert_service.create_weather_alert(db, payload, current_user)
+    else:
+        data = alert_service.create_price_alert(
+            db,
+            AlertCreateRequest(
+                crop_name=request.crop_name or "lua",
+                region=request.region,
+                target_price=request.target_price or 1,
+                condition=request.condition if request.condition in {"above", "below"} else "above",
+                notification_channel=(request.send_channels or ["app"])[0],
+                receiver=request.receiver or "",
+            ),
+            current_user,
+        )
+    return api_response(
+        data,
+        source="database",
+        source_name="Alert rules DB",
+        cache_status="from_db",
+        last_updated=data.get("created_at"),
+        confidence=0.7,
+    )
+
+
+@alerts_router.get("/list")
+async def smart_alert_list(
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
+):
+    alerts = alert_service.list_price_alerts(db, current_user)
+    return api_response(
+        {"alerts": alerts, "total": len(alerts)},
+        source="database",
+        source_name="Alert rules DB",
+        cache_status="from_db",
+        confidence=0.7,
+    )
+
+
+@alerts_router.post("/evaluate")
+async def smart_alert_evaluate(
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
+):
+    price_events = alert_service.check_and_trigger_alerts(db, current_user)
+    weather_events = alert_service.check_and_trigger_weather_alerts(db, current_user)
+    data = {
+        "events": price_events + weather_events,
+        "price_events": price_events,
+        "weather_events": weather_events,
+    }
+    return api_response(data, source="ai_generated", source_name="Alert evaluator", confidence=0.72)
+
+
+@alerts_router.post("/auto-generate")
+async def smart_alert_auto_generate(
+    request: SmartAlertRequest,
+    db: Session = Depends(get_db),
+):
+    from app.services.weather_service import weather_service
+    crop = request.crop_name or "lua"
+    risk = weather_service.analyze_agriculture_risk(db, request.region, crop)
+    data = {
+        "alert_type": request.alert_type or "weather",
+        "severity": "critical" if risk.get("risk_level") == "high" else risk.get("risk_level", "medium"),
+        "title": request.title or f"AI alert for {crop} in {request.region}",
+        "message": request.message or f"Risk level is {risk.get('risk_level')}; review recommended actions.",
+        "affected_crop": crop,
+        "recommended_action": request.recommended_action or risk.get("reasons", []),
+        "send_channels": request.send_channels,
+        "confidence": risk.get("confidence", 0.0),
+        "source": "ai_generated" if not risk.get("is_mock") else "mock",
+        "source_name": "AI Smart Alert generator",
+        "is_mock": risk.get("is_mock", False),
+    }
+    return api_response(
+        data,
+        source=data["source"],
+        source_name=data["source_name"],
+        is_mock=data["is_mock"],
+        confidence=data["confidence"],
+    )
+
+
+@alerts_router.post("/send")
+async def smart_alert_send(request: SmartAlertRequest):
+    data = {
+        "alert_type": request.alert_type,
+        "send_channels": request.send_channels,
+        "status": "stored" if "app" in request.send_channels else "mock_sent",
+        "message": request.message or "Alert queued for delivery.",
+        "source": "mock",
+        "source_name": "Notification provider fallback",
+        "is_mock": True,
+        "confidence": 0.5,
+    }
+    return api_response(data, source="mock", source_name=data["source_name"], is_mock=True, confidence=0.5)
+
+
+@alerts_router.post("/test-channel")
+async def smart_alert_test_channel(request: TestChannelRequest):
+    data = {
+        "channel": request.channel,
+        "receiver": request.receiver,
+        "status": "stored" if request.channel == "app" else "mock_sent",
+        "source": "mock",
+        "source_name": "Notification channel test fallback",
+        "is_mock": True,
+        "confidence": 0.5,
+    }
+    return api_response(data, source="mock", source_name=data["source_name"], is_mock=True, confidence=0.5)
 
 
 @weather_alert_router.post("/create")

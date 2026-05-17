@@ -13,6 +13,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import DataSourceBadge from '../components/DataSourceBadge';
 import { EmptyState, InlineLoading, PageError } from '../components/StatusState';
 import { getApiErrorMessage } from '../services/api';
 import { notificationsApi } from '../services/notificationsApi';
@@ -20,6 +21,7 @@ import { notificationsApi } from '../services/notificationsApi';
 const baseFilters = [
   { value: 'all', label: 'Tất cả' },
   { value: 'unread', label: 'Chưa đọc' },
+  { value: 'important', label: 'Quan trọng' },
   { value: 'price', label: 'Giá' },
   { value: 'weather', label: 'Thời tiết' },
   { value: 'air_quality', label: 'Không khí' },
@@ -76,14 +78,31 @@ const NotificationsPage = () => {
   const [error, setError] = useState(null);
 
   const loadSummary = async () => {
-    const data = await notificationsApi.summary();
-    setSummary(data);
+    const [data, unread] = await Promise.all([
+      notificationsApi.summary(),
+      notificationsApi.unreadCount(),
+    ]);
+    setSummary({
+      ...data,
+      unread: unread.unread_count ?? data.unread,
+      source: 'database',
+      source_name: 'Notifications DB',
+      confidence: 0.7,
+    });
   };
 
   const loadNotifications = async () => {
     setLoading(true);
     setError(null);
     try {
+      if (activeFilter === 'important') {
+        const data = await notificationsApi.priority({ minPriority: 'high' });
+        const rows = (data.notifications || []).map(normalizeNotification);
+        setNotifications(rows);
+        setSelectedId((current) => current || rows[0]?.id || null);
+        await loadSummary();
+        return;
+      }
       const type =
         activeFilter === 'all' || activeFilter === 'unread' || activeFilter === 'delivery_failed'
           ? undefined
@@ -160,6 +179,7 @@ const NotificationsPage = () => {
   const filterCount = (filter) => {
     if (filter.value === 'all') return summary.total || 0;
     if (filter.value === 'unread') return summary.unread || 0;
+    if (filter.value === 'important') return summary.high_priority || 0;
     if (filter.value === 'delivery_failed') return summary.delivery_failed || 0;
     return summary.by_type?.[filter.value] || 0;
   };
@@ -209,7 +229,10 @@ const NotificationsPage = () => {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-wide text-green-700">Realtime inbox</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold uppercase tracking-wide text-green-700">Realtime inbox</p>
+            <DataSourceBadge data={summary} />
+          </div>
           <h1 className="mt-2 text-3xl font-bold text-gray-900">Thông báo</h1>
           <p className="mt-2 text-gray-600">
             Inbox DB-first cho alert, thời tiết, mùa vụ và delivery log, có luồng cập nhật từ backend.
@@ -319,6 +342,7 @@ const NotificationsPage = () => {
                             <span className="rounded-full bg-gray-100 px-2.5 py-1 font-medium text-gray-700">
                               {notification.priority}
                             </span>
+                            <DataSourceBadge data={{ source: 'database', source_name: 'Notifications DB', confidence: 0.7, fetched_at: notification.createdAt }} />
                             {notification.relatedEntityType && <span>{notification.relatedEntityType} #{notification.relatedEntityId}</span>}
                           </div>
                         </div>

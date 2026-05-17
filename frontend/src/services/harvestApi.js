@@ -10,6 +10,34 @@ export const harvestApi = {
     return response.data;
   },
 
+  optimizeHarvest: async (cropName, plantingDate, region) => {
+    const response = await api.post('/api/harvest/optimize', {
+      crop_name: cropName,
+      planting_date: plantingDate,
+      region,
+    });
+    return response.data;
+  },
+
+  getCalendar: async () => {
+    const response = await api.get('/api/harvest/calendar');
+    return response.data;
+  },
+
+  getRisk: async (seasonId) => {
+    const response = await api.get(`/api/harvest/risk/${encodeURIComponent(seasonId)}`);
+    return response.data;
+  },
+
+  recalculate: async (cropName, plantingDate, region) => {
+    const response = await api.post('/api/harvest/recalculate', {
+      crop_name: cropName,
+      planting_date: plantingDate,
+      region,
+    });
+    return response.data;
+  },
+
   predictHarvest: async (cropName, plantingDate, region) => {
     const response = await api.post('/api/harvest/predict', null, {
       params: {

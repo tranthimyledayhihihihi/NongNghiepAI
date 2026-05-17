@@ -52,6 +52,17 @@ export const pricingApi = {
     return response.data;
   },
 
+  getPricingEngine: async (cropName, region, quantity = 1, qualityGrade = 'grade_1', days = 7) => {
+    const response = await api.post('/api/pricing/engine', {
+      crop_name: cropName,
+      region,
+      quantity,
+      quality_grade: qualityGrade,
+      days,
+    });
+    return response.data;
+  },
+
   predictPrice: async (cropName, region, forecastDays = 7) => {
     const response = await api.post('/api/price-forecast/predict', {
       crop_name: cropName,

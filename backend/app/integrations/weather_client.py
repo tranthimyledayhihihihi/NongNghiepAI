@@ -35,7 +35,7 @@ WEATHER_CODE_CONDITIONS = {
 
 class WeatherClient:
     def __init__(self, base_url: str | None = None):
-        self.base_url = (base_url or settings.OPEN_METEO_BASE_URL).rstrip("/")
+        self.base_url = (base_url or settings.WEATHER_API_BASE_URL or settings.OPEN_METEO_BASE_URL).rstrip("/")
 
     def get_current(self, region: str) -> dict:
         coordinates = self._coordinates_for_region(region)
@@ -88,7 +88,7 @@ class WeatherClient:
         params = {
             "latitude": coordinates["latitude"],
             "longitude": coordinates["longitude"],
-            "daily": "temperature_2m_min,temperature_2m_max,precipitation_sum,precipitation_probability_max,relative_humidity_2m_mean,weather_code,wind_speed_10m_max,uv_index_max",
+            "daily": "temperature_2m_min,temperature_2m_max,precipitation_sum,precipitation_probability_max,weather_code,wind_speed_10m_max,uv_index_max",
             "forecast_days": forecast_days,
             "timezone": "auto",
         }
@@ -111,7 +111,7 @@ class WeatherClient:
                     ),
                     "rainfall": self._at(daily.get("precipitation_sum"), index),
                     "rain_probability": self._at(daily.get("precipitation_probability_max"), index),
-                    "humidity": self._at(daily.get("relative_humidity_2m_mean"), index),
+                    "humidity": None,
                     "wind_speed": self._at(daily.get("wind_speed_10m_max"), index),
                     "uv_index": self._at(daily.get("uv_index_max"), index),
                     "weather_code": weather_code,

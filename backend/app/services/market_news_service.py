@@ -185,12 +185,35 @@ class MarketNewsService:
         return datetime.utcnow() - timedelta(days=self.LATEST_WINDOW_DAYS)
 
     @staticmethod
+    def _repair_mojibake(value: str | None) -> str | None:
+        """
+        Fix common Vietnamese mojibake from bad RSS encodings, e.g.:
+        - Ã¢â€žÂ¢, Ã©, Â, â€™, Ã¼ ...
+        by trying latin1->utf-8 decode when the string looks corrupted.
+        """
+        if value is None:
+            return None
+
+        if not isinstance(value, str) or not value:
+            return value
+
+        looks_mojibake = any(token in value for token in ["Ã", "Â", "â€™", "â€œ", "â€", "â€“", "â€ž"])
+        if not looks_mojibake:
+            return value
+
+        try:
+            # Undo the typical "wrongly decoded as latin1 then interpreted as utf-8" pattern.
+            return value.encode("latin1", errors="ignore").decode("utf-8", errors="replace")
+        except Exception:
+            return value
+
+    @staticmethod
     def _to_dict(row) -> dict:
         return {
             "news_id": row.NewsID,
-            "title": row.Title,
-            "summary": row.Summary,
-            "source_name": row.SourceName,
+            "title": MarketNewsService._repair_mojibake(row.Title),
+            "summary": MarketNewsService._repair_mojibake(row.Summary),
+            "source_name": MarketNewsService._repair_mojibake(row.SourceName),
             "source_url": row.SourceURL,
             "published_at": row.PublishedAt.isoformat() if row.PublishedAt else None,
             "region": row.Region,

@@ -69,6 +69,7 @@ const PricingPage = () => {
   const [currentPrice, setCurrentPrice] = useState(null);
   const [forecast, setForecast] = useState(null);
   const [history, setHistory] = useState(null);
+  const [engine, setEngine] = useState(null);
   const [error, setError] = useState(null);
 
   const handleSearch = async () => {
@@ -76,14 +77,16 @@ const PricingPage = () => {
     setError(null);
 
     try {
-      const [priceData, forecastData, historyData] = await Promise.all([
+      const [priceData, forecastData, historyData, engineData] = await Promise.all([
         pricingApi.getCurrentPrice(cropName, region),
         pricingApi.getPriceForecast(cropName, region, days),
         pricingApi.getPriceHistory(cropName, region, 30),
+        pricingApi.getPricingEngine(cropName, region, 100, 'grade_1', days),
       ]);
       setCurrentPrice(priceData);
       setForecast(forecastData);
       setHistory(historyData);
+      setEngine(engineData);
     } catch (err) {
       setError(getApiErrorMessage(err, 'Không thể tải dữ liệu giá'));
     } finally {
@@ -261,6 +264,46 @@ const PricingPage = () => {
             </p>
           </div>
         </div>
+      )}
+
+      {engine && (
+        <section className="rounded-lg border border-violet-200 bg-white p-5 shadow-sm">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">AI Pricing Engine</h2>
+              <p className="text-sm text-gray-500">Market price + forecast + quality + weather reasoning</p>
+            </div>
+            <DataSourceBadge data={engine} />
+          </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="rounded-lg bg-violet-50 p-4">
+              <p className="text-sm text-violet-700">AI suggested price</p>
+              <p className="mt-2 text-2xl font-bold text-gray-900">{formatCurrency(engine.suggested_price)}</p>
+            </div>
+            <div className="rounded-lg bg-emerald-50 p-4">
+              <p className="text-sm text-emerald-700">7-day forecast</p>
+              <p className="mt-2 text-2xl font-bold text-gray-900">{formatCurrency(engine.forecast_price_7d)}</p>
+            </div>
+            <div className="rounded-lg bg-slate-50 p-4">
+              <p className="text-sm text-slate-700">Confidence</p>
+              <p className="mt-2 text-2xl font-bold text-gray-900">{((engine.confidence || 0) * 100).toFixed(0)}%</p>
+            </div>
+          </div>
+          {engine.reasons?.length > 0 && (
+            <div className="mt-4 grid gap-2 md:grid-cols-2">
+              {engine.reasons.map((reason) => (
+                <div key={reason} className="rounded-lg border border-violet-100 bg-violet-50/60 p-3 text-sm text-violet-900">
+                  {reason}
+                </div>
+              ))}
+            </div>
+          )}
+          {engine.recommendation && (
+            <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm text-blue-800">
+              {engine.recommendation}
+            </div>
+          )}
+        </section>
       )}
 
       {forecast && chartData && (

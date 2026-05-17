@@ -163,8 +163,23 @@ const Dashboard = () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await dashboardApi.reset({ cropName, region });
-      setSummary(data);
+      const [overview, realtimeStatus, aiInsight, riskSummary, actionToday] = await Promise.all([
+        dashboardApi.getOverview(region, { cropName }),
+        dashboardApi.getRealtimeStatus(region, { cropName }),
+        dashboardApi.getAiInsights(region, { cropName }),
+        dashboardApi.getRiskSummary(region, { cropName }),
+        dashboardApi.getActionToday(region, { cropName }),
+      ]);
+      setSummary({
+        ...overview,
+        ai_recommendation: aiInsight || overview?.ai_recommendation,
+        weather_risk: {
+          ...(overview?.weather_risk || {}),
+          ...(riskSummary || {}),
+        },
+        realtime_status: realtimeStatus,
+        action_today: actionToday,
+      });
     } catch (err) {
       setError(getApiErrorMessage(err, 'Không tải được dashboard'));
     } finally {
@@ -188,6 +203,8 @@ const Dashboard = () => {
   const news = summary?.news || [];
   const realtimeMarket = summary?.realtime_market || {};
   const alerts = summary?.alert_center || [];
+  const apiStatus = summary?.realtime_status?.api_status || [];
+  const actionToday = summary?.action_today || {};
 
   const forecastHigh = useMemo(() => {
     if (!forecast.length) return null;
@@ -225,6 +242,43 @@ const Dashboard = () => {
           {error}
         </div>
       )}
+
+      <Panel>
+        <PanelHeader icon={Gauge} title="API Status">
+          <DataSourceBadge data={summary?.realtime_status || { source: 'database', source_name: 'API health rules', confidence: 0.7 }} />
+        </PanelHeader>
+        <div className="grid gap-3 md:grid-cols-5">
+          {apiStatus.length ? (
+            apiStatus.map((item) => (
+              <div key={item.name} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3">
+                <div className="text-sm font-semibold text-slate-950">{item.name}</div>
+                <div className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                  item.status === 'ok' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                }`}>
+                  {item.status}
+                </div>
+              </div>
+            ))
+          ) : (
+            <EmptyState text="Chua co trang thai API." />
+          )}
+        </div>
+        {actionToday.actions?.length > 0 && (
+          <div className="mt-4 rounded-md border border-indigo-100 bg-indigo-50 p-4">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div className="text-sm font-semibold text-indigo-950">AI Today</div>
+              <DataSourceBadge data={actionToday} />
+            </div>
+            <div className="grid gap-2 md:grid-cols-3">
+              {actionToday.actions.slice(0, 3).map((item) => (
+                <div key={item} className="rounded-md bg-white/80 px-3 py-2 text-sm leading-6 text-indigo-900">
+                  {item}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Panel>
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
         <Panel>
@@ -330,6 +384,7 @@ const Dashboard = () => {
             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
               {alerts.length} cảnh báo
             </span>
+            <DataSourceBadge data={{ source: 'database', source_name: 'Alert rules DB', confidence: 0.7 }} />
           </PanelHeader>
           <div className="space-y-3">
             {alerts.length ? (
@@ -372,6 +427,7 @@ const Dashboard = () => {
         <Panel>
           <PanelHeader icon={TrendingUp} title="Dự báo giá 7 ngày">
             {forecastHigh && <span className="text-xs font-medium text-slate-500">Đỉnh: {formatNumber(forecastHigh.forecast_price || forecastHigh.predicted_price)}</span>}
+            <DataSourceBadge data={{ source: 'ai_generated', source_name: 'Pricing forecast engine', confidence: 0.62 }} />
           </PanelHeader>
           <div className="space-y-2">
             {forecast.length ? (
@@ -420,7 +476,9 @@ const Dashboard = () => {
         </Panel>
 
         <Panel>
-          <PanelHeader icon={Newspaper} title="Tin thị trường" />
+          <PanelHeader icon={Newspaper} title="Tin thị trường">
+            <DataSourceBadge data={{ source: 'realtime_api', source_name: 'RSS market news cache', confidence: 0.7 }} />
+          </PanelHeader>
           <div className="space-y-3">
             {news.length ? (
               news.slice(0, 6).map((item) => (

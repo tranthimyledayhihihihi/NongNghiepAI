@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import DataSourceBadge from '../components/DataSourceBadge';
 import { getApiErrorMessage } from '../services/api';
 import { marketApi } from '../services/marketApi';
-import { marketNewsApi } from '../services/marketNewsApi';
 
 const fallbackChannels = [
   { id: 'wholesale', name: 'Chợ đầu mối', commission: '5-10%' },
@@ -26,6 +25,10 @@ const MarketPage = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [news, setNews] = useState([]);
+  const [marketPrice, setMarketPrice] = useState(null);
+  const [trend, setTrend] = useState(null);
+  const [opportunities, setOpportunities] = useState(null);
+  const [risks, setRisks] = useState(null);
 
   useEffect(() => {
     const loadChannels = async () => {
@@ -44,10 +47,36 @@ const MarketPage = () => {
   }, []);
 
   useEffect(() => {
-    marketNewsApi.getLatest(4)
-      .then((data) => setNews(data.news || []))
-      .catch(() => setNews([]));
-  }, []);
+    let active = true;
+    const loadIntelligence = async () => {
+      try {
+        const [newsData, priceData, trendData, opportunityData, riskData] = await Promise.all([
+          marketApi.getNews({ limit: 4, crop: formData.cropName, region: formData.region }),
+          marketApi.getPrices({ crop: formData.cropName, region: formData.region }),
+          marketApi.getTrends({ crop: formData.cropName, region: formData.region }),
+          marketApi.getOpportunities({ crop: formData.cropName, region: formData.region }),
+          marketApi.getRisks({ crop: formData.cropName, region: formData.region }),
+        ]);
+        if (!active) return;
+        setNews(newsData.news || []);
+        setMarketPrice(priceData);
+        setTrend(trendData);
+        setOpportunities(opportunityData);
+        setRisks(riskData);
+      } catch {
+        if (!active) return;
+        setNews([]);
+        setMarketPrice(null);
+        setTrend(null);
+        setOpportunities(null);
+        setRisks(null);
+      }
+    };
+    loadIntelligence();
+    return () => {
+      active = false;
+    };
+  }, [formData.cropName, formData.region]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -81,6 +110,35 @@ const MarketPage = () => {
           So sánh kênh bán và gợi ý kênh tối ưu từ API backend.
         </p>
       </div>
+
+      <section className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="rounded-lg border border-gray-200 bg-white p-5 shadow">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold text-gray-700">Gia thi truong</h2>
+            {marketPrice && <DataSourceBadge data={marketPrice} />}
+          </div>
+          <p className="text-2xl font-bold text-gray-900">
+            {marketPrice?.current_price ? `${Number(marketPrice.current_price).toLocaleString('vi-VN')} VND/kg` : 'N/A'}
+          </p>
+          <p className="mt-2 text-sm text-gray-600">{marketPrice?.crop_name || formData.cropName} · {marketPrice?.region || formData.region}</p>
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-white p-5 shadow">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold text-gray-700">Xu huong AI</h2>
+            {trend && <DataSourceBadge data={trend} />}
+          </div>
+          <p className="text-2xl font-bold text-gray-900">{trend?.trend || 'stable'}</p>
+          <p className="mt-2 text-sm text-gray-600">{trend?.evidence?.[0] || 'Dang tong hop du lieu thi truong.'}</p>
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-white p-5 shadow">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold text-gray-700">Co hoi & rui ro</h2>
+            <DataSourceBadge data={opportunities || risks || { source: 'mock', source_name: 'Market intelligence fallback' }} />
+          </div>
+          <p className="text-sm font-semibold text-green-800">{opportunities?.opportunities?.[0]?.title || 'Batch selling opportunity'}</p>
+          <p className="mt-2 text-sm text-gray-600">{risks?.risks?.[0]?.recommendation || 'Theo doi bien dong gia va tao canh bao khi can.'}</p>
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {channels.map((channel, index) => {
@@ -118,7 +176,7 @@ const MarketPage = () => {
         <section className="mt-8 rounded-lg border border-gray-200 bg-white p-6 shadow">
           <div className="mb-4 flex flex-wrap items-center gap-3">
             <h2 className="text-lg font-semibold text-gray-900">Tin tức thị trường realtime</h2>
-            <DataSourceBadge data={{ source_name: 'RSS', is_realtime: true }} />
+            <DataSourceBadge data={{ source: 'realtime_api', source_name: 'RSS market news cache', is_realtime: true, confidence: 0.7 }} />
           </div>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {news.map((item) => (

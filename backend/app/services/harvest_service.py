@@ -161,6 +161,11 @@ class HarvestService:
             confidence = 0.78
 
         growth_stages = self._get_growth_stages(crop_name)
+        earliest_date = expected_date - timedelta(days=max(3, int(growth_days * 0.06)))
+        latest_date = expected_date + timedelta(days=max(3, int(growth_days * 0.08)))
+        weather_risk = self._weather_risk_label(db, region)
+        market_condition = self._market_condition(db, crop_name, region)
+        preparation_tasks = self._preparation_tasks(crop_name, expected_date)
         record = create_harvest_forecast(
             db,
             crop_name=crop_name,
@@ -175,14 +180,25 @@ class HarvestService:
 
         return {
             "crop_name": crop_name,
+            "crop": crop_name,
             "region": region,
             "planting_date": planting_date,
             "expected_harvest_date": expected_date,
+            "earliest_harvest_date": earliest_date,
+            "optimal_harvest_date": expected_date,
+            "latest_harvest_date": latest_date,
             "growth_days": growth_days if not predictor else self._growth_days_for(crop_name),
+            "weather_risk": weather_risk,
+            "market_condition": market_condition,
             "confidence": confidence,
             "warning": warning,
             "recommendation": recommendation,
+            "preparation_tasks": preparation_tasks,
             "growth_stages": growth_stages,
+            "source": "ai_generated" if predictor else "mock",
+            "source_name": "Harvest optimizer AI/rule engine",
+            "is_mock": not bool(predictor),
+            "cache_status": "computed",
             "created_at": getattr(record, "created_at", None),
         }
 
@@ -304,6 +320,96 @@ class HarvestService:
             for schedule, crop in records
         ]
 
+    def optimize(self, db: Session, request: HarvestForecastRequest, user_id: int | None = None) -> dict:
+        forecast = self.forecast_harvest(db, request, user_id=user_id)
+        try:
+            from app.services.pricing_service import pricing_service
+            pricing = pricing_service.build_pricing_engine(
+                db,
+                crop_name=request.crop_name,
+                region=request.region,
+                quantity=1,
+                quality_grade="grade_1",
+                days=7,
+            )
+        except Exception:
+            pricing = {}
+        recommendation = forecast["recommendation"]
+        if pricing.get("trend") == "increasing" and forecast.get("weather_risk") != "high":
+            recommendation = "Market trend is favorable; keep the optimal date and avoid rushing harvest."
+        elif forecast.get("weather_risk") == "high":
+            recommendation = "Weather risk is high; prepare labor and consider early harvest window."
+        return {
+            **forecast,
+            "market_price": pricing.get("market_price"),
+            "pricing_trend": pricing.get("trend"),
+            "recommendation": recommendation,
+            "source": "ai_generated" if not forecast.get("is_mock") else "mock",
+            "source_name": "AI Harvest Optimizer",
+            "confidence": min(float(forecast.get("confidence") or 0.7), float(pricing.get("confidence") or 0.7)),
+        }
+
+    def calendar(self, db: Session, user_id: int | None = None, limit: int = 50) -> dict:
+        resolved_user = user_id or 1
+        schedules = self.get_schedules(db, resolved_user, limit)
+        items = [
+            {
+                "schedule_id": schedule.get("schedule_id"),
+                "crop_name": schedule.get("crop_name"),
+                "region": schedule.get("region"),
+                "date": schedule.get("expected_harvest_date"),
+                "type": "harvest",
+                "status": schedule.get("status"),
+                "source": "database",
+                "source_name": "HarvestSchedule DB",
+            }
+            for schedule in schedules
+        ]
+        return {
+            "user_id": resolved_user,
+            "items": items,
+            "total": len(items),
+            "source": "database",
+            "source_name": "HarvestSchedule DB",
+            "confidence": 0.7,
+            "cache_status": "from_db",
+        }
+
+    def risk_for_season(self, db: Session, season_id: int) -> dict:
+        try:
+            from app.models.harvest import HarvestSchedule
+            schedule = db.query(HarvestSchedule).filter(HarvestSchedule.ScheduleID == season_id).first()
+        except Exception:
+            schedule = None
+        if not schedule:
+            return {
+                "season_id": season_id,
+                "risk_level": "medium",
+                "weather_risk": "medium",
+                "market_condition": "neutral",
+                "recommended_action": ["Review season data; schedule not found so demo risk is returned."],
+                "source": "mock",
+                "source_name": "Harvest risk fallback",
+                "is_mock": True,
+                "confidence": 0.35,
+            }
+        crop_name = "crop"
+        region = schedule.Region
+        weather_risk = self._weather_risk_label(db, region)
+        market_condition = self._market_condition(db, crop_name, region)
+        risk_level = "high" if weather_risk == "high" else "medium" if market_condition == "unfavorable" else "low"
+        return {
+            "season_id": season_id,
+            "risk_level": risk_level,
+            "weather_risk": weather_risk,
+            "market_condition": market_condition,
+            "recommended_action": self._preparation_tasks(crop_name, schedule.ExpectedHarvestDate)[:3],
+            "source": "ai_generated",
+            "source_name": "Harvest risk rule engine",
+            "confidence": 0.68,
+            "cache_status": "computed",
+        }
+
     @staticmethod
     def _schedule_to_dict(schedule, crop) -> dict:
         return {
@@ -382,6 +488,35 @@ class HarvestService:
         if expected_date.month in {9, 10, 11}:
             return "Mùa mưa bão, cần theo dõi thời tiết và chuẩn bị thu hoạch sớm nếu cần."
         return None
+
+    def _weather_risk_label(self, db: Session, region: str) -> str:
+        try:
+            from app.services.weather_service import weather_service
+            risk = weather_service.analyze_agriculture_risk(db, region, "crop")
+            return risk.get("risk_level", "medium")
+        except Exception:
+            return "medium"
+
+    def _market_condition(self, db: Session, crop_name: str, region: str) -> str:
+        try:
+            from app.services.pricing_service import pricing_service
+            trend = pricing_service.analyze_price_trend(db, crop_name, region)
+            if trend == "increasing":
+                return "favorable"
+            if trend == "decreasing":
+                return "unfavorable"
+        except Exception:
+            pass
+        return "neutral"
+
+    @staticmethod
+    def _preparation_tasks(crop_name: str, expected_date: date) -> list[str]:
+        return [
+            f"Confirm harvest labor 7 days before {expected_date.isoformat()}.",
+            f"Prepare packaging and clean storage area for {crop_name}.",
+            "Check 3-day weather forecast before cutting or collecting.",
+            "Create price alert for target selling price.",
+        ]
 
 
 harvest_service = HarvestService()

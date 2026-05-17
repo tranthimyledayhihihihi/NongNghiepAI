@@ -86,6 +86,20 @@ class BulkNotificationRequest(BaseModel):
     unread_only: bool = False
 
 
+class MarkReadRequest(BaseModel):
+    notification_id: int | None = None
+    ids: list[int] | None = None
+
+
+class GenerateFromAlertRequest(BaseModel):
+    alert_id: int | None = None
+    alert_type: str = "system"
+    title: str = "AI alert"
+    message: str = "AI generated alert notification"
+    priority: str = "medium"
+    suggested_action: str | None = None
+
+
 @router.patch("/bulk")
 async def bulk_update_notifications(
     body: BulkNotificationRequest,
@@ -112,6 +126,79 @@ async def mark_all_notifications_read(
 ):
     data = notification_center_service.mark_all_as_read(db, current_user)
     return api_response(data, message=data["message"])
+
+
+@router.get("/unread-count")
+async def get_unread_count(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    data = notification_center_service.summary(db, current_user)
+    return api_response(
+        {"unread_count": data.get("unread", 0), "summary": data},
+        source="database",
+        source_name="Notifications DB",
+        confidence=0.7,
+    )
+
+
+@router.post("/mark-read")
+async def mark_notifications_read(
+    body: MarkReadRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ids = body.ids or ([body.notification_id] if body.notification_id else [])
+    if not ids:
+        return api_response({"updated": 0, "message": "no notification ids provided"})
+    data = notification_center_service.bulk_update(db, current_user, action="mark_read", ids=ids)
+    return api_response(data, message=data["message"])
+
+
+@router.post("/generate-from-alert")
+async def generate_notification_from_alert(
+    body: GenerateFromAlertRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.schemas.notification_schema import NotificationCreate
+    data = notification_center_service.create_notification(
+        db,
+        NotificationCreate(
+            user_id=current_user.UserID,
+            type=body.alert_type,
+            title=body.title,
+            message=body.message,
+            priority=body.priority,
+            channel="app",
+            related_entity_type="alert",
+            related_entity_id=body.alert_id,
+        ),
+    )
+    data["action_required"] = body.priority in {"high", "urgent"}
+    data["suggested_action"] = body.suggested_action
+    return api_response(data, source="database", source_name="Notifications DB", confidence=0.7)
+
+
+@router.get("/priority")
+async def get_priority_notifications(
+    min_priority: str = Query(default="high"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    priority_order = {"low": 0, "medium": 1, "high": 2, "urgent": 3}
+    listed = notification_center_service.list_notifications(db, current_user, limit=100)
+    threshold = priority_order.get(min_priority, 2)
+    items = [
+        item for item in listed.get("notifications", [])
+        if priority_order.get(item.get("priority", "low"), 0) >= threshold
+    ]
+    return api_response(
+        {"notifications": items, "total": len(items)},
+        source="database",
+        source_name="Notifications priority view",
+        confidence=0.7,
+    )
 
 
 class TestNotificationRequest(BaseModel):

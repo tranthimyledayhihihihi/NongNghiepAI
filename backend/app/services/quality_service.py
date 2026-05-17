@@ -148,9 +148,13 @@ class QualityService:
             "region": region,
             "image_path": image_path,
             "quality_grade": grade,
+            "quality_grade_letter": self._grade_letter(grade),
             "disease_detected": disease_detected,
+            "disease_risk": damage_level,
             "damage_level": damage_level,
+            "freshness_score": self._freshness_score(grade, defects),
             "suggested_price": final_suggested,
+            "suggested_price_adjustment": f"{int((price_info.get('multiplier', 1.0) - 1) * 100)}%",
             "confidence": confidence,
             "defects": defects,
             "suggested_price_range": {
@@ -165,7 +169,12 @@ class QualityService:
             "weather_summary":     pricing.get("weather_summary", ""),
             "weather_explanation": pricing.get("weather_explanation", ""),
             "price_change_pct":    pricing.get("price_change_pct", 0.0),
+            "recommendation": self._recommendations(grade),
             "recommendations": self._recommendations(grade),
+            "source": "mock" if confidence == 0.0 or reasoning == "mock fallback" else "ai_generated",
+            "source_name": "Gemini Vision Quality" if confidence > 0 else "Rule-based quality fallback",
+            "is_mock": confidence == 0.0 or reasoning == "mock fallback",
+            "cache_status": "computed",
             "checked_at": getattr(record, "checked_at", None) or datetime.now(),
         }
 
@@ -336,6 +345,25 @@ class QualityService:
         return {"grade_1": "low", "Loại 1": "low",
                 "grade_2": "medium", "Loại 2": "medium",
                 "grade_3": "high", "Loại 3": "high"}.get(grade, "low")
+
+    @staticmethod
+    def _grade_letter(grade: str) -> str:
+        return {
+            "grade_1": "A",
+            "Loai 1": "A",
+            "Loại 1": "A",
+            "grade_2": "B",
+            "Loai 2": "B",
+            "Loại 2": "B",
+            "grade_3": "C",
+            "Loai 3": "C",
+            "Loại 3": "C",
+        }.get(grade, "B")
+
+    @staticmethod
+    def _freshness_score(grade: str, defects: list) -> int:
+        base = {"grade_1": 92, "grade_2": 72, "grade_3": 48}.get(grade, 70)
+        return max(20, min(100, base - len(defects or []) * 6))
 
     @staticmethod
     def _recommendations(grade: str) -> list[str]:
