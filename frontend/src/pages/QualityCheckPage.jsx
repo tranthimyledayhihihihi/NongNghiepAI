@@ -14,20 +14,20 @@ import { qualityApi } from '../services/qualityApi';
 
 const gradeMeta = {
   grade_1: {
-    label: 'Hang A',
-    description: 'Chat luong cao',
+    label: 'Hạng A',
+    description: 'Chất lượng cao',
     icon: CheckCircle,
     color: 'from-green-700 to-green-900',
   },
   grade_2: {
-    label: 'Hang B',
-    description: 'Chat luong trung binh',
+    label: 'Hạng B',
+    description: 'Chất lượng trung bình',
     icon: AlertTriangle,
     color: 'from-yellow-600 to-yellow-800',
   },
   grade_3: {
-    label: 'Hang C',
-    description: 'Can xu ly hoac che bien',
+    label: 'Hạng C',
+    description: 'Cần xử lý hoặc chế biến',
     icon: XCircle,
     color: 'from-red-700 to-red-900',
   },
@@ -53,7 +53,7 @@ const QualityCheckPage = () => {
       const result = await qualityApi.checkQuality(file, cropName, region);
       setAnalysisResult(result);
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Khong the phan tich anh'));
+      setError(getApiErrorMessage(err, 'Không thể phân tích ảnh'));
     } finally {
       setIsAnalyzing(false);
     }
@@ -89,9 +89,9 @@ const QualityCheckPage = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Kiem Tra Chat Luong</h1>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">Kiểm Tra Chất Lượng</h1>
         <p className="text-gray-600">
-          Tai anh nong san len va phan tich bang API backend /api/quality/check.
+          Tải ảnh nông sản lên và phân tích bằng API backend /api/quality/check.
         </p>
       </div>
 
@@ -100,40 +100,40 @@ const QualityCheckPage = () => {
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
             <div className="flex items-center space-x-2 mb-6">
               <ImageIcon className="w-6 h-6 text-green-700" />
-              <h2 className="text-xl font-bold text-gray-900">Hinh Anh Dau Vao</h2>
+              <h2 className="text-xl font-bold text-gray-900">Hình Ảnh Đầu Vào</h2>
             </div>
 
             <div className="grid md:grid-cols-2 gap-4 mb-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Loai nong san
+                  Loại nông sản
                 </label>
                 <select
                   value={cropName}
                   onChange={(event) => setCropName(event.target.value)}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 >
-                  <option value="ca chua">Ca chua</option>
-                  <option value="dua chuot">Dua chuot</option>
-                  <option value="rau muong">Rau muong</option>
-                  <option value="lua">Lua</option>
-                  <option value="ot">Ot</option>
+                  <option value="ca chua">Cà chua</option>
+                  <option value="dua chuot">Dưa chuột</option>
+                  <option value="rau muong">Rau muống</option>
+                  <option value="lua">Lúa</option>
+                  <option value="ot">Ớt</option>
                 </select>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Khu vuc
+                  Khu vực
                 </label>
                 <select
                   value={region}
                   onChange={(event) => setRegion(event.target.value)}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 >
-                  <option value="Ha Noi">Ha Noi</option>
+                  <option value="Ha Noi">Hà Nội</option>
                   <option value="TP.HCM">TP.HCM</option>
-                  <option value="Da Nang">Da Nang</option>
-                  <option value="Can Tho">Can Tho</option>
+                  <option value="Da Nang">Đà Nẵng</option>
+                  <option value="Can Tho">Cần Thơ</option>
                 </select>
               </div>
             </div>
@@ -151,10 +151,10 @@ const QualityCheckPage = () => {
                   </div>
                   <div>
                     <h3 className="text-lg font-bold text-gray-900 mb-2">
-                      Keo tha anh vao day
+                      Kéo thả ảnh vào đây
                     </h3>
                     <p className="text-sm text-gray-600 mb-4">
-                      hoac nhan de chon tu thiet bi
+                      hoặc nhấn để chọn từ thiết bị
                     </p>
                     <div className="flex items-center justify-center space-x-4 text-xs text-gray-500">
                       <span className="flex items-center space-x-1">
@@ -184,7 +184,7 @@ const QualityCheckPage = () => {
                     <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
                       <div className="text-center text-white">
                         <div className="w-16 h-16 border-4 border-white border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                        <p className="font-medium">Dang phan tich...</p>
+                        <p className="font-medium">Đang phân tích...</p>
                       </div>
                     </div>
                   )}
@@ -194,14 +194,14 @@ const QualityCheckPage = () => {
                     onClick={handleReset}
                     className="flex-1 px-6 py-3 border-2 border-gray-300 rounded-xl hover:border-red-500 hover:text-red-500 transition font-medium"
                   >
-                    Tai Anh Khac
+                    Tải Ảnh Khác
                   </button>
                   <button
                     onClick={() => analyzeFile(selectedFile)}
                     disabled={isAnalyzing}
                     className="flex-1 px-6 py-3 bg-green-700 text-white rounded-xl hover:bg-green-800 transition font-medium disabled:bg-gray-300"
                   >
-                    Phan Tich Lai
+                    Phân Tích Lại
                   </button>
                 </div>
               </div>
@@ -221,27 +221,27 @@ const QualityCheckPage = () => {
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center space-x-2">
                   <Sparkles className="w-5 h-5" />
-                  <span className="text-sm font-medium">KET QUA TU API</span>
+                  <span className="text-sm font-medium">KẾT QUẢ TỪ API</span>
                 </div>
                 <ResultIcon className="w-6 h-6" />
               </div>
 
               <div className="mb-6">
-                <div className="text-sm opacity-80 mb-2">Phan loai san pham</div>
+                <div className="text-sm opacity-80 mb-2">Phân loại sản phẩm</div>
                 <div className="text-4xl font-bold mb-2">{meta.label}</div>
                 <div className="text-sm opacity-90">{meta.description}</div>
               </div>
 
               <div className="space-y-4 mb-6">
                 <div className="flex items-center justify-between p-3 bg-black/15 rounded-xl">
-                  <span className="text-sm">Loi phat hien</span>
+                  <span className="text-sm">Lỗi phát hiện</span>
                   <span className="font-bold">
                     {analysisResult.defects?.length ? analysisResult.defects.length : 0}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between p-3 bg-black/15 rounded-xl">
-                  <span className="text-sm">Do tin cay</span>
+                  <span className="text-sm">Độ tin cậy</span>
                   <span className="font-bold">
                     {(analysisResult.confidence * 100).toFixed(1)}%
                   </span>
@@ -249,7 +249,7 @@ const QualityCheckPage = () => {
               </div>
 
               <div className="border-t border-white/25 pt-4">
-                <div className="text-sm opacity-80 mb-2">Gia tri uoc tinh</div>
+                <div className="text-sm opacity-80 mb-2">Giá trị ước tính</div>
                 <div className="text-3xl font-bold">
                   {analysisResult.suggested_price.toLocaleString()} VND/kg
                 </div>
@@ -260,9 +260,9 @@ const QualityCheckPage = () => {
               <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Camera className="w-8 h-8 text-gray-400" />
               </div>
-              <h3 className="font-bold text-gray-900 mb-2">Cho Phan Tich</h3>
+              <h3 className="font-bold text-gray-900 mb-2">Chờ Phân Tích</h3>
               <p className="text-sm text-gray-600">
-                Tai anh len de frontend goi backend va hien thi ket qua.
+                Tải ảnh lên để frontend gọi backend và hiển thị kết quả.
               </p>
             </div>
           )}

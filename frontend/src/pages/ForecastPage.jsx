@@ -15,7 +15,6 @@ import {
   Loader2,
   MapPin,
   RefreshCw,
-  ShieldCheck,
   Sprout,
   Sun,
   Thermometer,
@@ -28,7 +27,14 @@ import DataSourceBadge from '../components/DataSourceBadge';
 import { getApiErrorMessage } from '../services/api';
 import { weatherApi } from '../services/weatherApi';
 
-const regions = ['Ha Noi', 'TP.HCM', 'Da Nang', 'Can Tho', 'Lam Dong', 'Hai Phong'];
+const regions = [
+  { value: 'Ha Noi', label: 'Hà Nội' },
+  { value: 'TP.HCM', label: 'TP.HCM' },
+  { value: 'Da Nang', label: 'Đà Nẵng' },
+  { value: 'Can Tho', label: 'Cần Thơ' },
+  { value: 'Lam Dong', label: 'Lâm Đồng' },
+  { value: 'Hai Phong', label: 'Hải Phòng' },
+];
 const crops = ['Lúa', 'Cà phê', 'Rau màu', 'Hồ tiêu', 'Cây ăn trái'];
 const stages = ['Cây con', 'Sinh trưởng', 'Ra hoa', 'Làm đòng', 'Đậu trái', 'Thu hoạch'];
 
@@ -457,7 +463,7 @@ const ForecastPage = () => {
               onChange={(e) => setRegion(e.target.value)}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
             >
-              {regions.map((item) => <option key={item} value={item}>{item}</option>)}
+              {regions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
             </select>
           </label>
           <label className="space-y-2">
@@ -735,47 +741,26 @@ const ForecastPage = () => {
             </div>
           </section>
 
-          {/* ── 24h mini cards + agriculture insights ── */}
-          <div className="grid gap-6 xl:grid-cols-3">
-            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2">
-              <div className="mb-4 flex items-center gap-2">
-                <Clock className="h-5 w-5 text-slate-700" />
-                <h2 className="text-lg font-bold text-slate-950">24 giờ tới</h2>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {(data.hourly_forecast || []).slice(0, 8).map((item) => (
-                  <article key={item.forecast_at || item.time} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                    <div className="flex items-center justify-between">
-                      <p className="font-bold text-slate-900">{formatTime(item.forecast_at || item.time)}</p>
-                      <Umbrella className="h-4 w-4 text-sky-700" />
-                    </div>
-                    <p className="mt-2 text-sm text-slate-600">{formatNumber(item.temperature, '°C')}</p>
-                    <p className="text-sm text-slate-600">{formatNumber(item.humidity, '%', 0)} ẩm</p>
-                    <p className="text-sm text-slate-600">{formatNumber(item.rain_probability, '%', 0)} mưa</p>
-                    <p className="mt-2 text-xs leading-5 text-slate-500">{item.recommendation}</p>
-                  </article>
-                ))}
-              </div>
-            </section>
-
-            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="mb-4 flex items-center gap-2">
-                <ShieldCheck className="h-5 w-5 text-emerald-700" />
-                <h2 className="text-lg font-bold text-slate-950">Ý nghĩa nông nghiệp</h2>
-              </div>
-              <div className="space-y-3">
-                {(current.agriculture_insights || []).map((item) => (
-                  <div key={item.metric} className="rounded-lg border border-slate-200 p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <h3 className="font-semibold text-slate-900">{item.metric}</h3>
-                      <span className="text-sm font-bold text-slate-700">{item.value}</span>
-                    </div>
-                    <p className="mt-2 text-sm leading-6 text-slate-600">{item.meaning}</p>
+          <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex items-center gap-2">
+              <Clock className="h-5 w-5 text-slate-700" />
+              <h2 className="text-lg font-bold text-slate-950">24 giờ tới</h2>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {(data.hourly_forecast || []).slice(0, 8).map((item) => (
+                <article key={item.forecast_at || item.time} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex items-center justify-between">
+                    <p className="font-bold text-slate-900">{formatTime(item.forecast_at || item.time)}</p>
+                    <Umbrella className="h-4 w-4 text-sky-700" />
                   </div>
-                ))}
-              </div>
-            </section>
-          </div>
+                  <p className="mt-2 text-sm text-slate-600">{formatNumber(item.temperature, '°C')}</p>
+                  <p className="text-sm text-slate-600">{formatNumber(item.humidity, '%', 0)} ẩm</p>
+                  <p className="text-sm text-slate-600">{formatNumber(item.rain_probability, '%', 0)} mưa</p>
+                  <p className="mt-2 text-xs leading-5 text-slate-500">{item.recommendation}</p>
+                </article>
+              ))}
+            </div>
+          </section>
         </>
       )}
     </div>

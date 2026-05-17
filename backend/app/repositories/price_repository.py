@@ -46,7 +46,7 @@ def create_market_price(
     source_url: str | None = None,
     collected_at: datetime | None = None,
     price_date: date | None = None,
-    market_type: str = "BĂ¡n láº»",
+    market_type: str = "Ban le",
 ) -> MarketPrice:
     crop = ensure_crop(db, crop_name)
     timestamp = collected_at or datetime.now()

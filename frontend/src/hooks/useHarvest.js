@@ -16,7 +16,7 @@ export const useHarvest = () => {
       setData(result);
       return result;
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Loi khi du bao thu hoach'));
+      setError(getApiErrorMessage(err, 'Lỗi khi dự báo thu hoạch'));
       throw err;
     } finally {
       setLoading(false);

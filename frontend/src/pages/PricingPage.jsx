@@ -20,7 +20,21 @@ import { pricingApi } from '../services/pricingApi';
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
 
 const crops = ['ca chua', 'dua chuot', 'rau muong', 'cai xanh', 'ot', 'lua'];
-const regions = ['Ha Noi', 'TP.HCM', 'Da Nang', 'Can Tho', 'Hai Phong'];
+const cropLabels = {
+  'ca chua': 'Cà chua',
+  'dua chuot': 'Dưa chuột',
+  'rau muong': 'Rau muống',
+  'cai xanh': 'Cải xanh',
+  ot: 'Ớt',
+  lua: 'Lúa',
+};
+const regions = [
+  { value: 'Ha Noi', label: 'Hà Nội' },
+  { value: 'TP.HCM', label: 'TP.HCM' },
+  { value: 'Da Nang', label: 'Đà Nẵng' },
+  { value: 'Can Tho', label: 'Cần Thơ' },
+  { value: 'Hai Phong', label: 'Hải Phòng' },
+];
 
 const trendMeta = {
   increasing: {
@@ -38,6 +52,14 @@ const trendMeta = {
 };
 
 const formatCurrency = (value) => `${Number(value || 0).toLocaleString('vi-VN')} đ/kg`;
+const QUALITY_LABELS = {
+  grade_1: 'Loại 1',
+  grade_2: 'Loại 2',
+  grade_3: 'Loại 3',
+  'Loai 1': 'Loại 1',
+  'Loai 2': 'Loại 2',
+  'Loai 3': 'Loại 3',
+};
 
 const PricingPage = () => {
   const [cropName, setCropName] = useState('ca chua');
@@ -144,7 +166,7 @@ const PricingPage = () => {
             >
               {crops.map((crop) => (
                 <option key={crop} value={crop}>
-                  {crop}
+                  {cropLabels[crop] || crop}
                 </option>
               ))}
             </select>
@@ -158,8 +180,8 @@ const PricingPage = () => {
               className="w-full rounded-lg border border-gray-300 px-3 py-2.5 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
             >
               {regions.map((item) => (
-                <option key={item} value={item}>
-                  {item}
+                <option key={item.value} value={item.value}>
+                  {item.label}
                 </option>
               ))}
             </select>
@@ -205,12 +227,12 @@ const PricingPage = () => {
       {currentPrice && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700 shadow-sm">
           <DataSourceBadge data={currentPrice} />
-          <span>Source: {currentPrice.source_name || 'unknown'}</span>
+          <span>Nguồn: {currentPrice.source_name || 'không rõ'}</span>
           {currentPrice.last_updated && (
-            <span>Updated: {new Date(currentPrice.last_updated).toLocaleString('vi-VN')}</span>
+            <span>Cập nhật: {new Date(currentPrice.last_updated).toLocaleString('vi-VN')}</span>
           )}
           {currentPrice.is_mock && (
-            <span className="font-medium text-amber-700">Demo data is being shown.</span>
+            <span className="font-medium text-amber-700">Đang hiển thị dữ liệu demo.</span>
           )}
         </div>
       )}
@@ -234,7 +256,9 @@ const PricingPage = () => {
 
           <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
             <p className="text-sm text-gray-600">Phân loại</p>
-            <p className="mt-2 text-2xl font-bold text-gray-900">{currentPrice.quality_grade}</p>
+            <p className="mt-2 text-2xl font-bold text-gray-900">
+              {QUALITY_LABELS[currentPrice.quality_grade] || currentPrice.quality_grade}
+            </p>
           </div>
         </div>
       )}
@@ -257,7 +281,7 @@ const PricingPage = () => {
           {history.history.some((item) => item.is_mock) && (
             <div className="mb-3 flex flex-wrap items-center gap-3 text-sm text-amber-700">
               <DataSourceBadge data={{ is_mock: true }} />
-              <span>History chart is using demo fallback data.</span>
+              <span>Biểu đồ lịch sử đang dùng dữ liệu demo dự phòng.</span>
             </div>
           )}
           <h2 className="text-lg font-semibold text-gray-900">Lịch sử giá gần đây</h2>

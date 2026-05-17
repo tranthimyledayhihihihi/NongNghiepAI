@@ -18,6 +18,16 @@ import { cropsApi } from '../services/cropsApi';
 import { pricingApi } from '../services/pricingApi';
 
 const DEFAULT_REGION = 'Ha Noi';
+const REGION_LABELS = {
+  'Ha Noi': 'Hà Nội',
+  'Da Nang': 'Đà Nẵng',
+  'Can Tho': 'Cần Thơ',
+  'Lam Dong': 'Lâm Đồng',
+  'Dak Lak': 'Đắk Lắk',
+  'Hai Phong': 'Hải Phòng',
+};
+
+const displayRegion = (value) => REGION_LABELS[value] || value;
 
 const CropDetailPage = () => {
   const { cropId } = useParams();
@@ -154,7 +164,7 @@ const CropDetailPage = () => {
             <h1 className="text-3xl font-bold text-gray-900 mb-2">{crop.crop_name}</h1>
             <p className="text-gray-600 flex items-center space-x-2">
               <MapPin className="w-4 h-4" />
-              <span>{crop.category || DEFAULT_REGION}</span>
+              <span>{crop.category || displayRegion(DEFAULT_REGION)}</span>
             </p>
           </div>
           <div className="flex items-center space-x-3">
@@ -257,7 +267,7 @@ const CropDetailPage = () => {
                   <div className="flex items-center space-x-3">
                     <div className={`w-3 h-3 rounded-full ${index === 0 ? 'bg-green-500' : index === 1 ? 'bg-green-400' : 'bg-orange-500'}`} />
                     <div>
-                      <div className="font-bold text-gray-900">{region.region}</div>
+                      <div className="font-bold text-gray-900">{displayRegion(region.region)}</div>
                       {region.subRegion && <div className="text-sm text-gray-500">{region.subRegion}</div>}
                     </div>
                   </div>

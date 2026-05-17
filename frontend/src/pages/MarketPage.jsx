@@ -6,9 +6,9 @@ import { marketApi } from '../services/marketApi';
 import { marketNewsApi } from '../services/marketNewsApi';
 
 const fallbackChannels = [
-  { id: 'wholesale', name: 'Cho dau moi', commission: '5-10%' },
-  { id: 'retail', name: 'Cho ban le', commission: '0%' },
-  { id: 'supermarket', name: 'Sieu thi/cua hang sach', commission: '10-15%' },
+  { id: 'wholesale', name: 'Chợ đầu mối', commission: '5-10%' },
+  { id: 'retail', name: 'Chợ bán lẻ', commission: '0%' },
+  { id: 'supermarket', name: 'Siêu thị/cửa hàng sạch', commission: '10-15%' },
 ];
 
 const channelIcons = [ShoppingCart, TrendingUp, Globe];
@@ -64,7 +64,7 @@ const MarketPage = () => {
       );
       setResult(data);
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Khong the goi y kenh ban hang'));
+      setError(getApiErrorMessage(err, 'Không thể gợi ý kênh bán hàng'));
     } finally {
       setLoading(false);
     }
@@ -74,11 +74,11 @@ const MarketPage = () => {
     <div className="px-4 py-6">
       <div className="mb-8">
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-3xl font-bold text-gray-900">Tu van kenh ban hang</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Tư vấn kênh bán hàng</h1>
           <DataSourceBadge data={channelSource} />
         </div>
         <p className="mt-2 text-gray-600">
-          So sanh kenh ban va goi y kenh toi uu tu API backend.
+          So sánh kênh bán và gợi ý kênh tối ưu từ API backend.
         </p>
       </div>
 
@@ -106,7 +106,7 @@ const MarketPage = () => {
               </div>
 
               <div>
-                <span className="text-sm font-medium text-gray-700">Phi hoa hong:</span>
+                <span className="text-sm font-medium text-gray-700">Phí hoa hồng:</span>
                 <span className="ml-2 text-sm text-gray-900">{commission}</span>
               </div>
             </div>
@@ -117,7 +117,7 @@ const MarketPage = () => {
       {news.length > 0 && (
         <section className="mt-8 rounded-lg border border-gray-200 bg-white p-6 shadow">
           <div className="mb-4 flex flex-wrap items-center gap-3">
-            <h2 className="text-lg font-semibold text-gray-900">Tin tuc thi truong realtime</h2>
+            <h2 className="text-lg font-semibold text-gray-900">Tin tức thị trường realtime</h2>
             <DataSourceBadge data={{ source_name: 'RSS', is_realtime: true }} />
           </div>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -139,45 +139,45 @@ const MarketPage = () => {
       )}
 
       <div className="mt-8 bg-white rounded-lg shadow p-6">
-        <h2 className="text-lg font-semibold mb-4">Cong cu goi y kenh ban</h2>
+        <h2 className="text-lg font-semibold mb-4">Công cụ gợi ý kênh bán</h2>
 
         <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Nong san
+              Nông sản
             </label>
             <select
               value={formData.cropName}
               onChange={(event) => setFormData({ ...formData, cropName: event.target.value })}
               className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
-              <option value="ca chua">Ca chua</option>
-              <option value="dua chuot">Dua chuot</option>
-              <option value="rau muong">Rau muong</option>
-              <option value="lua">Lua</option>
-              <option value="ot">Ot</option>
+              <option value="ca chua">Cà chua</option>
+              <option value="dua chuot">Dưa chuột</option>
+              <option value="rau muong">Rau muống</option>
+              <option value="lua">Lúa</option>
+              <option value="ot">Ớt</option>
             </select>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Khu vuc
+              Khu vực
             </label>
             <select
               value={formData.region}
               onChange={(event) => setFormData({ ...formData, region: event.target.value })}
               className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
-              <option value="Ha Noi">Ha Noi</option>
+              <option value="Ha Noi">Hà Nội</option>
               <option value="TP.HCM">TP.HCM</option>
-              <option value="Da Nang">Da Nang</option>
-              <option value="Can Tho">Can Tho</option>
+              <option value="Da Nang">Đà Nẵng</option>
+              <option value="Can Tho">Cần Thơ</option>
             </select>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              So luong (kg)
+              Số lượng (kg)
             </label>
             <input
               type="number"
@@ -191,16 +191,16 @@ const MarketPage = () => {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Chat luong
+              Chất lượng
             </label>
             <select
               value={formData.qualityGrade}
               onChange={(event) => setFormData({ ...formData, qualityGrade: event.target.value })}
               className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
-              <option value="grade_1">Loai 1</option>
-              <option value="grade_2">Loai 2</option>
-              <option value="grade_3">Loai 3</option>
+              <option value="grade_1">Loại 1</option>
+              <option value="grade_2">Loại 2</option>
+              <option value="grade_3">Loại 3</option>
             </select>
           </div>
 
@@ -210,7 +210,7 @@ const MarketPage = () => {
               disabled={loading}
               className="w-full bg-primary-600 text-white py-2 px-4 rounded-md hover:bg-primary-700 disabled:bg-gray-300"
             >
-              {loading ? 'Dang goi y...' : 'Goi y'}
+              {loading ? 'Đang gợi ý...' : 'Gợi ý'}
             </button>
           </div>
         </form>
@@ -226,7 +226,7 @@ const MarketPage = () => {
           <div className="mt-6 space-y-4">
             <div className="rounded-lg bg-green-50 border border-green-200 p-4">
               <div className="mb-2 flex flex-wrap items-center gap-2">
-                <p className="text-sm text-green-700">Kenh de xuat</p>
+                <p className="text-sm text-green-700">Kênh đề xuất</p>
                 <DataSourceBadge data={result} />
               </div>
               <p className="text-2xl font-bold text-green-900">{result.recommended_channel}</p>
@@ -246,12 +246,12 @@ const MarketPage = () => {
                     {channel.channel_name}
                     {index === 0 && (
                       <span className="ml-2 text-xs bg-green-500 text-white px-2 py-1 rounded">
-                        Tot nhat
+                        Tốt nhất
                       </span>
                     )}
                   </p>
                   <p className="text-sm text-gray-600 mt-2">
-                    Gia uoc tinh: {channel.estimated_price.toLocaleString()} VND/kg
+                    Giá ước tính: {channel.estimated_price.toLocaleString()} VND/kg
                   </p>
                   <p className="text-lg font-bold text-gray-900 mt-1">
                     {channel.estimated_total_revenue.toLocaleString()} VND

@@ -55,20 +55,20 @@ async def get_quality_grades():
         "grades": [
             {
                 "grade": "grade_1",
-                "name": "Loai 1",
-                "description": "Chat luong cao, khong khuyet tat ro rang",
+                "name": "Loại 1",
+                "description": "Chất lượng cao, không khuyết tật rõ ràng",
                 "price_multiplier": 1.0,
             },
             {
                 "grade": "grade_2",
-                "name": "Loai 2",
-                "description": "Chat luong trung binh, co khuyet tat nhe",
+                "name": "Loại 2",
+                "description": "Chất lượng trung bình, có khuyết tật nhẹ",
                 "price_multiplier": 0.82,
             },
             {
                 "grade": "grade_3",
-                "name": "Loai 3",
-                "description": "Chat luong thap, can ban nhanh hoac che bien",
+                "name": "Loại 3",
+                "description": "Chất lượng thấp, cần bán nhanh hoặc chế biến",
                 "price_multiplier": 0.58,
             },
         ]

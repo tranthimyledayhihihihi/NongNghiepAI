@@ -1,4 +1,4 @@
-import { Bell, HelpCircle, LogOut, Menu, Search, Settings, User } from 'lucide-react';
+import { Bell, HelpCircle, LogOut, Menu, Settings, User } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -23,15 +23,6 @@ const Navbar = ({ setSidebarOpen }) => {
           >
             <Menu className="h-6 w-6" />
           </button>
-
-          <div className="relative w-full max-w-md">
-            <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Tìm nông sản, mùa vụ hoặc thị trường..."
-              className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-4 outline-none focus:border-transparent focus:ring-2 focus:ring-emerald-500"
-            />
-          </div>
         </div>
 
         <div className="flex items-center gap-2 md:gap-3">

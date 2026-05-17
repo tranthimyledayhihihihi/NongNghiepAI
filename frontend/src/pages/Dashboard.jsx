@@ -32,7 +32,7 @@ const formatNumber = (value, digits = 0) => {
 };
 
 const formatDateTime = (value) => {
-  if (!value) return 'Chua co';
+  if (!value) return 'Chưa có';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
   return date.toLocaleString('vi-VN', {
@@ -56,6 +56,17 @@ const formatPct = (value) => {
   return `${number >= 0 ? '+' : ''}${number.toFixed(1)}%`;
 };
 
+const REGION_LABELS = {
+  'Ha Noi': 'Hà Nội',
+  'Da Nang': 'Đà Nẵng',
+  'Can Tho': 'Cần Thơ',
+  'Lam Dong': 'Lâm Đồng',
+  'Dak Lak': 'Đắk Lắk',
+  'Hai Phong': 'Hải Phòng',
+};
+
+const displayRegion = (value) => REGION_LABELS[value] || value;
+
 const trendIcon = (trend) => {
   if (trend === 'up' || trend === 'increasing') return <ArrowUp className="h-4 w-4 text-emerald-600" />;
   if (trend === 'down' || trend === 'decreasing') return <ArrowDown className="h-4 w-4 text-rose-600" />;
@@ -78,7 +89,7 @@ const PanelHeader = ({ icon: Icon, title, children }) => (
   </div>
 );
 
-const EmptyState = ({ text = 'Chua co du lieu.' }) => (
+const EmptyState = ({ text = 'Chưa có dữ liệu.' }) => (
   <div className="rounded-md border border-dashed border-slate-200 px-3 py-4 text-center text-sm text-slate-500">
     {text}
   </div>
@@ -90,10 +101,10 @@ const RiskBadge = ({ level }) => {
     medium: 'border-amber-200 bg-amber-50 text-amber-700',
     low: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   };
-  const labels = { high: 'Cao', medium: 'Trung binh', low: 'Thap' };
+  const labels = { high: 'Cao', medium: 'Trung bình', low: 'Thấp' };
   return (
     <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${styles[level] || styles.low}`}>
-      Rui ro {labels[level] || labels.low}
+      Rủi ro {labels[level] || labels.low}
     </span>
   );
 };
@@ -105,7 +116,7 @@ const SentimentBadge = ({ value }) => {
     negative: 'bg-rose-50 text-rose-700 border-rose-200',
     neutral: 'bg-slate-50 text-slate-700 border-slate-200',
   };
-  const labels = { positive: 'Tich cuc', negative: 'Tieu cuc', neutral: 'Trung lap' };
+  const labels = { positive: 'Tích cực', negative: 'Tiêu cực', neutral: 'Trung lập' };
   return (
     <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${styles[sentiment] || styles.neutral}`}>
       {labels[sentiment] || labels.neutral}
@@ -115,7 +126,7 @@ const SentimentBadge = ({ value }) => {
 
 const MiniHourlyChart = ({ hourly = [] }) => {
   const points = hourly.slice(0, 12);
-  if (!points.length) return <EmptyState text="Chua co hourly forecast." />;
+  if (!points.length) return <EmptyState text="Chưa có dự báo theo giờ." />;
   const maxRain = Math.max(...points.map((item) => Number(item.rainfall || item.rain_probability || 0)), 1);
   return (
     <div className="flex h-28 items-end gap-2">
@@ -129,7 +140,7 @@ const MiniHourlyChart = ({ hourly = [] }) => {
             <div
               className="w-full rounded-t bg-sky-500"
               style={{ height }}
-              title={`${label}: mua ${formatNumber(value, 1)} mm, xac suat ${formatNumber(probability)}%`}
+              title={`${label}: mưa ${formatNumber(value, 1)} mm, xác suất ${formatNumber(probability)}%`}
             />
             <span className="text-[10px] text-slate-500">{label}</span>
           </div>
@@ -155,7 +166,7 @@ const Dashboard = () => {
       const data = await dashboardApi.reset({ cropName, region });
       setSummary(data);
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Khong tai duoc dashboard'));
+      setError(getApiErrorMessage(err, 'Không tải được dashboard'));
     } finally {
       setLoading(false);
     }
@@ -187,7 +198,7 @@ const Dashboard = () => {
   }, [forecast]);
 
   if (loading && !summary) {
-    return <InlineLoading text="Dang xoa du lieu cu va lay du lieu moi tu API..." />;
+    return <InlineLoading text="Đang xóa dữ liệu cũ và lấy dữ liệu mới từ API..." />;
   }
 
   if (error && !summary) {
@@ -200,11 +211,11 @@ const Dashboard = () => {
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-sm font-medium text-emerald-700">
             <Sprout className="h-4 w-4" />
-            Dashboard van hanh nong san
+            Dashboard vận hành nông sản
           </div>
-          <h1 className="mt-1 text-2xl font-bold text-slate-950">Trung tam du lieu thi truong va nong vu</h1>
+          <h1 className="mt-1 text-2xl font-bold text-slate-950">Trung tâm dữ liệu thị trường và nông vụ</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Tu lam moi du lieu thuc te khi mo trang, sau do doc nhanh tu DB.
+            Tự làm mới dữ liệu thực tế khi mở trang, sau đó đọc nhanh từ DB.
           </p>
         </div>
       </div>
@@ -217,7 +228,7 @@ const Dashboard = () => {
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
         <Panel>
-          <PanelHeader icon={TrendingUp} title="Thi truong noi bat">
+          <PanelHeader icon={TrendingUp} title="Thị trường nổi bật">
             <DataSourceBadge data={featured} />
           </PanelHeader>
 
@@ -225,7 +236,7 @@ const Dashboard = () => {
             <div>
               <div className="flex items-center gap-2 text-sm text-slate-600">
                 <MapPin className="h-4 w-4" />
-                {featured.location || region}
+                {displayRegion(featured.location || region)}
               </div>
               <h2 className="mt-1 text-2xl font-bold text-slate-950">{featured.display_name || featured.name || cropName}</h2>
               <div className="mt-3 flex items-end gap-2">
@@ -236,34 +247,34 @@ const Dashboard = () => {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-md bg-emerald-50 px-3 py-2">
-                <div className="text-xs text-emerald-700">So voi hom truoc</div>
+                <div className="text-xs text-emerald-700">So với hôm trước</div>
                 <div className="mt-1 flex items-center gap-1 text-lg font-bold text-emerald-800">
                   {trendIcon(featured.trend)}
                   {formatPct(featured.change_day_pct)}
                 </div>
               </div>
               <div className="rounded-md bg-sky-50 px-3 py-2">
-                <div className="text-xs text-sky-700">So voi tuan truoc</div>
+                <div className="text-xs text-sky-700">So với tuần trước</div>
                 <div className="mt-1 text-lg font-bold text-sky-800">{formatPct(featured.change_week_pct)}</div>
               </div>
             </div>
 
             <div className="rounded-md border border-slate-200 px-3 py-2 text-xs text-slate-600">
-              <div className="font-semibold text-slate-800">Nguon: {featured.source_name || 'Chua ro'}</div>
-              <div>Cap nhat: {formatDateTime(featured.last_updated)}</div>
+              <div className="font-semibold text-slate-800">Nguồn: {featured.source_name || 'Chưa rõ'}</div>
+              <div>Cập nhật: {formatDateTime(featured.last_updated)}</div>
               {featured.source_url && (
                 <a href={featured.source_url} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-emerald-700">
-                  Mo nguon <ExternalLink className="h-3 w-3" />
+                  Mở nguồn <ExternalLink className="h-3 w-3" />
                 </a>
               )}
             </div>
 
             <Link
-              to="/alerts-management"
+              to="/alerts"
               className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-emerald-700 px-4 py-2.5 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50"
             >
               <Bell className="h-4 w-4" />
-              Dat canh bao gia
+              Đặt cảnh báo giá
             </Link>
           </div>
         </Panel>
@@ -280,7 +291,7 @@ const Dashboard = () => {
             <div className="rounded-md bg-slate-50 px-3 py-3">
               <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
                 <ThermometerSun className="h-4 w-4 text-orange-600" />
-                Nhiet do
+                Nhiệt độ
               </div>
               <div className="mt-2 text-2xl font-bold text-slate-950">{formatNumber(weatherCurrent.temperature, 1)} C</div>
             </div>
@@ -294,14 +305,14 @@ const Dashboard = () => {
             <div className="rounded-md bg-slate-50 px-3 py-3">
               <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
                 <Droplets className="h-4 w-4 text-sky-600" />
-                Mua 24h toi
+                Mưa 24h tới
               </div>
               <div className="mt-2 text-2xl font-bold text-sky-700">{formatNumber(weatherRisk.rain_24h, 1)} mm</div>
             </div>
             <div className="rounded-md bg-slate-50 px-3 py-3">
               <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
                 <Wind className="h-4 w-4 text-slate-600" />
-                Gio / UV
+                Gió / UV
               </div>
               <div className="mt-2 text-2xl font-bold text-slate-950">
                 {formatNumber(weatherCurrent.wind_speed, 1)} / {formatNumber(weatherCurrent.uv_index, 1)}
@@ -317,7 +328,7 @@ const Dashboard = () => {
         <Panel>
           <PanelHeader icon={AlertTriangle} title="Alert Center">
             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
-              {alerts.length} canh bao
+              {alerts.length} cảnh báo
             </span>
           </PanelHeader>
           <div className="space-y-3">
@@ -329,7 +340,7 @@ const Dashboard = () => {
                 </div>
               ))
             ) : (
-              <EmptyState text="Chua co canh bao tu backend." />
+              <EmptyState text="Chưa có cảnh báo từ backend." />
             )}
           </div>
         </Panel>
@@ -337,21 +348,21 @@ const Dashboard = () => {
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         <Panel>
-          <PanelHeader icon={Sparkles} title="AI khuyen nghi">
+          <PanelHeader icon={Sparkles} title="AI khuyến nghị">
             <DataSourceBadge data={summary?.ai_recommendation || {}} />
           </PanelHeader>
           <div className="space-y-3">
-            <h3 className="text-xl font-bold text-slate-950">{summary?.ai_recommendation?.title || 'Dang tong hop'}</h3>
-            <p className="text-sm leading-6 text-slate-600">{summary?.ai_recommendation?.description || 'Chua co khuyen nghi.'}</p>
+            <h3 className="text-xl font-bold text-slate-950">{summary?.ai_recommendation?.title || 'Đang tổng hợp'}</h3>
+            <p className="text-sm leading-6 text-slate-600">{summary?.ai_recommendation?.description || 'Chưa có khuyến nghị.'}</p>
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-md bg-emerald-50 p-3">
-                <div className="text-xs text-emerald-700">Do tin cay</div>
+                <div className="text-xs text-emerald-700">Độ tin cậy</div>
                 <div className="mt-1 text-xl font-bold text-emerald-800">
                   {formatNumber(Number(summary?.ai_recommendation?.confidence || 0) * 100)}%
                 </div>
               </div>
               <div className="rounded-md bg-slate-50 p-3">
-                <div className="text-xs text-slate-500">Gia ky vong</div>
+                <div className="text-xs text-slate-500">Giá kỳ vọng</div>
                 <div className="mt-1 text-xl font-bold text-slate-950">{formatNumber(summary?.ai_recommendation?.expected_price)}</div>
               </div>
             </div>
@@ -359,8 +370,8 @@ const Dashboard = () => {
         </Panel>
 
         <Panel>
-          <PanelHeader icon={TrendingUp} title="Du bao gia 7 ngay">
-            {forecastHigh && <span className="text-xs font-medium text-slate-500">Dinh: {formatNumber(forecastHigh.forecast_price || forecastHigh.predicted_price)}</span>}
+          <PanelHeader icon={TrendingUp} title="Dự báo giá 7 ngày">
+            {forecastHigh && <span className="text-xs font-medium text-slate-500">Đỉnh: {formatNumber(forecastHigh.forecast_price || forecastHigh.predicted_price)}</span>}
           </PanelHeader>
           <div className="space-y-2">
             {forecast.length ? (
@@ -368,7 +379,7 @@ const Dashboard = () => {
                 <div key={item.date} className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2">
                   <div>
                     <div className="text-sm font-semibold text-slate-900">{formatDate(item.date)}</div>
-                    <div className="text-xs text-slate-500">{item.confidence === 'high' ? 'Tin cay cao' : 'Tin cay trung binh'}</div>
+                    <div className="text-xs text-slate-500">{item.confidence === 'high' ? 'Tin cậy cao' : 'Tin cậy trung bình'}</div>
                   </div>
                   <div className="flex items-center gap-2 text-right">
                     {trendIcon(item.trend)}
@@ -377,7 +388,7 @@ const Dashboard = () => {
                 </div>
               ))
             ) : (
-              <EmptyState text="Chua co du bao gia." />
+              <EmptyState text="Chưa có dự báo giá." />
             )}
           </div>
         </Panel>
@@ -385,14 +396,14 @@ const Dashboard = () => {
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
         <Panel className="xl:col-span-2">
-          <PanelHeader icon={Globe2} title="Gia theo vung" />
+          <PanelHeader icon={Globe2} title="Giá theo vùng" />
           <div className="grid gap-3 md:grid-cols-2">
             {regionalPrices.length ? (
               regionalPrices.map((item) => (
                 <div key={item.region} className="rounded-md border border-slate-200 px-3 py-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="font-semibold text-slate-950">{item.region}</div>
+                      <div className="font-semibold text-slate-950">{displayRegion(item.region)}</div>
                       <div className="text-xs text-slate-500">{item.source_name || 'database'}</div>
                     </div>
                     <DataSourceBadge data={item} />
@@ -403,13 +414,13 @@ const Dashboard = () => {
                 </div>
               ))
             ) : (
-              <EmptyState text="Chua co gia theo vung." />
+              <EmptyState text="Chưa có giá theo vùng." />
             )}
           </div>
         </Panel>
 
         <Panel>
-          <PanelHeader icon={Newspaper} title="Tin thi truong" />
+          <PanelHeader icon={Newspaper} title="Tin thị trường" />
           <div className="space-y-3">
             {news.length ? (
               news.slice(0, 6).map((item) => (
@@ -430,14 +441,14 @@ const Dashboard = () => {
                 </a>
               ))
             ) : (
-              <EmptyState text="Chua co tin tuc tu backend." />
+              <EmptyState text="Chưa có tin tức từ backend." />
             )}
           </div>
         </Panel>
       </div>
 
       <Panel>
-        <PanelHeader icon={Globe2} title="Tham chieu thi truong quoc te">
+        <PanelHeader icon={Globe2} title="Tham chiếu thị trường quốc tế">
           <DataSourceBadge data={realtimeMarket.exchange_rate || {}} />
         </PanelHeader>
         <div className="grid gap-3 md:grid-cols-3">
@@ -450,7 +461,7 @@ const Dashboard = () => {
               </div>
             ))
           ) : (
-            <EmptyState text="Chua co tham chieu quoc te." />
+            <EmptyState text="Chưa có tham chiếu quốc tế." />
           )}
         </div>
       </Panel>

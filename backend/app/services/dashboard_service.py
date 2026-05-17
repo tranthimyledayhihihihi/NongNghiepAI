@@ -271,10 +271,10 @@ class DashboardService:
             "activity_recommendations": recommendations,
             "ai_recommendation": {
                 "provider": "rule_based_ai",
-                "summary": "Du lieu thoi tiet duoc nap lai khi mo dashboard, sau do doc nhanh tu DB/cache.",
-                "risk_explanation": "Risk score duoc tinh tu mua, UV, gio, do am va canh bao nong vu hien co.",
+                "summary": "Dữ liệu thời tiết được nạp lại khi mở dashboard, sau đó đọc nhanh từ DB/cache.",
+                "risk_explanation": "Risk score được tính từ mưa, UV, gió, độ ẩm và cảnh báo nông vụ hiện có.",
                 "action_plan": [item.get("reason") for item in recommendations[:3] if item.get("reason")],
-                "data_note": "Dashboard reset se cap nhat du lieu API truoc khi hien thi.",
+                "data_note": "Dashboard reset sẽ cập nhật dữ liệu API trước khi hiển thị.",
             },
             "source_name": current.get("source_name") or "Weather DB",
             "source_url": current.get("source_url"),
@@ -397,19 +397,19 @@ class DashboardService:
 
         if trend in {"increasing", "up"} and rainy_days <= 2:
             action = "hold"
-            title = "Nen giu hang"
+            title = "Nên giữ hàng"
             confidence = 0.78
-            description = "Xu huong gia dang cai thien va rui ro thoi tiet o muc chap nhan duoc."
+            description = "Xu hướng giá đang cải thiện và rủi ro thời tiết ở mức chấp nhận được."
         elif rainy_days >= 4:
             action = "sell_sooner"
-            title = "Nen ban som hon"
+            title = "Nên bán sớm hơn"
             confidence = 0.72
-            description = "Rui ro mua cao, nen giam thoi gian ton kho de han che hao hut."
+            description = "Rủi ro mưa cao, nên giảm thời gian tồn kho để hạn chế hao hụt."
         else:
             action = "sell_in_batches"
-            title = "Ban theo nhieu dot"
+            title = "Bán theo nhiều đợt"
             confidence = 0.70
-            description = "Tin hieu thi truong trung tinh; chia nho san luong giup giam rui ro gia va thoi tiet."
+            description = "Tín hiệu thị trường trung tính; chia nhỏ sản lượng giúp giảm rủi ro giá và thời tiết."
 
         return {
             "crop_name": crop_name,
@@ -419,7 +419,7 @@ class DashboardService:
             "description": description,
             "confidence": confidence,
             "expected_price": round(float(current_price["current_price"]) * 1.02, 2),
-            "period": "7 ngay toi",
+            "period": "7 ngày tới",
             "source": "rule_based_ai",
             "is_mock": bool(current_price.get("is_mock")) or weather["is_mock"],
             "last_updated": datetime.now(),
@@ -442,6 +442,9 @@ class DashboardService:
             db.query(WeatherObservation).filter(WeatherObservation.Region == region).delete(synchronize_session=False)
             db.commit()
             redis_client.delete("market_news:latest")
+            redis_client.delete("market_news:latest:agriculture")
+            for limit in (4, 6, 20):
+                redis_client.delete(f"market_news:latest:agriculture:{limit}")
         except Exception:
             db.rollback()
 
@@ -619,7 +622,7 @@ class DashboardService:
 
     @staticmethod
     def _display_crop(crop_name: str) -> str:
-        labels = {"lua": "Lua", "gao": "Gao", "ca phe": "Ca phe", "ho tieu": "Ho tieu"}
+        labels = {"lua": "Lúa", "gao": "Gạo", "ca phe": "Cà phê", "ho tieu": "Hồ tiêu"}
         return labels.get(crop_name, crop_name.title())
 
     @staticmethod

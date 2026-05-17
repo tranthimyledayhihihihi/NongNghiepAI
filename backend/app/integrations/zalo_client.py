@@ -10,9 +10,9 @@ class ZaloClient:
         if not settings.ZALO_OA_TOKEN:
             return {
                 "receiver": receiver,
-                "status": "mock_sent",
+                "status": "missing_token",
                 "message_id": f"mock-zalo-{uuid4()}",
-                "error": "ZALO_OA_TOKEN is not configured",
+                "error": "ZALO_OA_TOKEN chưa được cấu hình",
             }
         try:
             response = httpx.post(

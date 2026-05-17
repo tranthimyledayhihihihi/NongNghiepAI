@@ -1001,7 +1001,7 @@ class AlertService:
         if channel == "sms":
             return user.PhoneNumber or ""
         if channel == "zalo":
-            return user.ZaloID or user.PhoneNumber or ""
+            return user.ZaloID or ""
         if channel == "email":
             return user.Email or ""
         return ""
@@ -1067,7 +1067,19 @@ class AlertService:
     def _looks_mojibake(value: str | None) -> bool:
         if not value:
             return False
-        markers = ("�", "Ð", "Ä", "Æ", "áº", "á»", "Hà N?i", "ngư?ng", "hi?n", "c?nh")
+        bad_question_mark = chr(63)
+        markers = (
+            "\ufffd",
+            "\u00d0",
+            "\u00c4",
+            "\u00c6",
+            "\u00e1\u00ba",
+            "\u00e1\u00bb",
+            f"Hà N{bad_question_mark}i",
+            f"ngư{bad_question_mark}ng",
+            f"hi{bad_question_mark}n",
+            f"c{bad_question_mark}nh",
+        )
         return any(marker in value for marker in markers)
 
     @staticmethod

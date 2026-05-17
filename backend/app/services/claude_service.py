@@ -52,10 +52,10 @@ class ClaudeService:
         }
 
     def get_market_insights(self, crop_name: str, region: str) -> str:
-        return f"Hay goi /api/ai/chat voi crop_name={crop_name}, region={region} de lay insight co context."
+        return f"Hãy gọi /api/ai/chat với crop_name={crop_name}, region={region} để lấy insight có context."
 
     def get_selling_recommendations(self, data: dict) -> str:
-        return "Dung /api/market/suggest va /api/ai/chat de lay khuyen nghi co du lieu gia/thoi tiet."
+        return "Dùng /api/market/suggest và /api/ai/chat để lấy khuyến nghị có dữ liệu giá/thời tiết."
 
     def _build_context(self, db: Session, crop_name: str | None, region: str | None, user_id: int | None) -> dict:
         region = region or "Ha Noi"
@@ -111,22 +111,22 @@ class ClaudeService:
     @staticmethod
     def _fallback_answer(question: str, context: dict, error: str) -> str:
         parts = [
-            "He thong chua goi duoc AI provider nen day la cau tra loi fallback dua tren du lieu noi bo.",
-            f"Ly do provider: {error}",
+            "Hệ thống chưa gọi được AI provider nên đây là câu trả lời fallback dựa trên dữ liệu nội bộ.",
+            f"Lý do provider: {error}",
         ]
         pricing = context.get("pricing")
         if pricing:
             parts.append(
-                f"Gia hien tai {pricing.get('crop_name')} tai {pricing.get('region')} la "
-                f"{pricing.get('current_price'):,.0f} VND/kg, nguon {pricing.get('source_name')}."
+                f"Giá hiện tại {pricing.get('crop_name')} tại {pricing.get('region')} là "
+                f"{pricing.get('current_price'):,.0f} VND/kg, nguồn {pricing.get('source_name')}."
             )
         weather = context.get("weather")
         if weather:
             parts.append(
-                f"Thoi tiet {weather.get('region')}: {weather.get('temperature')}C, "
-                f"mua {weather.get('rainfall')}mm, nguon {weather.get('source_name')}."
+                f"Thời tiết {weather.get('region')}: {weather.get('temperature')}C, "
+                f"mưa {weather.get('rainfall')}mm, nguồn {weather.get('source_name')}."
             )
-        parts.append("Hay cau hinh CLAUDE_API_KEY hoac AI_PROVIDER=openai + AI_API_KEY de co tra loi AI that.")
+        parts.append("Hãy cấu hình CLAUDE_API_KEY hoặc AI_PROVIDER=openai + AI_API_KEY để có câu trả lời AI thật.")
         return "\n".join(parts)
 
     @staticmethod

@@ -10,40 +10,40 @@ const badgeStyles = {
 
 const resolveSource = (data = {}) => {
   if (data.is_mock) {
-    return { key: 'mock', label: 'Mock' };
+    return { key: 'mock', label: 'Dữ liệu mẫu' };
   }
   if (data.is_realtime) {
-    return { key: 'realtime', label: 'Realtime' };
+    return { key: 'realtime', label: 'Thời gian thực' };
   }
   if (data.cache_status === 'realtime') {
-    return { key: 'realtime', label: 'Realtime' };
+    return { key: 'realtime', label: 'Thời gian thực' };
   }
   if (data.cache_status === 'hit' || data.cache_status === 'cached') {
-    return { key: 'cached', label: 'Cached' };
+    return { key: 'cached', label: 'Đã lưu cache' };
   }
   if (data.source === 'database' || ['from_db', 'db', 'db_fresh'].includes(data.cache_status)) {
-    return { key: 'database', label: 'From DB' };
+    return { key: 'database', label: 'Từ DB' };
   }
   if (data.cache_status === 'error') {
-    return { key: 'error', label: 'Error' };
+    return { key: 'error', label: 'Lỗi' };
   }
   if (data.source === 'fallback') {
-    return { key: 'fallback', label: 'Fallback' };
+    return { key: 'fallback', label: 'Dự phòng' };
   }
   if (data.source_name) {
     return { key: 'database', label: data.source_name };
   }
-  return { key: 'unknown', label: 'Unknown' };
+  return { key: 'unknown', label: 'Không rõ' };
 };
 
 const DataSourceBadge = ({ data, className = '' }) => {
   const source = resolveSource(data);
   const titleParts = [
-    data?.source_name && `Source: ${data.source_name}`,
-    data?.last_updated && `Updated: ${new Date(data.last_updated).toLocaleString('vi-VN')}`,
-    data?.observed_at && `Observed: ${new Date(data.observed_at).toLocaleString('vi-VN')}`,
-    Number.isFinite(data?.data_age_minutes) && `Age: ${data.data_age_minutes} min`,
-    Number.isFinite(data?.cache_age_seconds) && `Age: ${Math.round(data.cache_age_seconds / 60)} min`,
+    data?.source_name && `Nguồn: ${data.source_name}`,
+    data?.last_updated && `Cập nhật: ${new Date(data.last_updated).toLocaleString('vi-VN')}`,
+    data?.observed_at && `Ghi nhận: ${new Date(data.observed_at).toLocaleString('vi-VN')}`,
+    Number.isFinite(data?.data_age_minutes) && `Tuổi dữ liệu: ${data.data_age_minutes} phút`,
+    Number.isFinite(data?.cache_age_seconds) && `Tuổi dữ liệu: ${Math.round(data.cache_age_seconds / 60)} phút`,
   ].filter(Boolean);
 
   return (

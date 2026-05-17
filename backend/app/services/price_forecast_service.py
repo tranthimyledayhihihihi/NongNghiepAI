@@ -200,10 +200,10 @@ class PriceForecastService:
     @staticmethod
     def _best_selling_time(trend: str, forecast_days: int) -> str:
         if trend == "increasing":
-            return f"Can nhac ban sau {min(forecast_days, 7)} ngay neu bao quan tot."
+            return f"Cân nhắc bán sau {min(forecast_days, 7)} ngày nếu bảo quản tốt."
         if trend == "decreasing":
-            return "Nen ban som trong 1-2 ngay toi."
-        return "Co the ban bat ky thoi diem phu hop trong ky du bao."
+            return "Nên bán sớm trong 1-2 ngày tới."
+        return "Có thể bán bất kỳ thời điểm phù hợp trong kỳ dự báo."
 
     @staticmethod
     def _build_warning(trend: str, prices: List[float]) -> Optional[str]:

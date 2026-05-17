@@ -232,6 +232,71 @@ def _apply_mssql_unicode_upgrades() -> None:
             "Message": "NVARCHAR(MAX) NOT NULL",
             "Recommendation": "NVARCHAR(MAX) NULL",
         },
+        "MarketNews": {
+            "Title": "NVARCHAR(300) NOT NULL",
+            "Summary": "NVARCHAR(MAX) NULL",
+            "SourceName": "NVARCHAR(100) NULL",
+            "Region": "NVARCHAR(100) NULL",
+        },
+        "MarketChannels": {
+            "ChannelName": "NVARCHAR(100) NOT NULL",
+            "Region": "NVARCHAR(100) NULL",
+        },
+        "MarketRecommendations": {
+            "Region": "NVARCHAR(100) NOT NULL",
+            "QualityGrade": "NVARCHAR(20) NULL",
+            "RecommendedChannel": "NVARCHAR(50) NULL",
+            "Reason": "NVARCHAR(MAX) NULL",
+            "Warning": "NVARCHAR(MAX) NULL",
+        },
+        "MarketPrices": {
+            "Region": "NVARCHAR(100) NOT NULL",
+            "QualityGrade": "NVARCHAR(20) NULL",
+            "MarketType": "NVARCHAR(50) NULL",
+            "SourceName": "NVARCHAR(100) NULL",
+        },
+        "QualityRecords": {
+            "DetectedIssues": "NVARCHAR(MAX) NULL",
+            "DefectDetails": "NVARCHAR(MAX) NULL",
+            "Recommendation": "NVARCHAR(MAX) NULL",
+        },
+        "HarvestRecords": {
+            "Region": "NVARCHAR(100) NOT NULL",
+            "FertilizerUsed": "NVARCHAR(200) NULL",
+            "PesticideUsed": "NVARCHAR(200) NULL",
+            "Status": "NVARCHAR(50) NOT NULL",
+            "Notes": "NVARCHAR(MAX) NULL",
+        },
+        "HarvestForecastResults": {
+            "WeatherWarning": "NVARCHAR(MAX) NULL",
+            "LaborRecommendation": "NVARCHAR(MAX) NULL",
+            "TransportRecommendation": "NVARCHAR(MAX) NULL",
+        },
+        "WeatherData": {
+            "Region": "NVARCHAR(100) NOT NULL",
+            "WeatherDesc": "NVARCHAR(100) NULL",
+            "SourceName": "NVARCHAR(100) NULL",
+        },
+        "WeatherForecasts": {
+            "Region": "NVARCHAR(100) NOT NULL",
+            "WeatherDesc": "NVARCHAR(100) NULL",
+            "Recommendation": "NVARCHAR(MAX) NULL",
+            "SourceName": "NVARCHAR(100) NULL",
+        },
+        "WeatherRules": {
+            "CropName": "NVARCHAR(100) NOT NULL",
+            "GrowthStage": "NVARCHAR(100) NULL",
+            "Message": "NVARCHAR(MAX) NOT NULL",
+            "Recommendation": "NVARCHAR(MAX) NULL",
+        },
+        "WeatherRecommendations": {
+            "Region": "NVARCHAR(100) NOT NULL",
+            "CropName": "NVARCHAR(100) NULL",
+            "GrowthStage": "NVARCHAR(100) NULL",
+            "Decision": "NVARCHAR(100) NOT NULL",
+            "Reason": "NVARCHAR(MAX) NOT NULL",
+            "Timing": "NVARCHAR(100) NULL",
+        },
     }
     for table_name, columns in unicode_upgrades.items():
         for column, ddl in columns.items():

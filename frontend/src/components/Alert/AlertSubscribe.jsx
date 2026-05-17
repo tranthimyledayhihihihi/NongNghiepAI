@@ -408,10 +408,23 @@ const AlertSubscribe = ({ mode = 'price', onCreated }) => {
               type={formData.notifyMethod === 'email' ? 'email' : 'text'}
               value={formData.contact}
               onChange={(event) => updateField('contact', event.target.value)}
-              placeholder={formData.notifyMethod === 'email' ? 'example@gmail.com' : formData.notifyMethod === 'app' ? 'Tự dùng tài khoản hiện tại' : 'Số điện thoại hoặc Zalo ID'}
-              required={formData.notifyMethod === 'email'}
+              placeholder={
+                formData.notifyMethod === 'email'
+                  ? 'example@gmail.com'
+                  : formData.notifyMethod === 'zalo'
+                    ? 'Zalo UID theo OA'
+                    : formData.notifyMethod === 'app'
+                      ? 'Tự dùng tài khoản hiện tại'
+                      : 'Số điện thoại'
+              }
+              required={formData.notifyMethod !== 'app'}
               className="w-full rounded-lg border border-gray-300 px-3 py-2.5 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
             />
+            {formData.notifyMethod === 'zalo' && (
+              <p className="mt-1 text-xs text-gray-500">
+                Zalo cần UID của người dùng đã quan tâm OA; cấu hình backend phải có ZALO_OA_TOKEN.
+              </p>
+            )}
             {formData.notifyMethod === 'email' && (
               <p className="mt-1 text-xs text-gray-500">
                 {mode === 'weather'

@@ -18,7 +18,7 @@ export const usePriceData = (cropName, region, autoFetch = false) => {
       setCurrentPrice(data);
       return data;
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Loi khi tai gia hien tai'));
+      setError(getApiErrorMessage(err, 'Lỗi khi tải giá hiện tại'));
       throw err;
     } finally {
       setLoading(false);
@@ -34,7 +34,7 @@ export const usePriceData = (cropName, region, autoFetch = false) => {
       setForecast(data);
       return data;
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Loi khi tai du bao gia'));
+      setError(getApiErrorMessage(err, 'Lỗi khi tải dự báo giá'));
       throw err;
     } finally {
       setLoading(false);
@@ -50,7 +50,7 @@ export const usePriceData = (cropName, region, autoFetch = false) => {
       setHistory(data);
       return data;
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Loi khi tai lich su gia'));
+      setError(getApiErrorMessage(err, 'Lỗi khi tải lịch sử giá'));
       throw err;
     } finally {
       setLoading(false);

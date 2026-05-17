@@ -50,7 +50,7 @@ Hệ thống AI toàn diện hỗ trợ nông dân Việt Nam trong việc dự 
 - ✅ Frontend: HarvestResult component
 - ✅ Frontend: HarvestForecastPage
 
-#### 5. � Hệ thống cảnh báo
+#### 5. 🔔 Hệ thống cảnh báo
 - ✅ API endpoint đăng ký cảnh báo (`/api/alert/subscribe`)
 - ✅ API endpoint lấy lịch sử cảnh báo (`/api/alert/history`)
 - ✅ Alert service structure
@@ -413,7 +413,7 @@ WEATHER_API_KEY=your_key
 SECRET_KEY=your_secret_key
 ```
 
-## � Roadmap & Next Steps
+## 🗺️ Roadmap & Next Steps
 
 ### 🎯 Immediate Priorities (Phase 2)
 

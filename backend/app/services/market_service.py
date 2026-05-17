@@ -18,12 +18,12 @@ from app.services.pricing_service import pricing_service
 
 # Bảng kênh bán hàng (Quang) - chi tiết hơn Tien
 MARKET_CHANNELS = {
-    "xuat_khau":  {"name": "Xuat khau", "commission": 0.18, "min_qty_kg": 1000, "quality_rank": 3, "price_factor": 1.35},
-    "sieu_thi":   {"name": "Sieu thi / chuoi cua hang", "commission": 0.12, "min_qty_kg": 200, "quality_rank": 3, "price_factor": 1.20},
-    "cho_dau_moi":{"name": "Cho dau moi", "commission": 0.07, "min_qty_kg": 100, "quality_rank": 2, "price_factor": 1.05},
-    "thuong_lai": {"name": "Thuong lai dia phuong", "commission": 0.05, "min_qty_kg": 50, "quality_rank": 2, "price_factor": 0.95},
-    "ban_le":     {"name": "Ban le truc tiep", "commission": 0.0, "min_qty_kg": 0, "quality_rank": 1, "price_factor": 1.15},
-    "che_bien":   {"name": "Nha may che bien", "commission": 0.03, "min_qty_kg": 500, "quality_rank": 1, "price_factor": 0.70},
+    "xuat_khau":  {"name": "Xuất khẩu", "commission": 0.18, "min_qty_kg": 1000, "quality_rank": 3, "price_factor": 1.35},
+    "sieu_thi":   {"name": "Siêu thị / chuỗi cửa hàng", "commission": 0.12, "min_qty_kg": 200, "quality_rank": 3, "price_factor": 1.20},
+    "cho_dau_moi":{"name": "Chợ đầu mối", "commission": 0.07, "min_qty_kg": 100, "quality_rank": 2, "price_factor": 1.05},
+    "thuong_lai": {"name": "Thương lái địa phương", "commission": 0.05, "min_qty_kg": 50, "quality_rank": 2, "price_factor": 0.95},
+    "ban_le":     {"name": "Bán lẻ trực tiếp", "commission": 0.0, "min_qty_kg": 0, "quality_rank": 1, "price_factor": 1.15},
+    "che_bien":   {"name": "Nhà máy chế biến", "commission": 0.03, "min_qty_kg": 500, "quality_rank": 1, "price_factor": 0.70},
 }
 
 QUALITY_RANK = {
@@ -31,6 +31,14 @@ QUALITY_RANK = {
     "Loai 2": 2, "grade_2": 2,
     "Loai 3": 1, "grade_3": 1,
     "Loại 1": 3, "Loại 2": 2, "Loại 3": 1,
+}
+QUALITY_LABELS = {
+    "grade_1": "Loại 1",
+    "grade_2": "Loại 2",
+    "grade_3": "Loại 3",
+    "Loai 1": "Loại 1",
+    "Loai 2": "Loại 2",
+    "Loai 3": "Loại 3",
 }
 
 
@@ -56,7 +64,7 @@ class MarketService:
             channel_source["channels"],
         )
         recommended = channels[0]
-        warning = None if request.quantity < 5000 else "San luong lon, nen chia nhieu dot ban de giam rui ro gia."
+        warning = None if request.quantity < 5000 else "Sản lượng lớn, nên chia nhiều đợt bán để giảm rủi ro giá."
 
         create_market_suggestion(
             db,
@@ -148,6 +156,7 @@ class MarketService:
     ) -> list[dict]:
         """Tính danh sách kênh eligible, sắp xếp theo doanh thu giảm dần."""
         quality_rank = QUALITY_RANK.get(quality_grade, 1)
+        quality_label = QUALITY_LABELS.get(quality_grade, quality_grade)
         eligible = []
         for ch in channel_definitions:
             key = ch["channel_code"]
@@ -161,8 +170,8 @@ class MarketService:
                     "estimated_total_revenue": round(net * quantity),
                     "estimated_revenue": round(net * quantity, 2),
                     "reason": (
-                        f"Voi {quantity:.0f}kg chat luong {quality_grade}, "
-                        f"kenh {ch['channel_name']} mang lai doanh thu cao."
+                        f"Với {quantity:.0f}kg chất lượng {quality_label}, "
+                        f"kênh {ch['channel_name']} mang lại doanh thu cao."
                     ),
                 })
 
@@ -170,12 +179,12 @@ class MarketService:
             net = base_price * 1.1
             eligible = [{
                 "channel": "ban_le",
-                "channel_name": "Ban le truc tiep",
+                "channel_name": "Bán lẻ trực tiếp",
                 "commission_pct": 0,
                 "estimated_price": round(net, 2),
                 "estimated_total_revenue": round(net * quantity),
                 "estimated_revenue": round(net * quantity, 2),
-                "reason": "Kenh mac dinh cho san luong nho hoac chat luong thap.",
+                "reason": "Kênh mặc định cho sản lượng nhỏ hoặc chất lượng thấp.",
             }]
 
         eligible.sort(key=lambda x: x["estimated_total_revenue"], reverse=True)

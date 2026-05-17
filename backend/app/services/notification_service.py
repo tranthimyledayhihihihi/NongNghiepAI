@@ -31,19 +31,19 @@ class NotificationService:
         target_price: float,
         condition: str,
     ) -> tuple[str, str, str]:
-        direction = "vuot nguong" if condition.lower() in ("tren", "above", ">") else "xuong duoi nguong"
-        subject = f"[Canh bao gia] {crop_name} tai {region} da {direction}"
+        direction = "vượt ngưỡng" if condition.lower() in ("trên", "tren", "above", ">") else "xuống dưới ngưỡng"
+        subject = f"[Cảnh báo giá] {crop_name} tại {region} đã {direction}"
         plain = (
-            f"Gia {crop_name} tai {region} hien tai la {current_price:,.0f} VND/kg, "
-            f"da {direction} muc tieu {target_price:,.0f} VND/kg. "
-            "Kiem tra AgriAI de xem them thong tin thi truong."
+            f"Giá {crop_name} tại {region} hiện tại là {current_price:,.0f} VND/kg, "
+            f"đã {direction} mục tiêu {target_price:,.0f} VND/kg. "
+            "Kiểm tra AgriAI để xem thêm thông tin thị trường."
         )
         html = (
             "<html><body>"
-            "<h2>Canh bao gia nong san</h2>"
-            f"<p>Gia <strong>{crop_name}</strong> tai <strong>{region}</strong>: "
+            "<h2>Cảnh báo giá nông sản</h2>"
+            f"<p>Giá <strong>{crop_name}</strong> tại <strong>{region}</strong>: "
             f"<strong>{current_price:,.0f} VND/kg</strong>.</p>"
-            f"<p>Nguong muc tieu: {target_price:,.0f} VND/kg. Trang thai: {direction}.</p>"
+            f"<p>Ngưỡng mục tiêu: {target_price:,.0f} VND/kg. Trạng thái: {direction}.</p>"
             "</body></html>"
         )
         return subject, plain, html

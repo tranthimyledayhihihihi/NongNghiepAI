@@ -47,6 +47,22 @@ const CROP_LABELS = {
   'thanh long': 'Thanh long',
 };
 const DEFAULT_REGION = 'Dak Lak';
+const DEFAULT_REGION_LABEL = 'Đắk Lắk';
+const TREND_LABELS = {
+  increasing: 'Tăng',
+  decreasing: 'Giảm',
+  stable: 'Ổn định',
+};
+const REGION_LABELS = {
+  'Ha Noi': 'Hà Nội',
+  'Da Nang': 'Đà Nẵng',
+  'Can Tho': 'Cần Thơ',
+  'Lam Dong': 'Lâm Đồng',
+  'Dak Lak': 'Đắk Lắk',
+  'Hai Phong': 'Hải Phòng',
+};
+
+const displayRegion = (value) => REGION_LABELS[value] || value;
 
 const internationalPrices = [
   { market: 'London Robusta (LCE)', price: '$2,450/tấn', change: '(+2%)', flag: '🇬🇧' },
@@ -180,7 +196,7 @@ const PricingDashboard = () => {
             </span>
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Dự Báo Giá Thông Minh</h1>
-          <p className="text-gray-600">Phân tích {cropLabel} theo thời gian thực — {DEFAULT_REGION}</p>
+          <p className="text-gray-600">Phân tích {cropLabel} theo thời gian thực — {DEFAULT_REGION_LABEL}</p>
         </div>
         <div className="text-right">
           {loading ? (
@@ -276,7 +292,7 @@ const PricingDashboard = () => {
                     <div className="col-span-2 flex items-center space-x-3">
                       <MapPin className="w-5 h-5 text-gray-400" />
                       <div>
-                        <div className="font-bold text-gray-900">{item.region}</div>
+                        <div className="font-bold text-gray-900">{displayRegion(item.region)}</div>
                         {item.subRegion && <div className="text-sm text-gray-500">{item.subRegion}</div>}
                       </div>
                     </div>
@@ -336,7 +352,7 @@ const PricingDashboard = () => {
             <div className="text-sm font-medium text-green-200">KHUYẾN NGHỊ AI</div>
             <h2 className="text-2xl font-bold">{currentPrice?.price_trend === 'increasing' ? 'Nên Giữ Lại' : 'Bán Theo Đợt'}</h2>
             <p className="text-green-100 leading-relaxed text-sm">
-              {currentPrice?.weather_explanation || `Dựa trên xu hướng giá ${cropLabel} tại ${DEFAULT_REGION}, cân nhắc bán dần để tối ưu lợi nhuận.`}
+              {currentPrice?.weather_explanation || `Dựa trên xu hướng giá ${cropLabel} tại ${DEFAULT_REGION_LABEL}, cân nhắc bán dần để tối ưu lợi nhuận.`}
             </p>
 
             <div className="bg-green-700/40 rounded-xl p-4 space-y-2">
@@ -349,7 +365,7 @@ const PricingDashboard = () => {
               )}
               <div className="flex justify-between text-sm">
                 <span className="text-green-200">Xu hướng</span>
-                <span className="font-bold capitalize">{currentPrice?.price_trend || '–'}</span>
+                <span className="font-bold">{TREND_LABELS[currentPrice?.price_trend] || '–'}</span>
               </div>
             </div>
 

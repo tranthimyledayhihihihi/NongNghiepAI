@@ -214,7 +214,7 @@ class NotificationCenterService:
         deliveries = [
             delivery
             for delivery in self._deliveries(db, notification_id)
-            if delivery.Channel != "app" and delivery.Status in {"failed", "pending", "error", "mock_sent"}
+            if delivery.Channel != "app" and delivery.Status in {"failed", "pending", "error", "mock_sent", "missing_token"}
         ]
         results = []
         for delivery in deliveries:

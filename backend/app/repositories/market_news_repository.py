@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy import desc
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -38,11 +40,19 @@ def upsert_market_news(db: Session, records: list[dict]) -> dict:
     return {"records_saved": saved, "records_updated": updated}
 
 
-def list_market_news(db: Session, limit: int = 20, crop_name: str | None = None, region: str | None = None) -> list[MarketNews]:
+def list_market_news(
+    db: Session,
+    limit: int = 20,
+    crop_name: str | None = None,
+    region: str | None = None,
+    since: datetime | None = None,
+) -> list[MarketNews]:
     try:
         query = db.query(MarketNews)
         if region:
             query = query.filter(MarketNews.Region == region)
+        if since:
+            query = query.filter(MarketNews.PublishedAt.isnot(None), MarketNews.PublishedAt >= since)
         return query.order_by(desc(MarketNews.PublishedAt), desc(MarketNews.CreatedAt)).limit(limit).all()
     except SQLAlchemyError:
         db.rollback()

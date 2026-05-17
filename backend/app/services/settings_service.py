@@ -337,7 +337,7 @@ class SettingsService:
         if channel == "sms":
             return user.PhoneNumber
         if channel == "zalo":
-            return user.ZaloID or user.PhoneNumber
+            return user.ZaloID
         return None
 
     @staticmethod

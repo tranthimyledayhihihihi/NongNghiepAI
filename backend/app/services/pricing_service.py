@@ -190,7 +190,7 @@ class PricingService:
             "price_change_pct":        current.get("price_change_pct", 0.0),
             "unit": "VND/kg",
             "nearby_region_prices": nearby_prices,
-            "message": "Gia de xuat da duoc dieu chinh theo du bao thoi tiet 7 ngay toi.",
+            "message": "Giá đề xuất đã được điều chỉnh theo dự báo thời tiết 7 ngày tới.",
         }
 
     def forecast_price(self, crop_name: str, region: str, days: int = 7) -> dict:
@@ -211,7 +211,7 @@ class PricingService:
             "region": region,
             "forecast_data": forecast_data,
             "trend": "increasing" if days >= 3 else "stable",
-            "recommendation": "Gia du bao tang nhe, co the can nhac giu hang neu bao quan duoc.",
+            "recommendation": "Giá dự báo tăng nhẹ, có thể cân nhắc giữ hàng nếu bảo quản được.",
         }
 
     def get_price_history(self, db: Session, crop_name: str, region: str, days: int = 30) -> list[dict]:

@@ -136,7 +136,7 @@ class HarvestService:
                 warning = ai_result.get("warning") or self._warning_for(expected_date)
                 recommendation = ai_result.get(
                     "recommendation",
-                    f"Du kien thu hoach sau {growth_days} ngay. Nen theo doi thoi tiet truoc thu hoach.",
+                    f"Dự kiến thu hoạch sau {growth_days} ngày. Nên theo dõi thời tiết trước thu hoạch.",
                 )
                 confidence = ai_result.get("confidence", 0.78)
             except Exception:
@@ -380,7 +380,7 @@ class HarvestService:
     @staticmethod
     def _warning_for(expected_date: date) -> str | None:
         if expected_date.month in {9, 10, 11}:
-            return "Mua mua bao, can theo doi thoi tiet va chuan bi thu hoach som neu can."
+            return "Mùa mưa bão, cần theo dõi thời tiết và chuẩn bị thu hoạch sớm nếu cần."
         return None
 
 

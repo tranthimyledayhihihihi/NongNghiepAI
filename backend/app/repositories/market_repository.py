@@ -9,12 +9,12 @@ from app.repositories.price_repository import get_latest_prices_by_crop
 
 
 DEFAULT_MARKET_CHANNELS = [
-    {"code": "xuat_khau", "name": "Xuat khau", "commission": 0.18, "min_qty": 1000, "quality_rank": 3, "price_factor": 1.35},
-    {"code": "sieu_thi", "name": "Sieu thi / chuoi cua hang", "commission": 0.12, "min_qty": 200, "quality_rank": 3, "price_factor": 1.20},
-    {"code": "cho_dau_moi", "name": "Cho dau moi", "commission": 0.07, "min_qty": 100, "quality_rank": 2, "price_factor": 1.05},
-    {"code": "thuong_lai", "name": "Thuong lai dia phuong", "commission": 0.05, "min_qty": 50, "quality_rank": 2, "price_factor": 0.95},
-    {"code": "ban_le", "name": "Ban le truc tiep", "commission": 0.0, "min_qty": 0, "quality_rank": 1, "price_factor": 1.15},
-    {"code": "che_bien", "name": "Nha may che bien", "commission": 0.03, "min_qty": 500, "quality_rank": 1, "price_factor": 0.70},
+    {"code": "xuat_khau", "name": "Xuất khẩu", "commission": 0.18, "min_qty": 1000, "quality_rank": 3, "price_factor": 1.35},
+    {"code": "sieu_thi", "name": "Siêu thị / chuỗi cửa hàng", "commission": 0.12, "min_qty": 200, "quality_rank": 3, "price_factor": 1.20},
+    {"code": "cho_dau_moi", "name": "Chợ đầu mối", "commission": 0.07, "min_qty": 100, "quality_rank": 2, "price_factor": 1.05},
+    {"code": "thuong_lai", "name": "Thương lái địa phương", "commission": 0.05, "min_qty": 50, "quality_rank": 2, "price_factor": 0.95},
+    {"code": "ban_le", "name": "Bán lẻ trực tiếp", "commission": 0.0, "min_qty": 0, "quality_rank": 1, "price_factor": 1.15},
+    {"code": "che_bien", "name": "Nhà máy chế biến", "commission": 0.03, "min_qty": 500, "quality_rank": 1, "price_factor": 0.70},
 ]
 
 

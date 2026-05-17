@@ -48,7 +48,7 @@ def create_alert(db: Session, **data) -> PriceAlert:
         if channel == "sms":
             receiver = user.PhoneNumber
         elif channel == "zalo":
-            receiver = user.ZaloID or user.PhoneNumber
+            receiver = user.ZaloID
         elif channel == "email":
             receiver = user.Email
     alert = PriceAlert(

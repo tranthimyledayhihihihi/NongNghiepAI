@@ -47,7 +47,7 @@ const deriveSeason = (schedule, index) => {
 
   return {
     id: schedule.schedule_id,
-    cropName: schedule.crop_name || 'Nong san',
+    cropName: schedule.crop_name || 'Nông sản',
     cropImage: schedule.crop_image || fallbackImages[index % fallbackImages.length],
     region: schedule.region || '-',
     areaSize: Number(schedule.area_size || 0),
@@ -61,7 +61,7 @@ const deriveSeason = (schedule, index) => {
     pesticide: schedule.pesticide_used || '-',
     notes: schedule.notes || '',
     status,
-    statusText: completed ? 'Da thu hoach' : harvesting ? 'Sap thu hoach' : 'Dang trong',
+    statusText: completed ? 'Đã thu hoạch' : harvesting ? 'Sắp thu hoạch' : 'Đang trồng',
     statusColor: completed
       ? 'bg-gray-100 text-gray-700'
       : harvesting
@@ -99,7 +99,7 @@ const SeasonManagementPage = () => {
       const data = await harvestApi.getMySchedules(100);
       setSeasons((data.schedules || []).map(deriveSeason));
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Khong the tai danh sach mua vu'));
+      setError(getApiErrorMessage(err, 'Không thể tải danh sách mùa vụ'));
     } finally {
       setLoading(false);
     }
@@ -150,7 +150,7 @@ const SeasonManagementPage = () => {
       setShowAddModal(false);
       await loadSeasons();
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Khong the tao mua vu'));
+      setError(getApiErrorMessage(err, 'Không thể tạo mùa vụ'));
     } finally {
       setSaving(false);
     }
@@ -167,8 +167,8 @@ const SeasonManagementPage = () => {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-sm font-semibold uppercase tracking-wide text-green-700">HarvestSchedule API</p>
-          <h1 className="mt-2 text-3xl font-bold text-gray-900">Quan ly mua vu</h1>
-          <p className="mt-2 text-gray-600">Du lieu duoc lay tu backend theo tai khoan dang dang nhap.</p>
+          <h1 className="mt-2 text-3xl font-bold text-gray-900">Quản lý mùa vụ</h1>
+          <p className="mt-2 text-gray-600">Dữ liệu được lấy từ backend theo tài khoản đang đăng nhập.</p>
         </div>
         <button
           type="button"
@@ -176,21 +176,21 @@ const SeasonManagementPage = () => {
           className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-700 px-5 py-3 font-semibold text-white hover:bg-green-800"
         >
           <Plus className="h-5 w-5" />
-          Them mua vu
+          Thêm mùa vụ
         </button>
       </div>
 
       {error && <PageError message={error} onRetry={loadSeasons} />}
-      {loading && <InlineLoading text="Dang tai mua vu tu backend..." />}
+      {loading && <InlineLoading text="Đang tải mùa vụ từ backend..." />}
 
       {!loading && (
         <>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             {[
-              ['Dang trong', stats.growing, Leaf, 'text-green-700 bg-green-50'],
-              ['Sap thu hoach', stats.harvesting, Clock, 'text-amber-700 bg-amber-50'],
-              ['Tong dien tich', `${stats.totalArea.toFixed(1)} ha`, Package, 'text-blue-700 bg-blue-50'],
-              ['Tong san luong', `${(stats.totalYield / 1000).toFixed(1)}t`, TrendingUp, 'text-purple-700 bg-purple-50'],
+              ['Đang trồng', stats.growing, Leaf, 'text-green-700 bg-green-50'],
+              ['Sắp thu hoạch', stats.harvesting, Clock, 'text-amber-700 bg-amber-50'],
+              ['Tổng diện tích', `${stats.totalArea.toFixed(1)} ha`, Package, 'text-blue-700 bg-blue-50'],
+              ['Tổng sản lượng', `${(stats.totalYield / 1000).toFixed(1)}t`, TrendingUp, 'text-purple-700 bg-purple-50'],
             ].map(([label, value, Icon, color]) => (
               <div key={label} className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
                 <div className={`mb-3 flex h-11 w-11 items-center justify-center rounded-lg ${color}`}>
@@ -208,7 +208,7 @@ const SeasonManagementPage = () => {
                 <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="Tim theo cay trong hoac khu vuc..."
+                  placeholder="Tìm theo cây trồng hoặc khu vực..."
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
                   className="w-full rounded-lg border border-gray-300 py-3 pl-10 pr-4 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
@@ -216,10 +216,10 @@ const SeasonManagementPage = () => {
               </div>
               <div className="flex flex-wrap gap-2">
                 {[
-                  ['all', `Tat ca (${stats.total})`],
-                  ['growing', `Dang trong (${stats.growing})`],
-                  ['harvesting', `Sap thu hoach (${stats.harvesting})`],
-                  ['completed', `Hoan thanh (${stats.completed})`],
+                  ['all', `Tất cả (${stats.total})`],
+                  ['growing', `Đang trồng (${stats.growing})`],
+                  ['harvesting', `Sắp thu hoạch (${stats.harvesting})`],
+                  ['completed', `Hoàn thành (${stats.completed})`],
                 ].map(([value, label]) => (
                   <button
                     key={value}
@@ -259,19 +259,19 @@ const SeasonManagementPage = () => {
 
                     <div className="grid grid-cols-2 gap-3 text-sm">
                       <div>
-                        <div className="text-gray-500">Ngay gieo</div>
+                        <div className="text-gray-500">Ngày gieo</div>
                         <div className="font-semibold text-gray-900">{formatDate(season.plantingDate)}</div>
                       </div>
                       <div>
-                        <div className="text-gray-500">Thu hoach du kien</div>
+                        <div className="text-gray-500">Thu hoạch dự kiến</div>
                         <div className="font-semibold text-gray-900">{formatDate(season.expectedHarvestDate)}</div>
                       </div>
                       <div>
-                        <div className="text-gray-500">Dien tich</div>
+                        <div className="text-gray-500">Diện tích</div>
                         <div className="font-semibold text-gray-900">{season.areaSize || '-'} {season.unit}</div>
                       </div>
                       <div>
-                        <div className="text-gray-500">San luong</div>
+                        <div className="text-gray-500">Sản lượng</div>
                         <div className="font-semibold text-gray-900">{season.actualYield || season.estimatedYield || '-'} kg</div>
                       </div>
                     </div>
@@ -279,7 +279,7 @@ const SeasonManagementPage = () => {
                     {season.status !== 'completed' && (
                       <div>
                         <div className="mb-2 flex justify-between text-sm">
-                          <span className="text-gray-600">Tien do</span>
+                          <span className="text-gray-600">Tiến độ</span>
                           <span className="font-semibold text-gray-900">{season.progress}%</span>
                         </div>
                         <div className="h-2 rounded-full bg-gray-200">
@@ -288,18 +288,18 @@ const SeasonManagementPage = () => {
                             style={{ width: `${season.progress}%` }}
                           />
                         </div>
-                        <p className="mt-2 text-xs text-gray-500">Con {season.daysRemaining} ngay den thu hoach</p>
+                        <p className="mt-2 text-xs text-gray-500">Còn {season.daysRemaining} ngày đến thu hoạch</p>
                       </div>
                     )}
 
                     <div className="flex gap-2">
                       <button type="button" className="flex-1 rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white hover:bg-green-800">
-                        Chi tiet
+                        Chi tiết
                       </button>
-                      <button type="button" className="rounded-lg border border-gray-300 p-2 text-gray-600 hover:bg-gray-50" aria-label="Sua">
+                      <button type="button" className="rounded-lg border border-gray-300 p-2 text-gray-600 hover:bg-gray-50" aria-label="Sửa">
                         <Edit className="h-4 w-4" />
                       </button>
-                      <button type="button" className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50" aria-label="Xoa">
+                      <button type="button" className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50" aria-label="Xóa">
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
@@ -309,15 +309,15 @@ const SeasonManagementPage = () => {
             </div>
           ) : (
             <EmptyState
-              title="Chua co mua vu"
-              description="Tao mua vu moi de trang nay hien thi du lieu tu HarvestSchedule."
+              title="Chưa có mùa vụ"
+              description="Tạo mùa vụ mới để trang này hiển thị dữ liệu từ HarvestSchedule."
               action={
                 <button
                   type="button"
                   onClick={() => setShowAddModal(true)}
                   className="rounded-lg bg-green-700 px-5 py-3 font-semibold text-white hover:bg-green-800"
                 >
-                  Them mua vu
+                  Thêm mùa vụ
                 </button>
               }
             />
@@ -329,7 +329,7 @@ const SeasonManagementPage = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <form onSubmit={handleSubmit} className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl">
             <div className="mb-5 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-900">Them mua vu</h2>
+              <h2 className="text-xl font-bold text-gray-900">Thêm mùa vụ</h2>
               <button type="button" onClick={() => setShowAddModal(false)} className="rounded-lg p-2 text-gray-500 hover:bg-gray-100">
                 <X className="h-5 w-5" />
               </button>
@@ -337,12 +337,12 @@ const SeasonManagementPage = () => {
 
             <div className="grid gap-4 md:grid-cols-2">
               {[
-                ['crop_name', 'Ten cay trong', 'text', true],
-                ['region', 'Khu vuc', 'text', true],
-                ['planting_date', 'Ngay gieo', 'date', true],
-                ['expected_harvest_date', 'Ngay thu hoach du kien', 'date', false],
-                ['area_size', 'Dien tich (ha)', 'number', false],
-                ['estimated_yield_kg', 'San luong du kien (kg)', 'number', false],
+                ['crop_name', 'Tên cây trồng', 'text', true],
+                ['region', 'Khu vực', 'text', true],
+                ['planting_date', 'Ngày gieo', 'date', true],
+                ['expected_harvest_date', 'Ngày thu hoạch dự kiến', 'date', false],
+                ['area_size', 'Diện tích (ha)', 'number', false],
+                ['estimated_yield_kg', 'Sản lượng dự kiến (kg)', 'number', false],
               ].map(([key, label, type, required]) => (
                 <label key={key} className="block">
                   <span className="mb-2 block text-sm font-medium text-gray-700">{label}</span>
@@ -358,7 +358,7 @@ const SeasonManagementPage = () => {
                 </label>
               ))}
               <label className="block md:col-span-2">
-                <span className="mb-2 block text-sm font-medium text-gray-700">Ghi chu</span>
+                <span className="mb-2 block text-sm font-medium text-gray-700">Ghi chú</span>
                 <textarea
                   value={formData.notes}
                   onChange={(event) => setFormData((current) => ({ ...current, notes: event.target.value }))}
@@ -370,10 +370,10 @@ const SeasonManagementPage = () => {
 
             <div className="mt-6 flex justify-end gap-3">
               <button type="button" onClick={() => setShowAddModal(false)} className="rounded-lg border border-gray-300 px-5 py-3 font-medium text-gray-700 hover:bg-gray-50">
-                Huy
+                Hủy
               </button>
               <button type="submit" disabled={saving} className="rounded-lg bg-green-700 px-5 py-3 font-semibold text-white hover:bg-green-800 disabled:opacity-60">
-                {saving ? 'Dang luu...' : 'Luu mua vu'}
+                {saving ? 'Đang lưu...' : 'Lưu mùa vụ'}
               </button>
             </div>
           </form>

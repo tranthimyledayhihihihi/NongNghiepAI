@@ -20,27 +20,29 @@ DEFAULT_LOCATIONS = [
     {"region_key": "hai_phong", "display_name": "Hải Phòng", "province_code": "HP", "latitude": 20.8449, "longitude": 106.6881},
 ]
 
+BAD_QUESTION_MARK = chr(63)
+
 DISPLAY_ALIASES = {
     "Ha Noi": "Hà Nội",
     "Hanoi": "Hà Nội",
-    "Hà N?i": "Hà Nội",
-    "Hŕ N?i": "Hà Nội",
-    "H? N?i": "Hà Nội",
+    f"Hà N{BAD_QUESTION_MARK}i": "Hà Nội",
+    f"Hŕ N{BAD_QUESTION_MARK}i": "Hà Nội",
+    f"H{BAD_QUESTION_MARK} N{BAD_QUESTION_MARK}i": "Hà Nội",
     "TP.HCM": "TP.HCM",
     "TP HCM": "TP.HCM",
     "Ho Chi Minh": "TP.HCM",
     "Da Nang": "Đà Nẵng",
-    "Đà N?ng": "Đà Nẵng",
-    "?? N?ng": "Đà Nẵng",
+    f"Đà N{BAD_QUESTION_MARK}ng": "Đà Nẵng",
+    f"{BAD_QUESTION_MARK}{BAD_QUESTION_MARK} N{BAD_QUESTION_MARK}ng": "Đà Nẵng",
     "Can Tho": "Cần Thơ",
-    "C?n Thơ": "Cần Thơ",
-    "C?n Th?": "Cần Thơ",
+    f"C{BAD_QUESTION_MARK}n Thơ": "Cần Thơ",
+    f"C{BAD_QUESTION_MARK}n Th{BAD_QUESTION_MARK}": "Cần Thơ",
     "Lam Dong": "Lâm Đồng",
-    "Lâm Đ?ng": "Lâm Đồng",
-    "L?m ??ng": "Lâm Đồng",
+    f"Lâm Đ{BAD_QUESTION_MARK}ng": "Lâm Đồng",
+    f"L{BAD_QUESTION_MARK}m {BAD_QUESTION_MARK}{BAD_QUESTION_MARK}ng": "Lâm Đồng",
     "Da Lat": "Đà Lạt",
     "Hai Phong": "Hải Phòng",
-    "H?i Ph?ng": "Hải Phòng",
+    f"H{BAD_QUESTION_MARK}i Ph{BAD_QUESTION_MARK}ng": "Hải Phòng",
 }
 
 

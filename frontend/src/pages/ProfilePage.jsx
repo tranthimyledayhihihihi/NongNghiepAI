@@ -6,16 +6,12 @@ import {
   Mail,
   MapPin,
   Phone,
-  Plus,
   Settings,
-  Sprout,
   Star,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-
-const farmAreas = [];
 
 const ProfilePage = () => {
   const { user } = useAuth();
@@ -53,8 +49,8 @@ const ProfilePage = () => {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-sm font-semibold uppercase tracking-wide text-green-700">Hồ sơ</p>
-          <h1 className="mt-2 text-3xl font-bold text-gray-900">Tài khoản & trang trại</h1>
-          <p className="mt-2 text-gray-600">Quản lý thông tin cá nhân, khu canh tác và thiết lập hiển thị.</p>
+          <h1 className="mt-2 text-3xl font-bold text-gray-900">Tài khoản</h1>
+          <p className="mt-2 text-gray-600">Quản lý thông tin cá nhân và thiết lập hiển thị.</p>
         </div>
         <Link
           to="/settings"
@@ -113,10 +109,10 @@ const ProfilePage = () => {
           </section>
 
           <section className="rounded-lg border border-gray-200 bg-gradient-to-br from-green-800 to-green-950 p-6 text-white shadow-sm">
-            <p className="text-sm text-green-200">Gói nông trại</p>
+            <p className="text-sm text-green-200">Gói dịch vụ</p>
             <h2 className="mt-2 text-2xl font-bold">Cao cấp</h2>
             <p className="mt-3 text-sm leading-6 text-green-100">
-              Mở khóa phân tích sâu, cảnh báo nâng cao và tư vấn theo hồ sơ trang trại.
+              Mở khóa phân tích sâu, cảnh báo nâng cao và tư vấn theo hồ sơ canh tác.
             </p>
             <div className="mt-5 space-y-2 text-sm text-green-100">
               {['Quét bệnh cây trồng không giới hạn', 'Dự báo thời tiết nông vụ', 'Cảnh báo giá theo khu vực'].map(
@@ -138,66 +134,6 @@ const ProfilePage = () => {
         </aside>
 
         <div className="space-y-6">
-          <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-            <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-gray-900">Trang trại của tôi</h2>
-                <p className="mt-1 text-sm text-gray-600">Theo dõi khu canh tác và cây trồng chính.</p>
-              </div>
-              <button
-                type="button"
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-700 px-4 py-2 font-medium text-white hover:bg-green-800"
-              >
-                <Plus className="h-5 w-5" />
-                Thêm mảnh vườn
-              </button>
-            </div>
-
-            {farmAreas.length ? (
-              <div className="grid gap-5 md:grid-cols-2">
-                {farmAreas.map((farm) => (
-                  <article key={farm.id} className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-                    <div className="relative h-48">
-                      <img src={farm.image} alt={farm.name} className="h-full w-full object-cover" />
-                      <span
-                        className={`absolute left-3 top-3 rounded-full px-3 py-1 text-xs font-bold text-white ${farm.badgeColor}`}
-                      >
-                        {farm.status}
-                      </span>
-                    </div>
-                    <div className="p-4">
-                      <h3 className="font-bold text-gray-900">{farm.name}</h3>
-                      <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                        <div>
-                          <div className="text-xs uppercase text-gray-500">Diện tích</div>
-                          <div className="font-semibold text-gray-900">
-                            {farm.area} {farm.unit}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-xs uppercase text-gray-500">Loại đất</div>
-                          <div className="font-semibold text-gray-900">{farm.soilType}</div>
-                        </div>
-                      </div>
-                      <div className="mt-4 flex items-center gap-2 text-sm text-gray-700">
-                        <Sprout className="h-4 w-4 text-green-700" />
-                        <span>{farm.crop}</span>
-                      </div>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8 text-center">
-                <Sprout className="mx-auto h-10 w-10 text-gray-400" />
-                <p className="mt-3 font-semibold text-gray-900">Chưa có dữ liệu trang trại từ backend</p>
-                <p className="mt-2 text-sm text-gray-600">
-                  Khi có API trang trại hoặc mùa vụ theo người dùng, dữ liệu sẽ hiển thị theo tài khoản {displayUser.name}.
-                </p>
-              </div>
-            )}
-          </section>
-
           <div className="grid gap-6 lg:grid-cols-2">
             <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
               <div className="mb-5 flex items-center gap-2">

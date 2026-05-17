@@ -49,6 +49,20 @@ const statusClass = (status) => {
   return 'bg-gray-100 text-gray-700';
 };
 
+const statusLabel = (status) => ({
+  ready: 'Sẵn sàng',
+  disabled: 'Đã tắt',
+  pending_verification: 'Thiếu người nhận',
+  missing_token: 'Thiếu token',
+  not_configured: 'Chưa cấu hình',
+  mock: 'Chế độ thử',
+  failed_last_test: 'Lỗi lần thử',
+  sent: 'Đã gửi',
+  stored: 'Đã lưu',
+  mock_sent: 'Đã giả lập',
+  failed: 'Thất bại',
+}[status] || status || 'Không rõ');
+
 const ChannelStatus = ({ channel, status, testState, onTest }) => {
   const active = testState.channel === channel;
   const isLoading = active && testState.status === 'loading';
@@ -63,7 +77,7 @@ const ChannelStatus = ({ channel, status, testState, onTest }) => {
           <div className="mt-1 text-xs text-gray-500">{status?.receiver || 'Chưa có người nhận'}</div>
         </div>
         <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClass(status?.status)}`}>
-          {status?.status || 'unknown'}
+          {statusLabel(status?.status)}
         </span>
       </div>
       <div className="mt-3 text-xs text-gray-500">
@@ -113,7 +127,6 @@ const SettingsPage = () => {
     emailChannel: true,
     zaloChannel: false,
     smsChannel: false,
-    twoFactor: false,
   });
   const [locations, setLocations] = useState([]);
   const [channelStatus, setChannelStatus] = useState({});
@@ -121,7 +134,6 @@ const SettingsPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [testState, setTestState] = useState({ channel: null, status: null, message: '' });
-  const [twoFactor, setTwoFactor] = useState({ method: 'email', challengeId: '', code: '', devCode: '', message: '' });
   const [passwordForm, setPasswordForm] = useState({ oldPassword: '', newPassword: '', message: '' });
 
   const loadChannelStatus = async () => {
@@ -160,7 +172,6 @@ const SettingsPage = () => {
           emailChannel: Boolean(data.email_channel),
           zaloChannel: Boolean(data.zalo_channel),
           smsChannel: Boolean(data.sms_channel),
-          twoFactor: Boolean(data.two_factor_enabled),
         }));
       } catch (err) {
         if (active) setError(getApiErrorMessage(err, 'Không thể tải cài đặt'));
@@ -249,38 +260,6 @@ const SettingsPage = () => {
     }
   };
 
-  const startTwoFactor = async () => {
-    setError(null);
-    try {
-      const result = await settingsApi.startTwoFactor({ method: twoFactor.method });
-      setTwoFactor((current) => ({
-        ...current,
-        challengeId: result.challenge_id,
-        devCode: result.dev_code || '',
-        message: 'Đã gửi mã xác minh. Mã demo được hiển thị để tiện kiểm thử.',
-      }));
-    } catch (err) {
-      setError(getApiErrorMessage(err, 'Không thể bắt đầu 2FA'));
-    }
-  };
-
-  const verifyTwoFactor = async () => {
-    setError(null);
-    try {
-      await settingsApi.verifyTwoFactor({ challengeId: twoFactor.challengeId, code: twoFactor.code });
-      updateSetting('twoFactor', true);
-      setTwoFactor({ method: 'email', challengeId: '', code: '', devCode: '', message: 'Đã bật xác thực 2 lớp.' });
-    } catch (err) {
-      setError(getApiErrorMessage(err, 'Mã xác minh không đúng'));
-    }
-  };
-
-  const disableTwoFactor = async () => {
-    await settingsApi.disableTwoFactor();
-    updateSetting('twoFactor', false);
-    setTwoFactor((current) => ({ ...current, message: 'Đã tắt xác thực 2 lớp.' }));
-  };
-
   const changePassword = async () => {
     setError(null);
     try {
@@ -366,12 +345,16 @@ const SettingsPage = () => {
                 />
               </div>
               <div>
-                <label className="mb-2 block text-sm font-medium text-gray-700">Zalo User ID</label>
+                <label className="mb-2 block text-sm font-medium text-gray-700">Zalo UID theo OA</label>
                 <input
                   value={settings.zaloUserId}
                   onChange={(event) => updateSetting('zaloUserId', event.target.value)}
+                  placeholder="UID người dùng đã quan tâm OA"
                   className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
                 />
+                <p className="mt-1 text-xs text-gray-500">
+                  Đây là user_id theo Zalo OA, không phải số điện thoại cá nhân.
+                </p>
               </div>
             </div>
           </section>
@@ -518,72 +501,6 @@ const SettingsPage = () => {
               <h2 className="text-lg font-bold text-gray-900">Bảo mật</h2>
             </div>
             <div className="space-y-4">
-              <div className="rounded-lg border border-gray-200 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="font-semibold text-gray-900">Xác thực 2 lớp</div>
-                    <div className="mt-1 text-xs text-gray-500">
-                      Chỉ bật sau khi nhập đúng mã xác minh.
-                    </div>
-                  </div>
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${settings.twoFactor ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'}`}>
-                    {settings.twoFactor ? 'enabled' : 'disabled'}
-                  </span>
-                </div>
-                <div className="mt-4 grid gap-2">
-                  {!settings.twoFactor && (
-                    <>
-                      <select
-                        value={twoFactor.method}
-                        onChange={(event) => setTwoFactor((current) => ({ ...current, method: event.target.value }))}
-                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600"
-                      >
-                        <option value="email">Email OTP</option>
-                        <option value="sms">SMS OTP</option>
-                      </select>
-                      <button
-                        type="button"
-                        onClick={startTwoFactor}
-                        className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                      >
-                        Gửi mã xác minh
-                      </button>
-                      {twoFactor.challengeId && (
-                        <div className="grid gap-2">
-                          <input
-                            value={twoFactor.code}
-                            onChange={(event) => setTwoFactor((current) => ({ ...current, code: event.target.value }))}
-                            placeholder="Nhập mã OTP"
-                            className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600"
-                          />
-                          <button
-                            type="button"
-                            onClick={verifyTwoFactor}
-                            className="rounded-lg bg-green-700 px-3 py-2 text-sm font-semibold text-white hover:bg-green-800"
-                          >
-                            Xác minh và bật
-                          </button>
-                        </div>
-                      )}
-                    </>
-                  )}
-                  {settings.twoFactor && (
-                    <button
-                      type="button"
-                      onClick={disableTwoFactor}
-                      className="rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
-                    >
-                      Tắt 2FA
-                    </button>
-                  )}
-                  {(twoFactor.message || twoFactor.devCode) && (
-                    <div className="rounded-lg bg-green-50 p-3 text-xs text-green-800">
-                      {twoFactor.message} {twoFactor.devCode ? `Mã demo: ${twoFactor.devCode}` : ''}
-                    </div>
-                  )}
-                </div>
-              </div>
-
               <div className="rounded-lg border border-gray-200 p-4">
                 <div className="mb-3 flex items-center gap-2 font-semibold text-gray-900">
                   <KeyRound className="h-4 w-4" />
