@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Link, NavLink } from "react-router-dom";
 import logoHeader from "../assets/agri-ai-logo-header.png";
 import { useAuth } from "../contexts/AuthContext";
@@ -12,10 +12,9 @@ const mainLinks = [
 ];
 
 const navClass = ({ isActive }) =>
-  `rounded-2xl px-4 py-2 text-sm font-bold transition ${
-    isActive
-      ? "bg-emerald-100 text-emerald-800"
-      : "text-slate-600 hover:bg-emerald-50 hover:text-emerald-700"
+  `rounded-2xl px-4 py-2 text-sm font-bold transition ${isActive
+    ? "bg-emerald-100 text-emerald-800"
+    : "text-slate-600 hover:bg-emerald-50 hover:text-emerald-700"
   }`;
 
 export default function AgriNavbar() {
@@ -39,7 +38,7 @@ export default function AgriNavbar() {
                 Agri<span className="text-emerald-600">AI</span>
               </span>
               <span className="hidden text-xs font-bold uppercase tracking-wide text-slate-500 sm:block">
-                Intelligence for Agriculture
+                Nông nghiệp thông minh
               </span>
             </span>
           </Link>
@@ -99,10 +98,9 @@ export default function AgriNavbar() {
                   to={link.to}
                   onClick={() => setOpen(false)}
                   className={({ isActive }) =>
-                    `rounded-2xl px-4 py-3 text-sm font-bold transition ${
-                      isActive
-                        ? "bg-emerald-100 text-emerald-800"
-                        : "bg-slate-50 text-slate-700 hover:bg-emerald-50 hover:text-emerald-700"
+                    `rounded-2xl px-4 py-3 text-sm font-bold transition ${isActive
+                      ? "bg-emerald-100 text-emerald-800"
+                      : "bg-slate-50 text-slate-700 hover:bg-emerald-50 hover:text-emerald-700"
                     }`
                   }
                 >
@@ -111,35 +109,35 @@ export default function AgriNavbar() {
               ))}
             </nav>
 
-              <div className="mt-4 grid gap-2 sm:grid-cols-3">
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              <Link
+                to="/ai-chat"
+                onClick={() => setOpen(false)}
+                className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-center text-sm font-black text-emerald-700"
+              >
+                Hỏi AI
+              </Link>
+
+              {!isAuthenticated && (
                 <Link
-                  to="/ai-chat"
+                  to="/login"
                   onClick={() => setOpen(false)}
-                  className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-center text-sm font-black text-emerald-700"
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-center text-sm font-black text-slate-700"
                 >
-                  Hỏi AI
+                  Đăng nhập
                 </Link>
+              )}
 
-                {!isAuthenticated && (
-                  <Link
-                    to="/login"
-                    onClick={() => setOpen(false)}
-                    className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-center text-sm font-black text-slate-700"
-                  >
-                    Đăng nhập
-                  </Link>
-                )}
-
-                {isAuthenticated && (
-                  <Link
-                    to="/dashboard"
-                    onClick={() => setOpen(false)}
-                    className="rounded-2xl bg-slate-950 px-4 py-3 text-center text-sm font-black text-white"
-                  >
-                    Vào hệ thống
-                  </Link>
-                )}
-              </div>
+              {isAuthenticated && (
+                <Link
+                  to="/dashboard"
+                  onClick={() => setOpen(false)}
+                  className="rounded-2xl bg-slate-950 px-4 py-3 text-center text-sm font-black text-white"
+                >
+                  Vào hệ thống
+                </Link>
+              )}
+            </div>
           </div>
         )}
       </div>

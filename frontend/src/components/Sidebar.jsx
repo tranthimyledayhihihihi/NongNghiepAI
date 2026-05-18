@@ -6,15 +6,15 @@ import {
   Camera,
   CloudSun,
   LayoutDashboard,
-  Leaf,
   Settings,
   Sprout,
   TrendingUp,
-  X,
+  X
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
+import logo from '../assets/agri-ai-logo.png';
 
-const navigation = [
+export const navigation = [
   { name: 'Thời tiết nông vụ', href: '/weather', icon: CloudSun, match: ['/weather'] },
   { name: 'Bảng điều khiển', href: '/dashboard', icon: LayoutDashboard, match: ['/dashboard', '/dashboard-new'] },
   { name: 'Định giá nông sản', href: '/pricing', icon: TrendingUp, match: ['/pricing', '/pricing-dashboard', '/crop'] },
@@ -48,16 +48,13 @@ const Sidebar = ({ open, setOpen }) => {
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-30 w-64 transform border-r border-gray-200 bg-white transition-transform duration-300 ease-in-out lg:static lg:inset-0 lg:translate-x-0 ${
-          open ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        className={`fixed inset-y-0 left-0 z-30 w-64 transform border-r border-gray-200 bg-white transition-transform duration-300 ease-in-out lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'
+          }`}
       >
         <div className="flex h-full flex-col">
           <div className="flex h-16 items-center justify-between border-b border-gray-200 px-6">
-            <Link to="/" className="flex items-center gap-2" onClick={() => setOpen(false)}>
-              <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-600 text-white">
-                <Leaf className="h-6 w-6" />
-              </span>
+            <Link to="/" className="flex items-center gap-3" onClick={() => setOpen(false)}>
+              <img src={logo} alt="AgriAI Logo" className="h-10 w-auto" />
               <span>
                 <span className="block text-xl font-bold text-gray-900">AgriAI</span>
                 <span className="block text-xs text-gray-500">Nông nghiệp thông minh</span>
@@ -73,7 +70,7 @@ const Sidebar = ({ open, setOpen }) => {
             </button>
           </div>
 
-          <nav className="flex-1 space-y-1 overflow-y-auto px-4 py-6">
+          <nav className="flex-1 space-y-1 overflow-y-auto px-4 py-6 scrollbar-hide">
             {navigation.map((item) => {
               const Icon = item.icon;
               const active = isActive(item);
@@ -82,9 +79,8 @@ const Sidebar = ({ open, setOpen }) => {
                   key={item.name}
                   to={item.href}
                   onClick={() => setOpen(false)}
-                  className={`flex items-center rounded-lg px-4 py-3 text-sm font-medium transition-colors ${
-                    active ? 'bg-emerald-50 text-emerald-700' : 'text-gray-700 hover:bg-gray-50'
-                  }`}
+                  className={`flex items-center rounded-lg px-4 py-3 text-sm font-medium transition-colors ${active ? 'bg-emerald-50 text-emerald-700' : 'text-gray-700 hover:bg-gray-50'
+                    }`}
                 >
                   <Icon className={`mr-3 h-5 w-5 ${active ? 'text-emerald-600' : 'text-gray-400'}`} />
                   {item.name}

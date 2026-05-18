@@ -1,7 +1,6 @@
-import React from "react";
 import { Link } from "react-router-dom";
-import AgriNavbar from "../components/AgriNavbar";
 import logo from "../assets/agri-ai-logo.png";
+import AgriNavbar from "../components/AgriNavbar";
 
 const coreModules = [
   {
@@ -70,7 +69,7 @@ export default function LandingPage() {
           <div className="grid gap-12 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
             <div>
               <span className="inline-flex rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-bold text-emerald-50 backdrop-blur">
-                🌱 AgriAI - Intelligence for Agriculture
+                🌱 AgriAI - Nông nghiệp thông minh
               </span>
               <h1 className="mt-6 max-w-4xl text-4xl font-black tracking-tight sm:text-5xl lg:text-6xl">
                 Nền tảng AI hỗ trợ nông dân dự báo, định giá và ra quyết định tốt hơn

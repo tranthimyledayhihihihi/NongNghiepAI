@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState } from 'react';
-import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
+import { Route, BrowserRouter as Router, Routes, useLocation } from 'react-router-dom';
 import LoadingSpinner from './components/LoadingSpinner';
 import Navbar from './components/Navbar';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -92,7 +92,7 @@ const AppShell = ({ sidebarOpen, setSidebarOpen }) => (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar open={sidebarOpen} setOpen={setSidebarOpen} />
 
-      <div className="flex flex-1 flex-col">
+      <div className="flex flex-1 flex-col lg:ml-64">
         <Navbar setSidebarOpen={setSidebarOpen} />
 
         <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">

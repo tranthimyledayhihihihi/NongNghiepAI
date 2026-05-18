@@ -1,9 +1,11 @@
 import { Bell, HelpCircle, LogOut, Menu, Settings, User } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { navigation } from './Sidebar';
 
 const Navbar = ({ setSidebarOpen }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { logout, user, isAuthenticated } = useAuth();
 
   const handleLogout = () => {
@@ -11,18 +13,32 @@ const Navbar = ({ setSidebarOpen }) => {
     navigate('/login', { replace: true });
   };
 
+  // Find current page name from navigation
+  const currentPage = navigation.find((item) =>
+    item.match.some((path) =>
+      path === item.href ? location.pathname === path : location.pathname.startsWith(path)
+    )
+  );
+
+  const pageTitle = currentPage ? currentPage.name : 'AgriAI';
+  const PageIcon = currentPage?.icon;
+
   return (
     <header className="sticky top-0 z-10 border-b border-gray-200 bg-white">
       <div className="flex h-16 items-center justify-between px-4 md:px-6">
-        <div className="flex flex-1 items-center">
+        <div className="flex flex-1 items-center gap-3">
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
-            className="mr-4 rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 lg:hidden"
+            className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 lg:hidden"
             aria-label="Mở menu"
           >
             <Menu className="h-6 w-6" />
           </button>
+          <div className="flex items-center gap-2">
+            {PageIcon && <PageIcon className="h-5 w-5 text-emerald-600" />}
+            <h1 className="text-lg font-bold text-gray-900">{pageTitle}</h1>
+          </div>
         </div>
 
         <div className="flex items-center gap-2 md:gap-3">
