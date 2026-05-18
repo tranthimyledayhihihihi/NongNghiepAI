@@ -3,15 +3,15 @@ import { Link } from "react-router-dom";
 import AgriNavbar from "../components/AgriNavbar";
 import logo from "../assets/agri-ai-logo.png";
 
-const categories = ["Tất cả", "Thời tiết", "Giá nông sản", "Thu hoạch", "Thị trường", "AI Chat"];
+const categories = ["Tất cả", "Thời tiết", "Giá nông sản", "Thu hoạch", "Thị trường", "Trợ lý AI"];
 
 const featureCards = [
   {
-    title: "Thời tiết nông nghiệp realtime",
+    title: "Thời tiết nông nghiệp thời gian thực",
     category: "Thời tiết",
     icon: "🌦️",
     route: "/weather",
-    badge: "Realtime API",
+    badge: "Dữ liệu thời gian thực",
     description: "Theo dõi nhiệt độ, lượng mưa, độ ẩm, gió và cảnh báo rủi ro thời tiết theo khu vực canh tác.",
     highlights: ["Dự báo 7 ngày", "Cảnh báo mưa lớn", "Gợi ý tưới tiêu"],
   },
@@ -20,7 +20,7 @@ const featureCards = [
     category: "Giá nông sản",
     icon: "📈",
     route: "/pricing",
-    badge: "AI Pricing",
+    badge: "Định giá AI",
     description: "Cập nhật giá nông sản, so sánh vùng miền và hỗ trợ nông dân quyết định nên bán hay theo dõi thêm.",
     highlights: ["Giá hiện tại", "Biểu đồ xu hướng", "So sánh khu vực"],
   },
@@ -29,7 +29,7 @@ const featureCards = [
     category: "Thu hoạch",
     icon: "🌾",
     route: "/harvest",
-    badge: "Forecast",
+    badge: "Dự báo",
     description: "Ước tính ngày thu hoạch dựa trên cây trồng, ngày xuống giống, khu vực, thời tiết và lịch sử mùa vụ.",
     highlights: ["Timeline mùa vụ", "Độ tin cậy", "Checklist chuẩn bị"],
   },
@@ -38,16 +38,16 @@ const featureCards = [
     category: "Thị trường",
     icon: "🛒",
     route: "/market",
-    badge: "Market Data",
+    badge: "Dữ liệu thị trường",
     description: "Theo dõi nhu cầu thị trường, tin tức nông sản và gợi ý kênh bán phù hợp với sản lượng thực tế.",
     highlights: ["Tin tức thị trường", "Kênh bán hàng", "Chiến lược tiêu thụ"],
   },
   {
     title: "Trợ lý AI nông nghiệp",
-    category: "AI Chat",
+    category: "Trợ lý AI",
     icon: "🤖",
     route: "/ai-chat",
-    badge: "GenAI",
+    badge: "Trợ lý AI",
     description: "Cho phép người dùng hỏi về thời tiết, giá cả, sâu bệnh, thu hoạch, thị trường và nhận tư vấn dễ hiểu.",
     highlights: ["Gợi ý câu hỏi", "Trả lời có ngữ cảnh", "Nút hành động nhanh"],
   },
@@ -56,25 +56,25 @@ const featureCards = [
     category: "Thị trường",
     icon: "📰",
     route: "/articles",
-    badge: "Content",
+    badge: "Kiến thức",
     description: "Tập hợp bài viết, hướng dẫn và tin tức giúp người dùng hiểu thị trường và cách vận hành hệ thống.",
-    highlights: ["Bộ lọc chủ đề", "Tóm tắt nội dung", "Liên kết module"],
+    highlights: ["Bộ lọc chủ đề", "Tóm tắt nội dung", "Liên kết phân hệ"],
   },
 ];
 
 const dataLayers = [
   {
-    name: "Realtime API",
+    name: "Dữ liệu thời gian thực",
     value: "Dữ liệu bên ngoài",
     description: "Dùng cho thời tiết, giá thị trường, tin tức hoặc các nguồn dữ liệu thay đổi liên tục theo ngày.",
   },
   {
-    name: "Database",
+    name: "Cơ sở dữ liệu",
     value: "Dữ liệu nội bộ",
     description: "Lưu hồ sơ mùa vụ, lịch sử giá, lịch sử chat, thông tin người dùng và các cảnh báo đã tạo.",
   },
   {
-    name: "AI Model",
+    name: "Mô hình AI",
     value: "Dự báo và khuyến nghị",
     description: "AI dùng dữ liệu đầu vào để dự báo thu hoạch, gợi ý bán hàng và tư vấn nông nghiệp có ngữ cảnh.",
   },
@@ -82,10 +82,10 @@ const dataLayers = [
 
 const roadmap = [
   "Tạo bộ lọc cây trồng/khu vực dùng chung cho các trang chính.",
-  "Hiển thị badge nguồn dữ liệu: API realtime, DB, AI Model.",
+  "Hiển thị nhãn nguồn dữ liệu: thời gian thực, cơ sở dữ liệu, mô hình AI.",
   "Thêm trạng thái loading skeleton, empty state và error state.",
   "Cho phép lưu cảnh báo giá/thời tiết trực tiếp từ từng tính năng.",
-  "Liên kết AI Chat với dữ liệu trang hiện tại để tư vấn có ngữ cảnh.",
+  "Liên kết Trợ lý AI với dữ liệu trang hiện tại để tư vấn có ngữ cảnh.",
 ];
 
 export default function FeaturesPage() {
@@ -112,11 +112,11 @@ export default function FeaturesPage() {
                 Tất cả công cụ cần thiết để nông dân ra quyết định nhanh hơn
               </h1>
               <p className="mt-5 max-w-2xl text-base leading-8 text-emerald-50 sm:text-lg">
-                Trang features được bổ sung thanh menu, logo và bố cục đồng bộ với trang chủ, bài viết, bảng giá và liên hệ. Người dùng có thể hiểu từng module dùng dữ liệu gì và bấm sang dùng ngay.
+                Trang tính năng được bổ sung thanh menu, logo và bố cục đồng bộ với trang chủ, bài viết, bảng giá và liên hệ. Người dùng có thể hiểu từng phân hệ dùng dữ liệu gì và bấm sang dùng ngay.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <Link to="/ai-chat" className="rounded-2xl bg-white px-5 py-3 font-bold text-emerald-800 shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:bg-emerald-50">
-                  Dùng thử AI Chat
+                  Dùng thử trợ lý AI
                 </Link>
                 <Link to="/pricing-plans" className="rounded-2xl border border-white/30 px-5 py-3 font-bold text-white transition hover:bg-white/10">
                   Xem gói dịch vụ
@@ -132,7 +132,7 @@ export default function FeaturesPage() {
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <p className="text-sm font-black uppercase tracking-wide text-emerald-600">Tổng quan hệ thống</p>
-                    <h2 className="mt-2 text-2xl font-black">5 module chính + AI hỗ trợ</h2>
+                    <h2 className="mt-2 text-2xl font-black">5 phân hệ chính + AI hỗ trợ</h2>
                   </div>
                   <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-[1.5rem] border border-emerald-100 bg-white shadow-sm">
                     <img src={logo} alt="AgriAI" className="h-full w-full object-cover object-center" />
@@ -141,19 +141,19 @@ export default function FeaturesPage() {
 
                 <div className="mt-6 grid grid-cols-2 gap-3">
                   <div className="rounded-2xl bg-emerald-50 p-4">
-                    <p className="text-2xl font-black text-emerald-700">API</p>
-                    <p className="text-sm text-slate-600">Dữ liệu realtime</p>
+                    <p className="text-2xl font-black text-emerald-700">Dữ liệu</p>
+                    <p className="text-sm text-slate-600">Thời gian thực</p>
                   </div>
                   <div className="rounded-2xl bg-lime-50 p-4">
                     <p className="text-2xl font-black text-lime-700">AI</p>
                     <p className="text-sm text-slate-600">Tư vấn thông minh</p>
                   </div>
                   <div className="rounded-2xl bg-amber-50 p-4">
-                    <p className="text-2xl font-black text-amber-700">DB</p>
+                    <p className="text-2xl font-black text-amber-700">Lưu trữ</p>
                     <p className="text-sm text-slate-600">Lưu lịch sử</p>
                   </div>
                   <div className="rounded-2xl bg-sky-50 p-4">
-                    <p className="text-2xl font-black text-sky-700">UX</p>
+                    <p className="text-2xl font-black text-sky-700">Dễ dùng</p>
                     <p className="text-sm text-slate-600">Dễ dùng hơn</p>
                   </div>
                 </div>
@@ -161,7 +161,7 @@ export default function FeaturesPage() {
                 <div className="mt-6 rounded-2xl bg-slate-900 p-4 text-white">
                   <p className="text-sm font-bold text-emerald-200">Luồng trải nghiệm đề xuất</p>
                   <p className="mt-2 text-sm leading-6 text-slate-200">
-                    Chọn khu vực → xem dữ liệu realtime → nhận phân tích AI → lưu cảnh báo hoặc hành động.
+                    Chọn khu vực → xem dữ liệu thời gian thực → nhận phân tích AI → lưu cảnh báo hoặc hành động.
                   </p>
                 </div>
               </div>
@@ -246,7 +246,7 @@ export default function FeaturesPage() {
         <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
           <div>
             <p className="text-sm font-black uppercase tracking-wide text-emerald-600">Nâng cấp nên làm tiếp</p>
-            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">Biến trang features thành trung tâm điều hướng thật sự</h2>
+            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">Biến trang tính năng thành trung tâm điều hướng thật sự</h2>
             <p className="mt-4 leading-8 text-slate-600">
               Không nên chỉ liệt kê tính năng. Hãy cho người dùng thấy mỗi tính năng lấy dữ liệu từ đâu, giải quyết vấn đề gì và có thể bấm sang dùng ngay.
             </p>

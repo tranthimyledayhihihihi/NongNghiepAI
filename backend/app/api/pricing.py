@@ -6,15 +6,18 @@ from app.api.response import api_response
 from app.core.database import get_db
 from app.schemas.price_schema import (
     PriceForecastRequest,
-    PriceForecastResponse,
-    PriceRequest,
-    PriceResponse,
     PricingSuggestRequest,
-    PricingSuggestResponse,
 )
 from app.services.pricing_service import pricing_service
 
 router = APIRouter(prefix="/api/pricing", tags=["pricing"])
+
+
+class PriceLookupRequest(BaseModel):
+    crop_name: str = Field(..., min_length=1)
+    region: str = Field(..., min_length=1)
+    quality_grade: str = "grade_1"
+    force_refresh: bool = False
 
 
 class PricingEngineRequest(BaseModel):
@@ -30,9 +33,69 @@ class PricingEngineRequest(BaseModel):
         return (self.crop_name or self.crop or "lua").strip()
 
 
-@router.post("/current")
-async def get_current_price(request: PriceRequest, db: Session = Depends(get_db)):
+class PricingRefreshRequest(BaseModel):
+    crop_name: str = Field(..., min_length=1)
+    region: str = Field(..., min_length=1)
+    quality_grade: str = "grade_1"
+
+
+@router.get("/current")
+async def get_current_price_query(
+    crop_name: str = Query(..., min_length=1),
+    region: str = Query(..., min_length=1),
+    quality_grade: str = Query(default="grade_1"),
+    force_refresh: bool = Query(default=False),
+    db: Session = Depends(get_db),
+):
     data = pricing_service.get_current_price(
+        db,
+        crop_name,
+        region,
+        quality_grade,
+        include_weather=False,
+        force_refresh=force_refresh,
+    )
+    return api_response(
+        data,
+        source=data.get("source", "database"),
+        source_name=data.get("source_name"),
+        is_mock=data.get("is_mock", False),
+        is_realtime=data.get("source") == "realtime",
+        cache_status=data.get("cache_status", "from_db"),
+        last_updated=data.get("last_updated"),
+        fetched_at=data.get("fetched_at"),
+        confidence=data.get("confidence", 0.0),
+        message="OK" if not data.get("is_mock") else "Dữ liệu mô phỏng",
+    )
+
+
+@router.post("/current")
+async def get_current_price(request: PriceLookupRequest, db: Session = Depends(get_db)):
+    data = pricing_service.get_current_price(
+        db,
+        request.crop_name,
+        request.region,
+        request.quality_grade,
+        include_weather=False,
+        force_refresh=request.force_refresh,
+    )
+    return api_response(
+        data,
+        source=data.get("source", "database"),
+        source_name=data.get("source_name"),
+        is_mock=data.get("is_mock", False),
+        is_realtime=data.get("source") == "realtime",
+        cache_status=data.get("cache_status", "from_db"),
+        last_updated=data.get("last_updated"),
+        fetched_at=data.get("fetched_at"),
+        confidence=data.get("confidence", 0.0),
+        message="OK" if not data.get("is_mock") else "Dữ liệu mô phỏng",
+    )
+
+
+@router.post("/refresh")
+async def refresh_price(request: PricingRefreshRequest, db: Session = Depends(get_db)):
+    data = pricing_service.refresh_current_price(
         db,
         request.crop_name,
         request.region,
@@ -43,30 +106,12 @@ async def get_current_price(request: PriceRequest, db: Session = Depends(get_db)
         source=data.get("source", "database"),
         source_name=data.get("source_name"),
         is_mock=data.get("is_mock", False),
+        is_realtime=data.get("source") == "realtime",
         cache_status=data.get("cache_status", "from_db"),
         last_updated=data.get("last_updated"),
+        fetched_at=data.get("fetched_at"),
         confidence=data.get("confidence", 0.0),
-    )
-
-
-@router.get("/current")
-async def get_current_price_query(
-    crop: str | None = Query(default=None),
-    crop_name: str | None = Query(default=None),
-    region: str = Query(default="Ha Noi"),
-    quality_grade: str = Query(default="grade_1"),
-    db: Session = Depends(get_db),
-):
-    selected_crop = (crop_name or crop or "lua").strip()
-    data = pricing_service.get_current_price(db, selected_crop, region, quality_grade)
-    return api_response(
-        data,
-        source=data.get("source", "database"),
-        source_name=data.get("source_name"),
-        is_mock=data.get("is_mock", False),
-        cache_status=data.get("cache_status", "from_db"),
-        last_updated=data.get("last_updated"),
-        confidence=data.get("confidence", 0.0),
+        message=data.get("message", "Đã làm mới giá"),
     )
 
 
@@ -75,11 +120,12 @@ async def suggest_price(request: PricingSuggestRequest, db: Session = Depends(ge
     data = pricing_service.suggest_price(db, request)
     return api_response(
         data,
-        source="ai_generated",
-        source_name="AI Pricing Engine",
-        is_mock=bool(data.get("is_mock")),
+        source=data.get("source", "database"),
+        source_name=data.get("source_name"),
+        is_mock=data.get("is_mock", False),
         cache_status=data.get("cache_status", "computed"),
         last_updated=data.get("last_updated"),
+        fetched_at=data.get("fetched_at"),
         confidence=data.get("confidence", 0.72),
     )
 
@@ -94,23 +140,29 @@ async def forecast_price(request: PriceForecastRequest):
         is_mock=data.get("is_mock", False),
         cache_status=data.get("cache_status", "mock"),
         last_updated=data.get("last_updated"),
+        fetched_at=data.get("fetched_at"),
         confidence=data.get("confidence", 0.0),
     )
 
 
 @router.get("/history")
 async def get_price_history_query(
-    crop: str | None = Query(default=None),
-    crop_name: str | None = Query(default=None),
-    region: str = Query(default="Ha Noi"),
+    crop_name: str = Query(..., min_length=1),
+    region: str = Query(..., min_length=1),
     days: int = Query(default=30, ge=1, le=365),
     db: Session = Depends(get_db),
 ):
-    selected_crop = (crop_name or crop or "lua").strip()
-    history = pricing_service.get_price_history(db, selected_crop, region, days)
+    history = pricing_service.get_price_history(db, crop_name, region, days)
     is_mock = any(item.get("is_mock") for item in history)
+    data = {
+        "crop_name": crop_name,
+        "crop": crop_name,
+        "region": region,
+        "history": history,
+        "source_type": "mock" if is_mock else "database",
+    }
     return api_response(
-        {"crop_name": selected_crop, "crop": selected_crop, "region": region, "history": history},
+        data,
         source="mock" if is_mock else "database",
         source_name="PriceHistory DB" if not is_mock else "Pricing demo history",
         is_mock=is_mock,
@@ -128,6 +180,7 @@ async def get_price_history(crop_name: str, region: str, days: int = 30, db: Ses
         "crop": crop_name,
         "region": region,
         "history": history,
+        "source_type": "mock" if is_mock else "database",
     }
     return api_response(
         data,
@@ -146,34 +199,29 @@ async def weather_price_forecast(
     quality_grade: str = "grade_1",
     db: Session = Depends(get_db),
 ):
-    """
-    Dự báo giá điều chỉnh theo thời tiết 7 ngày tới.
-    Trả về giá gốc, hệ số thời tiết, giá đề xuất sau điều chỉnh, và chi tiết từng ngày.
-    """
     from app.services.weather_pricing_service import get_weather_adjusted_pricing
 
     current = pricing_service.get_current_price(
         db, crop_name, region, quality_grade, include_weather=False
     )
     base_price = float(current["current_price"])
-
     weather_info = get_weather_adjusted_pricing(db, crop_name, region, base_price)
     multiplier = pricing_service.quality_multipliers.get(quality_grade, 1.0)
 
     data = {
-        "crop_name":   crop_name,
-        "region":      region,
+        "crop_name": crop_name,
+        "region": region,
         "quality_grade": quality_grade,
-        "base_price":  round(base_price * multiplier, 2),
+        "base_price": round(base_price * multiplier, 2),
         "weather_adjusted_price": round(weather_info["adjusted_price"] * multiplier, 2),
-        "weather_factor":         weather_info["weather_factor"],
-        "price_change_pct":       weather_info["price_change_pct"],
-        "weather_summary":        weather_info["weather_summary"],
-        "weather_explanation":    weather_info["weather_explanation"],
-        "crop_category":          weather_info["crop_category"],
-        "forecast_days":          weather_info["forecast_days"],
-        "forecast":               weather_info["forecast"],
-        "unit": "VND/kg",
+        "weather_factor": weather_info["weather_factor"],
+        "price_change_pct": weather_info["price_change_pct"],
+        "weather_summary": weather_info["weather_summary"],
+        "weather_explanation": weather_info["weather_explanation"],
+        "crop_category": weather_info["crop_category"],
+        "forecast_days": weather_info["forecast_days"],
+        "forecast": weather_info["forecast"],
+        "unit": "VNĐ/kg",
     }
     return api_response(
         data,

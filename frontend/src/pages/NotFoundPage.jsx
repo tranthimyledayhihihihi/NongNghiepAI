@@ -27,7 +27,7 @@ const NotFoundContent = () => {
           className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-700 px-5 py-3 font-semibold text-white hover:bg-green-800"
         >
           <Home className="h-5 w-5" />
-          Vào dashboard
+          Vào bảng điều khiển
         </Link>
       </div>
     </div>

@@ -173,7 +173,7 @@ const ProfilePage = () => {
                     className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
                   >
                     <option value="vi">Tiếng Việt</option>
-                    <option value="en">English</option>
+                    <option value="en">Tiếng Anh</option>
                   </select>
                 </div>
                 <div>
@@ -181,7 +181,7 @@ const ProfilePage = () => {
                   <div className="grid grid-cols-2 gap-3">
                     {[
                       ['hectare', 'Hecta'],
-                      ['acre', 'Acre'],
+                      ['acre', 'Mẫu Anh'],
                     ].map(([value, label]) => (
                       <button
                         key={value}

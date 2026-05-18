@@ -509,10 +509,10 @@ class HarvestService:
     @staticmethod
     def _preparation_tasks(crop_name: str, expected_date: date) -> list[str]:
         return [
-            f"Confirm harvest labor 7 days before {expected_date.isoformat()}.",
-            f"Prepare packaging and clean storage area for {crop_name}.",
-            "Check 3-day weather forecast before cutting or collecting.",
-            "Create price alert for target selling price.",
+            f"Xác nhận nhân công thu hoạch trước ngày {expected_date.isoformat()} khoảng 7 ngày.",
+            f"Chuẩn bị bao bì và vệ sinh khu vực bảo quản cho {crop_name}.",
+            "Kiểm tra dự báo thời tiết 3 ngày trước khi cắt hoặc thu gom.",
+            "Tạo cảnh báo giá theo mức giá bán mục tiêu.",
         ]
 
 

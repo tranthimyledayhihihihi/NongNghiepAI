@@ -69,9 +69,10 @@ async def get_market_news(
 async def get_market_prices(
     crop: str = Query(default="lua"),
     region: str = Query(default="Ha Noi"),
+    quality_grade: str = Query(default="grade_1"),
     db: Session = Depends(get_db),
 ):
-    data = pricing_service.get_current_price(db, crop, region)
+    data = pricing_service.get_current_price(db, crop, region, quality_grade, include_weather=False)
     return api_response(
         data,
         source=data.get("source", "database"),
@@ -79,6 +80,7 @@ async def get_market_prices(
         is_mock=data.get("is_mock", False),
         cache_status=data.get("cache_status", "from_db"),
         last_updated=data.get("last_updated"),
+        fetched_at=data.get("fetched_at"),
         confidence=data.get("confidence", 0.0),
     )
 
@@ -141,6 +143,30 @@ async def get_market_risks(
         source_name=data["source_name"],
         is_mock=data["is_mock"],
         confidence=data["confidence"],
+    )
+
+
+@router.post("/analyze")
+async def analyze_market(
+    request: MarketSuggestRequest,
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
+):
+    data = pricing_service.analyze_market(
+        db,
+        crop_name=request.crop_name,
+        region=request.region,
+        quantity=request.quantity,
+        quality_grade=request.quality_grade,
+    )
+    return api_response(
+        data,
+        source=data.get("source", "database"),
+        source_name=data.get("source_name"),
+        is_mock=data.get("is_mock", False),
+        cache_status=data.get("cache_status", "computed"),
+        last_updated=data.get("fetched_at") or data.get("last_updated"),
+        confidence=data.get("confidence_score", data.get("confidence", 0.0)),
     )
 
 

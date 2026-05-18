@@ -24,6 +24,7 @@ import { getApiErrorMessage, settledValue } from '../services/api';
 import { dashboardApi } from '../services/dashboardApi';
 import { seasonApi } from '../services/seasonApi';
 import { weatherApi } from '../services/weatherApi';
+import { statusLabel, translateUiText } from '../utils/vietnameseText';
 
 const formatNumber = (value, digits = 0) => {
   const number = Number(value);
@@ -54,6 +55,16 @@ const REGION_LABELS = {
 };
 
 const displayRegion = (value) => REGION_LABELS[value] || value;
+
+const STATUS_NAME_LABELS = {
+  Weather: 'Thời tiết',
+  Market: 'Thị trường',
+  'Gemini/Claude': 'Trợ lý AI',
+  Database: 'Cơ sở dữ liệu',
+  'Zalo/Email/SMS': 'Zalo / Email / SMS',
+};
+
+const statusNameLabel = (name) => STATUS_NAME_LABELS[name] || translateUiText(name);
 
 const trendIcon = (trend) => {
   if (trend === 'up' || trend === 'increasing') return <ArrowUp className="h-4 w-4 text-emerald-600" />;
@@ -188,7 +199,7 @@ const Dashboard = () => {
         action_today: actionToday,
       });
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Không tải được dashboard'));
+      setError(getApiErrorMessage(err, 'Không tải được bảng điều khiển'));
     } finally {
       setLoading(false);
     }
@@ -223,7 +234,7 @@ const Dashboard = () => {
   }, [forecast]);
 
   if (loading && !summary) {
-    return <InlineLoading text="Đang tải dashboard từ các endpoint mới..." />;
+    return <InlineLoading text="Đang tải dữ liệu tổng quan..." />;
   }
 
   if (error && !summary) {
@@ -240,7 +251,7 @@ const Dashboard = () => {
           </div>
           <h1 className="mt-1 text-2xl font-bold text-slate-950">Trung tâm dữ liệu thị trường và nông vụ</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Tự làm mới dữ liệu thực tế khi mở trang, sau đó đọc nhanh từ DB.
+            Tự làm mới dữ liệu thực tế khi mở trang, sau đó đọc nhanh từ hệ thống.
           </p>
         </div>
       </div>
@@ -252,34 +263,34 @@ const Dashboard = () => {
       )}
 
       <Panel>
-        <PanelHeader icon={Gauge} title="API Status" />
+        <PanelHeader icon={Gauge} title="Trạng thái hệ thống" />
         <div className="grid gap-3 md:grid-cols-5">
           {apiStatus.length ? (
             apiStatus.map((item) => (
               <div key={item.name} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3">
-                <div className="text-sm font-semibold text-slate-950">{item.name}</div>
+                <div className="text-sm font-semibold text-slate-950">{statusNameLabel(item.name)}</div>
                 <div className="mt-2">
                   <span
                     className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
-                      item.status === 'ok' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                      ['ok', 'Hoạt động'].includes(item.status) ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
                     }`}
                   >
-                    {item.status}
+                    {statusLabel(item.status)}
                   </span>
                 </div>
               </div>
             ))
           ) : (
-            <EmptyState text="Chưa có trạng thái API." />
+            <EmptyState text="Chưa có trạng thái hệ thống." />
           )}
         </div>
         {actionToday.actions?.length > 0 && (
           <div className="mt-4 rounded-md border border-indigo-100 bg-indigo-50 p-4">
-            <div className="mb-2 text-sm font-semibold text-indigo-950">Action Today</div>
+            <div className="mb-2 text-sm font-semibold text-indigo-950">Việc cần làm hôm nay</div>
             <div className="grid gap-2 md:grid-cols-3">
               {actionToday.actions.slice(0, 3).map((item) => (
                 <div key={item} className="rounded-md bg-white/80 px-3 py-2 text-sm leading-6 text-indigo-900">
-                  {item}
+                  {translateUiText(item)}
                 </div>
               ))}
             </div>
@@ -290,12 +301,12 @@ const Dashboard = () => {
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
         <Link to="/season-management" className="block focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2">
           <Panel className="h-full transition hover:border-emerald-300 hover:shadow-md">
-            <PanelHeader icon={Sprout} title="Harvest Status" />
+            <PanelHeader icon={Sprout} title="Tình trạng mùa vụ" />
             <div className="text-3xl font-bold text-slate-950">{formatNumber(activeSeasonCount)}</div>
             <p className="mt-2 text-sm text-slate-600">Mùa vụ đang theo dõi</p>
             <p className="mt-3 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
               {activeSeasonCount > 0
-                ? 'Recommendation: kiểm tra lịch thu hoạch và rủi ro thời tiết trước khi chốt ngày cắt.'
+                ? 'Khuyến nghị: kiểm tra lịch thu hoạch và rủi ro thời tiết trước khi chốt ngày cắt.'
                 : 'Chưa có mùa vụ nào đang theo dõi'}
             </p>
             <span className="mt-4 inline-flex items-center gap-2 rounded-md border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-800">
@@ -306,20 +317,20 @@ const Dashboard = () => {
         </Link>
 
         <Panel>
-          <PanelHeader icon={Gauge} title="Quality Summary" />
+          <PanelHeader icon={Gauge} title="Tổng quan chất lượng" />
           <div className="text-3xl font-bold text-slate-950">{formatNumber(summary?.quality_checks)}</div>
           <p className="mt-2 text-sm text-slate-600">Lần kiểm định chất lượng</p>
           <p className="mt-3 rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-800">
-            Recommendation: ưu tiên lô hàng có confidence cao khi đưa vào pricing/market.
+            Khuyến nghị: ưu tiên lô hàng có độ tin cậy cao khi đưa vào định giá và chọn kênh bán.
           </p>
         </Panel>
 
         <Panel>
-          <PanelHeader icon={AlertTriangle} title="Risk Summary">
+          <PanelHeader icon={AlertTriangle} title="Tổng quan rủi ro">
             <RiskBadge level={weatherRisk.risk_level} />
           </PanelHeader>
           <div className="text-3xl font-bold text-slate-950">{formatNumber(weatherRisk.risk_score)}</div>
-          <p className="mt-2 text-sm text-slate-600">Risk score cho {displayRegion(weatherRisk.region || region)}</p>
+          <p className="mt-2 text-sm text-slate-600">Điểm rủi ro cho {displayRegion(weatherRisk.region || region)}</p>
           <div className="mt-3 space-y-2">
             {(weatherRisk.alerts || []).slice(0, 2).map((item, index) => (
               <div key={`${item.title || item.alert_type || 'risk'}-${index}`} className="rounded-md border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-900">
@@ -328,14 +339,14 @@ const Dashboard = () => {
                 </div>
               </div>
             ))}
-            {!(weatherRisk.alerts || []).length && <EmptyState text="Chưa có risk row." />}
+            {!(weatherRisk.alerts || []).length && <EmptyState text="Chưa có cảnh báo rủi ro." />}
           </div>
         </Panel>
       </div>
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
         <Panel>
-          <PanelHeader icon={TrendingUp} title="Market Price" />
+          <PanelHeader icon={TrendingUp} title="Giá thị trường" />
 
           <div className="space-y-4">
             <div>
@@ -375,7 +386,7 @@ const Dashboard = () => {
         </Panel>
 
         <Panel>
-          <PanelHeader icon={CloudRain} title="Weather Realtime">
+          <PanelHeader icon={CloudRain} title="Thời tiết hiện tại">
             <RiskBadge level={weatherRisk.risk_level} />
           </PanelHeader>
 
@@ -390,7 +401,7 @@ const Dashboard = () => {
             <div className="rounded-md bg-slate-50 px-3 py-3">
               <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
                 <Gauge className="h-4 w-4 text-slate-600" />
-                Risk score
+                Điểm rủi ro
               </div>
               <div className="mt-2 text-2xl font-bold text-slate-950">{formatNumber(weatherRisk.risk_score)}</div>
             </div>
@@ -418,7 +429,7 @@ const Dashboard = () => {
         </Panel>
 
         <Panel>
-          <PanelHeader icon={AlertTriangle} title="Alert Center">
+          <PanelHeader icon={AlertTriangle} title="Trung tâm cảnh báo">
             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
               {alerts.length} cảnh báo
             </span>
@@ -427,12 +438,12 @@ const Dashboard = () => {
             {alerts.length ? (
               alerts.slice(0, 4).map((alert, index) => (
                 <div key={`${alert.alert_type}-${index}`} className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
-                  <div className="text-sm font-semibold text-amber-900">{alert.title || alert.alert_type}</div>
-                  <div className="mt-1 text-xs text-amber-800">{alert.message || alert.recommendation}</div>
+                  <div className="text-sm font-semibold text-amber-900">{translateUiText(alert.title || alert.alert_type)}</div>
+                  <div className="mt-1 text-xs text-amber-800">{translateUiText(alert.message || alert.recommendation)}</div>
                 </div>
               ))
             ) : (
-              <EmptyState text="Chưa có cảnh báo từ backend." />
+              <EmptyState text="Chưa có cảnh báo từ hệ thống." />
             )}
           </div>
         </Panel>
@@ -440,10 +451,10 @@ const Dashboard = () => {
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         <Panel>
-          <PanelHeader icon={Sparkles} title="AI Today" />
+          <PanelHeader icon={Sparkles} title="Gợi ý hôm nay" />
           <div className="space-y-3">
-            <h3 className="text-xl font-bold text-slate-950">{summary?.ai_recommendation?.title || 'Đang tổng hợp'}</h3>
-            <p className="text-sm leading-6 text-slate-600">{summary?.ai_recommendation?.description || 'Chưa có khuyến nghị.'}</p>
+            <h3 className="text-xl font-bold text-slate-950">{translateUiText(summary?.ai_recommendation?.title || 'Đang tổng hợp')}</h3>
+            <p className="text-sm leading-6 text-slate-600">{translateUiText(summary?.ai_recommendation?.description || 'Chưa có khuyến nghị.')}</p>
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-md bg-emerald-50 p-3">
                 <div className="text-xs text-emerald-700">Độ tin cậy</div>
@@ -516,13 +527,13 @@ const Dashboard = () => {
                   className="block rounded-md border border-slate-200 px-3 py-2 transition hover:border-emerald-200 hover:bg-emerald-50"
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <div className="line-clamp-2 text-sm font-semibold text-slate-950">{item.title}</div>
+                    <div className="line-clamp-2 text-sm font-semibold text-slate-950">{translateUiText(item.title)}</div>
                     <SentimentBadge value={item.sentiment} />
                   </div>
                 </a>
               ))
             ) : (
-              <EmptyState text="Chưa có tin tức từ backend." />
+              <EmptyState text="Chưa có tin tức từ hệ thống." />
             )}
           </div>
         </Panel>

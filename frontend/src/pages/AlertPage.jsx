@@ -5,6 +5,7 @@ import AlertSubscribe from '../components/Alert/AlertSubscribe';
 import DataSourceBadge from '../components/DataSourceBadge';
 import { alertApi } from '../services/alertApi';
 import { getApiErrorMessage } from '../services/api';
+import { translateUiText } from '../utils/vietnameseText';
 
 const tabs = [
   { value: 'price', label: 'Cảnh báo giá', icon: TrendingUp },
@@ -23,7 +24,7 @@ const AlertPage = () => {
       const result = await alertApi.checkNow();
       setCheckState({
         loading: false,
-        message: `Đã quét ${result.triggered_count || 0} cảnh báo, ${result.triggered?.length || 0} event được kích hoạt.`,
+        message: `Đã quét ${result.triggered_count || 0} cảnh báo, ${result.triggered?.length || 0} lượt được kích hoạt.`,
         error: '',
       });
       setRefreshKey((value) => value + 1);
@@ -43,11 +44,11 @@ const AlertPage = () => {
       setAutoAlert(result);
       setCheckState({
         loading: false,
-        message: result.title || 'AI da tao goi y canh bao tu dong.',
+        message: translateUiText(result.title || 'AI đã tạo gợi ý cảnh báo tự động.'),
         error: '',
       });
     } catch (err) {
-      setCheckState({ loading: false, message: '', error: getApiErrorMessage(err, 'Khong the tao canh bao AI') });
+      setCheckState({ loading: false, message: '', error: getApiErrorMessage(err, 'Không thể tạo cảnh báo AI') });
     }
   };
 
@@ -56,13 +57,12 @@ const AlertPage = () => {
       <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-semibold uppercase tracking-wide text-green-700">Alert engine</p>
-            <DataSourceBadge data={autoAlert || { source: 'database', source_name: 'Alert rules DB', confidence: 0.7 }} />
+            <p className="text-sm font-semibold uppercase tracking-wide text-green-700">Bộ cảnh báo</p>
+            <DataSourceBadge data={autoAlert || { source: 'database', source_name: 'Quy tắc cảnh báo', confidence: 0.7 }} />
           </div>
           <h1 className="mt-2 text-3xl font-bold text-gray-900">Trung tâm cảnh báo</h1>
           <p className="mt-2 max-w-3xl text-gray-600">
-            Tạo cảnh báo giá và thời tiết từ dữ liệu backend, xem nguồn realtime/cache và kiểm tra trigger để sinh
-            notification vào inbox.
+            Tạo cảnh báo giá và thời tiết từ dữ liệu hệ thống, kiểm tra nhanh và gửi thông báo vào hộp tin.
           </p>
         </div>
         <button
@@ -80,7 +80,7 @@ const AlertPage = () => {
           disabled={checkState.loading}
           className="inline-flex items-center justify-center gap-2 rounded-lg border border-green-700 px-4 py-3 font-semibold text-green-800 hover:bg-green-50 disabled:opacity-60"
         >
-          AI auto-generate
+          AI tạo gợi ý
         </button>
       </div>
 

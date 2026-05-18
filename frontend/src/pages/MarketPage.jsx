@@ -1,9 +1,12 @@
-import { AlertCircle, Globe, ShoppingCart, TrendingUp } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { AlertCircle, Globe, RefreshCw, Search, ShoppingCart, TrendingUp } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import DataSourceBadge from '../components/DataSourceBadge';
 import { getApiErrorMessage } from '../services/api';
 import { marketApi } from '../services/marketApi';
 import { marketNewsApi } from '../services/marketNewsApi';
+import { pricingApi } from '../services/pricingApi';
+import { CROP_SUGGESTIONS, REGION_SUGGESTIONS, normalizePriceInput } from '../utils/priceInputs';
+import { translateUiText } from '../utils/vietnameseText';
 
 const fallbackChannels = [
   { id: 'wholesale', name: 'Chợ đầu mối', commission: '5-10%' },
@@ -13,25 +16,39 @@ const fallbackChannels = [
 
 const channelIcons = [ShoppingCart, TrendingUp, Globe];
 
+const initialFormData = {
+  cropName: 'Cà phê',
+  region: 'Đắk Lắk',
+  quantity: 1000,
+  qualityGrade: 'grade_1',
+};
+
+const formatMoney = (value) => `${Number(value || 0).toLocaleString('vi-VN')} đ/kg`;
+
 const MarketPage = () => {
   const [channels, setChannels] = useState(fallbackChannels);
   const [channelSource, setChannelSource] = useState({ is_mock: true, source: 'fallback' });
-  const [formData, setFormData] = useState({
-    cropName: 'ca chua',
-    region: 'Ha Noi',
-    quantity: 1000,
-    qualityGrade: 'grade_1',
-  });
-  const [result, setResult] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [news, setNews] = useState([]);
+  const [formData, setFormData] = useState(initialFormData);
+  const [analysis, setAnalysis] = useState(null);
   const [marketPrice, setMarketPrice] = useState(null);
-  const [trend, setTrend] = useState(null);
-  const [opportunities, setOpportunities] = useState(null);
-  const [risks, setRisks] = useState(null);
-  const [intelligenceLoading, setIntelligenceLoading] = useState(false);
-  const [intelligenceError, setIntelligenceError] = useState(null);
+  const [news, setNews] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [refreshingPrice, setRefreshingPrice] = useState(false);
+  const [error, setError] = useState(null);
+  const [newsLoading, setNewsLoading] = useState(false);
+  const [newsError, setNewsError] = useState(null);
+
+  const normalizedInputs = useMemo(
+    () => ({
+      cropName: normalizePriceInput(formData.cropName),
+      region: normalizePriceInput(formData.region),
+      quantity: Number(formData.quantity || 0),
+      qualityGrade: formData.qualityGrade || 'grade_1',
+    }),
+    [formData]
+  );
+
+  const canAnalyze = Boolean(normalizedInputs.cropName && normalizedInputs.region && normalizedInputs.quantity > 0);
 
   useEffect(() => {
     const loadChannels = async () => {
@@ -49,176 +66,281 @@ const MarketPage = () => {
     loadChannels();
   }, []);
 
-  useEffect(() => {
-    let active = true;
-    const loadIntelligence = async () => {
-      setIntelligenceLoading(true);
-      setIntelligenceError(null);
-      try {
-        const results = await Promise.allSettled([
-          marketApi.getMarketNews({ limit: 4, crop: formData.cropName, region: formData.region }),
-          marketApi.getMarketPrices({ crop: formData.cropName, region: formData.region }),
-          marketApi.getMarketTrends(formData.cropName, formData.region),
-          marketApi.getMarketOpportunities({ crop: formData.cropName, region: formData.region }),
-          marketApi.getMarketRisks({ crop: formData.cropName, region: formData.region }),
-        ]);
-        const [newsData, priceData, trendData, opportunityData, riskData] = results.map((item) => (
-          item.status === 'fulfilled' ? item.value : null
-        ));
-        if (results.every((item) => item.status === 'rejected')) {
-          throw results[0].reason;
-        }
-        const newsItems = newsData?.news || [];
-        const enrichedResults = await Promise.allSettled(newsItems.map(async (item) => {
-          try {
-            const analysis = await marketApi.analyzeMarketNews({
-              title: item.title,
-              summary: item.summary,
-              crop: formData.cropName,
-              region: formData.region,
-            });
-            return {
-              ...item,
-              ...analysis,
-              affected_crops: analysis.affected_crops?.length ? analysis.affected_crops : [formData.cropName],
-              affected_regions: analysis.affected_regions?.length ? analysis.affected_regions : [formData.region],
-            };
-          } catch {
-            return {
-              ...item,
-              affected_crops: [formData.cropName],
-              affected_regions: [formData.region],
-              impact: item.impact || item.sentiment || 'neutral',
-              impact_score: item.impact_score ?? 0.5,
-              price_effect: item.price_effect || 'stable',
-              source: item.source || 'cached',
-              source_name: item.source_name || 'Market news cache',
-              confidence: item.confidence ?? 0.5,
-            };
-          }
-        }));
-        const enrichedNews = enrichedResults.map((item, index) => (
-          item.status === 'fulfilled' ? item.value : newsItems[index]
-        )).filter(Boolean);
-        if (!active) return;
-        setNews(enrichedNews);
-        setMarketPrice(priceData);
-        setTrend(trendData);
-        setOpportunities(opportunityData);
-        setRisks(riskData);
-        const failed = results.filter((item) => item.status === 'rejected');
-        setIntelligenceError(failed.length ? 'Mot so khoi market phan hoi cham, giao dien dang hien thi phan du lieu con lai.' : null);
-      } catch (err) {
-        if (!active) return;
-        try {
-          const legacyNews = await marketNewsApi.getLegacyLatest(4);
-          if (!active) return;
-          setNews((legacyNews.news || []).map((item) => ({
-            ...item,
-            source: 'legacy',
-            source_name: item.source_name || 'Legacy /api/market-news',
-            confidence: item.confidence ?? 0.45,
-            affected_crops: [formData.cropName],
-            affected_regions: [formData.region],
-            impact: item.impact || item.sentiment || 'neutral',
-            impact_score: item.impact_score ?? 0.5,
-            price_effect: item.price_effect || 'stable',
-          })));
-          setIntelligenceError('Endpoint moi loi, dang hien thi tin legacy/cache.');
-        } catch {
-          setNews([]);
-          setIntelligenceError(getApiErrorMessage(err, 'Khong tai duoc market intelligence'));
-        }
-        setMarketPrice(null);
-        setTrend(null);
-        setOpportunities(null);
-        setRisks(null);
-      } finally {
-        if (active) setIntelligenceLoading(false);
-      }
-    };
-    loadIntelligence();
-    return () => {
-      active = false;
-    };
-  }, [formData.cropName, formData.region]);
+  const loadMarketSnapshot = async () => {
+    if (!canAnalyze) {
+      setError('Vui lòng nhập đủ nông sản, khu vực và sản lượng.');
+      return;
+    }
 
-  const handleSubmit = async (event) => {
-    event.preventDefault();
     setLoading(true);
     setError(null);
-    setResult(null);
+    setNewsError(null);
 
     try {
-      const data = await marketApi.suggestMarket(
-        formData.cropName,
-        formData.region,
-        formData.quantity,
-        formData.qualityGrade
-      );
-      setResult(data);
+      const [analysisData, priceData, newsData] = await Promise.all([
+        marketApi.analyzeMarket({
+          cropName: normalizedInputs.cropName,
+          region: normalizedInputs.region,
+          quantity: normalizedInputs.quantity,
+          qualityGrade: normalizedInputs.qualityGrade,
+        }),
+        pricingApi.getCurrentPrice({
+          cropName: normalizedInputs.cropName,
+          region: normalizedInputs.region,
+          qualityGrade: normalizedInputs.qualityGrade,
+        }),
+        marketApi.getMarketNews({
+          limit: 4,
+          crop: normalizedInputs.cropName,
+          region: normalizedInputs.region,
+        }),
+      ]);
+
+      setAnalysis(analysisData);
+      setMarketPrice(priceData);
+      setNews(newsData?.news || []);
+      if (newsData?.source === 'mock') {
+        setNewsError('Tin thị trường đang dùng dữ liệu lưu sẵn hoặc mô phỏng.');
+      }
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Không thể gợi ý kênh bán hàng'));
+      setError(getApiErrorMessage(err, 'Không thể phân tích thị trường'));
+      try {
+        setNewsLoading(true);
+        const legacyNews = await marketNewsApi.getLegacyLatest(4);
+        setNews((legacyNews.news || []).map((item) => ({
+          ...item,
+          source: 'legacy',
+          source_name: item.source_name || 'Tin thị trường đã lưu',
+          confidence: item.confidence ?? 0.45,
+        })));
+      } catch {
+        setNews([]);
+      } finally {
+        setNewsLoading(false);
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    await loadMarketSnapshot();
+  };
+
+  const handleRefreshPrice = async () => {
+    if (!canAnalyze) {
+      setError('Vui lòng nhập đủ nông sản, khu vực và sản lượng.');
+      return;
+    }
+    setRefreshingPrice(true);
+    setError(null);
+
+    try {
+      const refreshed = await pricingApi.refreshCurrentPrice({
+        cropName: normalizedInputs.cropName,
+        region: normalizedInputs.region,
+        qualityGrade: normalizedInputs.qualityGrade,
+      });
+      setMarketPrice(refreshed);
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Không làm mới được giá'));
+    } finally {
+      setRefreshingPrice(false);
+    }
+  };
+
+  const currentTrend = analysis?.trend_7d || {};
+  const longTrend = analysis?.trend_30d || {};
+  const volatility = analysis?.volatility || {};
+  const regionalComparison = analysis?.regional_comparison || [];
+  const recommendation = analysis?.recommendation || {};
+  const dataSources = analysis?.data_sources || [];
+
   return (
-    <div className="px-4 py-6">
-      <div className="mb-8">
+    <div className="space-y-6 px-4 py-6">
+      <div>
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-3xl font-bold text-gray-900">Tư vấn kênh bán hàng</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Phân tích thị trường</h1>
           <DataSourceBadge data={channelSource} />
         </div>
         <p className="mt-2 text-gray-600">
-          So sánh kênh bán và gợi ý kênh tối ưu từ API backend.
+          Nhập nông sản, khu vực rồi bấm nút để xem giá hiện tại, xu hướng 7 ngày, xu hướng 30 ngày và khuyến nghị.
         </p>
       </div>
 
-      {intelligenceLoading && (
-        <div className="mb-4 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-          Dang tai market intelligence tu endpoint moi...
-        </div>
-      )}
-      {intelligenceError && (
-        <div className="mb-4 rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          {intelligenceError}
-        </div>
-      )}
+      {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+      {newsError && <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{newsError}</div>}
 
-      <section className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-3">
-        <div className="rounded-lg border border-gray-200 bg-white p-5 shadow">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold text-gray-700">Gia thi truong</h2>
-            {marketPrice && <DataSourceBadge data={marketPrice} />}
+      <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-[1fr_1fr_180px_180px]">
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700">Nông sản</label>
+            <input
+              value={formData.cropName}
+              onChange={(event) => setFormData({ ...formData, cropName: event.target.value })}
+              placeholder="Nhập tên nông sản, ví dụ: Cà phê"
+              list="market-crop-suggestions"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
+            />
+            <datalist id="market-crop-suggestions">
+              {CROP_SUGGESTIONS.map((item) => (
+                <option key={item} value={item} />
+              ))}
+            </datalist>
           </div>
-          <p className="text-2xl font-bold text-gray-900">
-            {marketPrice?.current_price ? `${Number(marketPrice.current_price).toLocaleString('vi-VN')} VND/kg` : 'N/A'}
-          </p>
-          <p className="mt-2 text-sm text-gray-600">{marketPrice?.crop_name || formData.cropName} · {marketPrice?.region || formData.region}</p>
-          {marketPrice?.recommendation && <p className="mt-2 text-sm text-green-700">Recommendation: {marketPrice.recommendation}</p>}
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-5 shadow">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold text-gray-700">Xu huong AI</h2>
-            {trend && <DataSourceBadge data={trend} />}
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700">Khu vực</label>
+            <input
+              value={formData.region}
+              onChange={(event) => setFormData({ ...formData, region: event.target.value })}
+              placeholder="Nhập khu vực, ví dụ: Đắk Lắk"
+              list="market-region-suggestions"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
+            />
+            <datalist id="market-region-suggestions">
+              {REGION_SUGGESTIONS.map((item) => (
+                <option key={item} value={item} />
+              ))}
+            </datalist>
           </div>
-          <p className="text-2xl font-bold text-gray-900">{trend?.trend || 'stable'}</p>
-          <p className="mt-2 text-sm text-gray-600">{trend?.evidence?.[0] || 'Dang tong hop du lieu thi truong.'}</p>
-          {trend?.recommendation && <p className="mt-2 text-sm text-green-700">Recommendation: {trend.recommendation}</p>}
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-5 shadow">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold text-gray-700">Co hoi & rui ro</h2>
-            <DataSourceBadge data={opportunities || risks || { source: 'mock', source_name: 'Market intelligence fallback' }} />
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700">Số lượng (kg)</label>
+            <input
+              type="number"
+              min="1"
+              value={formData.quantity}
+              onChange={(event) => setFormData({ ...formData, quantity: event.target.value })}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
+              required
+            />
           </div>
-          <p className="text-sm font-semibold text-green-800">{opportunities?.opportunities?.[0]?.title || 'Batch selling opportunity'}</p>
-          <p className="mt-2 text-sm text-gray-600">{risks?.risks?.[0]?.recommendation || 'Theo doi bien dong gia va tao canh bao khi can.'}</p>
-        </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700">Chất lượng</label>
+            <select
+              value={formData.qualityGrade}
+              onChange={(event) => setFormData({ ...formData, qualityGrade: event.target.value })}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
+            >
+              <option value="grade_1">Loại 1</option>
+              <option value="grade_2">Loại 2</option>
+              <option value="grade_3">Loại 3</option>
+            </select>
+          </div>
+
+          <div className="flex items-end">
+            <button
+              type="submit"
+              disabled={loading || !canAnalyze}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-green-700 px-4 py-2.5 font-semibold text-white hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Search className="h-5 w-5" />
+              {loading ? 'Đang phân tích...' : 'Phân tích thị trường'}
+            </button>
+          </div>
+        </form>
       </section>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      {(loading || newsLoading) && <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">Đang tải dữ liệu thị trường...</div>}
+
+      {analysis && (
+        <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+            <p className="text-sm text-gray-600">Giá hiện tại</p>
+            <p className="mt-2 text-3xl font-bold text-gray-900">{formatMoney(analysis.current_price)}</p>
+            <p className="mt-2 text-xs text-gray-500">{analysis.region}</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+            <p className="text-sm text-gray-600">Xu hướng 7 ngày</p>
+            <p className="mt-2 text-2xl font-bold text-gray-900">{currentTrend.direction === 'up' ? 'Tăng' : currentTrend.direction === 'down' ? 'Giảm' : 'Ổn định'}</p>
+            <p className="mt-2 text-sm text-gray-600">{currentTrend.summary}</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+            <p className="text-sm text-gray-600">Xu hướng 30 ngày</p>
+            <p className="mt-2 text-2xl font-bold text-gray-900">{longTrend.direction === 'up' ? 'Tăng' : longTrend.direction === 'down' ? 'Giảm' : 'Ổn định'}</p>
+            <p className="mt-2 text-sm text-gray-600">{longTrend.summary}</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+            <p className="text-sm text-gray-600">Độ tin cậy</p>
+            <p className="mt-2 text-2xl font-bold text-gray-900">{((analysis.confidence_score || 0) * 100).toFixed(0)}%</p>
+            <p className="mt-2 text-sm text-gray-600">{volatility.summary}</p>
+          </div>
+        </section>
+      )}
+
+      {marketPrice && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700 shadow-sm">
+          <DataSourceBadge data={marketPrice} />
+          <span>Nguồn dữ liệu: {marketPrice.source_name || marketPrice.source || 'Database'}</span>
+          <span>Loại nguồn: {marketPrice.source_type || marketPrice.source || 'database'}</span>
+          {marketPrice.last_updated && <span>Cập nhật: {new Date(marketPrice.last_updated).toLocaleString('vi-VN')}</span>}
+          {marketPrice.is_mock && <span className="font-medium text-amber-700">Dữ liệu này là mô phỏng, chưa phải giá thị trường thực tế.</span>}
+          <button
+            type="button"
+            onClick={handleRefreshPrice}
+            disabled={refreshingPrice || !canAnalyze}
+            className="ml-auto inline-flex items-center gap-2 rounded-lg border border-emerald-700 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <RefreshCw className="h-4 w-4" />
+            {refreshingPrice ? 'Đang làm mới...' : 'Làm mới giá'}
+          </button>
+        </div>
+      )}
+
+      {analysis && (
+        <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Khuyến nghị phân tích</h2>
+              <p className="text-sm text-gray-500">Kết quả dựa trên giá hiện tại, xu hướng và biến động thị trường.</p>
+            </div>
+            {dataSources[0] && <DataSourceBadge data={dataSources[0]} />}
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="rounded-lg bg-green-50 p-4">
+              <p className="text-sm text-green-700">{analysis.recommendation?.title || 'Khuyến nghị'}</p>
+              <p className="mt-2 text-base font-semibold text-green-900">{translateUiText(analysis.recommendation?.reason || 'Đang tổng hợp khuyến nghị.')}</p>
+            </div>
+            <div className="rounded-lg bg-slate-50 p-4">
+              <p className="text-sm text-slate-700">Rủi ro thị trường</p>
+              <p className="mt-2 text-base font-semibold text-slate-900">{translateUiText(analysis.volatility?.summary || 'Chưa đủ dữ liệu rủi ro')}</p>
+            </div>
+          </div>
+
+          {analysis.history_notice && (
+            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+              {analysis.history_notice}
+            </div>
+          )}
+
+          {analysis.history_notice_7d && (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+              {analysis.history_notice_7d}
+            </div>
+          )}
+
+          {regionalComparison.length > 0 && (
+            <div className="mt-5">
+              <h3 className="text-sm font-semibold text-gray-900">So sánh vùng miền</h3>
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {regionalComparison.map((item) => (
+                  <div key={item.region} className="rounded-lg border border-gray-200 p-4">
+                    <div className="font-semibold text-gray-900">{item.region}</div>
+                    <div className="mt-2 text-lg font-bold text-gray-900">{Number(item.price || 0).toLocaleString('vi-VN')} đ/kg</div>
+                    <div className="mt-1 text-sm text-gray-600">{item.difference_percent > 0 ? '+' : ''}{Number(item.difference_percent || 0).toFixed(2)}%</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         {channels.map((channel, index) => {
           const Icon = channelIcons[index % channelIcons.length];
           const channelId = channel.id || channel.channel_code;
@@ -227,12 +349,9 @@ const MarketPage = () => {
             channel.commission ||
             (Number.isFinite(channel.commission_rate) ? `${Math.round(channel.commission_rate * 100)}%` : 'N/A');
           return (
-            <div
-              key={channelId || channelName}
-              className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow"
-            >
-              <div className="flex items-center mb-4">
-                <div className="p-3 bg-primary-100 rounded-lg">
+            <div key={channelId || channelName} className="rounded-lg bg-white p-6 shadow transition-shadow hover:shadow-lg">
+              <div className="mb-4 flex items-center">
+                <div className="rounded-lg bg-primary-100 p-3">
                   <Icon className="h-6 w-6 text-primary-600" />
                 </div>
                 <div className="ml-3">
@@ -250,13 +369,21 @@ const MarketPage = () => {
         })}
       </div>
 
-      {true && (
-        <section className="mt-8 rounded-lg border border-gray-200 bg-white p-6 shadow">
-          <div className="mb-4 flex flex-wrap items-center gap-3">
-            <h2 className="text-lg font-semibold text-gray-900">Market News</h2>
-            <DataSourceBadge data={news[0] || { source: intelligenceError ? 'legacy' : 'realtime_api', source_name: intelligenceError ? 'Legacy /api/market-news' : 'RSS market news cache', confidence: intelligenceError ? 0.45 : 0.7 }} />
-          </div>
-          {news.length ? (
+      <section className="mt-8 rounded-lg border border-gray-200 bg-white p-6 shadow">
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <h2 className="text-lg font-semibold text-gray-900">Tin thị trường</h2>
+          <DataSourceBadge
+            data={
+              news[0] || {
+                source: newsError ? 'legacy' : 'realtime_api',
+                source_name: newsError ? 'Tin đã lưu' : 'Tin thị trường',
+                confidence: newsError ? 0.45 : 0.7,
+              }
+            }
+          />
+        </div>
+
+        {news.length ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {news.map((item) => (
               <a
@@ -270,191 +397,27 @@ const MarketPage = () => {
                   <p className="text-sm font-semibold text-gray-900">{item.title}</p>
                   <DataSourceBadge data={item} />
                 </div>
-                <p className="mt-2 line-clamp-2 text-sm text-gray-600">{item.summary || item.ai_summary}</p>
+                <p className="mt-2 line-clamp-2 text-sm text-gray-600">{translateUiText(item.summary || item.ai_summary)}</p>
                 <div className="mt-3 grid gap-2 text-xs text-gray-600">
-                  <p><span className="font-semibold">AI news summary:</span> {item.ai_summary || item.recommendation || item.summary || 'Dang tong hop.'}</p>
-                  <p><span className="font-semibold">affected_crops:</span> {(item.affected_crops || []).join(', ') || formData.cropName}</p>
-                  <p><span className="font-semibold">affected_regions:</span> {(item.affected_regions || []).join(', ') || formData.region}</p>
-                  <p><span className="font-semibold">impact:</span> {item.impact || 'neutral'} · score {item.impact_score ?? 'N/A'} · price_effect {item.price_effect || 'stable'}</p>
-                  <p><span className="font-semibold">updated:</span> {item.updated_at || item.published_at || 'N/A'}</p>
+                  <p><span className="font-semibold">Tóm tắt:</span> {translateUiText(item.ai_summary || item.recommendation || item.summary || 'Đang tổng hợp.')}</p>
+                  <p><span className="font-semibold">Nông sản liên quan:</span> {(item.affected_crops || []).join(', ') || normalizedInputs.cropName}</p>
+                  <p><span className="font-semibold">Khu vực liên quan:</span> {(item.affected_regions || []).join(', ') || normalizedInputs.region}</p>
+                  <p>
+                    <span className="font-semibold">Tác động:</span> {translateUiText(item.impact || 'neutral')}
+                    {' · '}Điểm {item.impact_score ?? 'N/A'}
+                    {' · '}Ảnh hưởng giá {translateUiText(item.price_effect || 'stable')}
+                  </p>
+                  <p><span className="font-semibold">Cập nhật:</span> {item.updated_at || item.published_at || 'N/A'}</p>
                 </div>
               </a>
             ))}
           </div>
-          ) : (
-            <div className="rounded-lg border border-dashed border-gray-300 p-5 text-center text-sm text-gray-600">
-              Chua co market news phu hop.
-            </div>
-          )}
-        </section>
-      )}
-
-      <section className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="rounded-lg border border-gray-200 bg-white p-5 shadow">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold text-gray-900">Opportunities</h2>
-            <DataSourceBadge data={opportunities || { source: 'mock', source_name: 'Market opportunities fallback' }} />
+        ) : (
+          <div className="rounded-lg border border-dashed border-gray-300 p-5 text-center text-sm text-gray-600">
+            Chưa có tin thị trường phù hợp.
           </div>
-          <div className="space-y-3">
-            {(opportunities?.opportunities || []).map((item) => (
-              <div key={`${item.title}-${item.region}`} className="rounded-lg border border-green-100 bg-green-50 p-3 text-sm text-green-900">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-semibold">{item.title}</span>
-                  <DataSourceBadge data={item} />
-                </div>
-                <p className="mt-1">{item.reason || item.recommendation || 'Theo doi co hoi ban theo dot.'}</p>
-                <p className="mt-1 text-xs">confidence: {item.confidence ?? opportunities?.confidence ?? 'N/A'}</p>
-              </div>
-            ))}
-            {!opportunities?.opportunities?.length && <p className="text-sm text-gray-600">Chua co opportunity tu endpoint moi.</p>}
-          </div>
-        </div>
-
-        <div className="rounded-lg border border-gray-200 bg-white p-5 shadow">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold text-gray-900">Risks</h2>
-            <DataSourceBadge data={risks || { source: 'mock', source_name: 'Market risks fallback' }} />
-          </div>
-          <div className="space-y-3">
-            {(risks?.risks || []).map((item) => (
-              <div key={`${item.title}-${item.region}`} className="rounded-lg border border-amber-100 bg-amber-50 p-3 text-sm text-amber-900">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-semibold">{item.title}</span>
-                  <DataSourceBadge data={item} />
-                </div>
-                <p className="mt-1">severity: {item.severity || 'medium'}</p>
-                <p className="mt-1">recommendation: {item.recommendation || 'Tao canh bao gia va tranh ban tat ca cung luc.'}</p>
-              </div>
-            ))}
-            {!risks?.risks?.length && <p className="text-sm text-gray-600">Chua co risk tu endpoint moi.</p>}
-          </div>
-        </div>
+        )}
       </section>
-
-      <div className="mt-8 bg-white rounded-lg shadow p-6">
-        <h2 className="text-lg font-semibold mb-4">Công cụ gợi ý kênh bán</h2>
-
-        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Nông sản
-            </label>
-            <select
-              value={formData.cropName}
-              onChange={(event) => setFormData({ ...formData, cropName: event.target.value })}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-            >
-              <option value="ca chua">Cà chua</option>
-              <option value="dua chuot">Dưa chuột</option>
-              <option value="rau muong">Rau muống</option>
-              <option value="lua">Lúa</option>
-              <option value="ot">Ớt</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Khu vực
-            </label>
-            <select
-              value={formData.region}
-              onChange={(event) => setFormData({ ...formData, region: event.target.value })}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-            >
-              <option value="Ha Noi">Hà Nội</option>
-              <option value="TP.HCM">TP.HCM</option>
-              <option value="Da Nang">Đà Nẵng</option>
-              <option value="Can Tho">Cần Thơ</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Số lượng (kg)
-            </label>
-            <input
-              type="number"
-              min="1"
-              value={formData.quantity}
-              onChange={(event) => setFormData({ ...formData, quantity: event.target.value })}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Chất lượng
-            </label>
-            <select
-              value={formData.qualityGrade}
-              onChange={(event) => setFormData({ ...formData, qualityGrade: event.target.value })}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-            >
-              <option value="grade_1">Loại 1</option>
-              <option value="grade_2">Loại 2</option>
-              <option value="grade_3">Loại 3</option>
-            </select>
-          </div>
-
-          <div className="flex items-end">
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-primary-600 text-white py-2 px-4 rounded-md hover:bg-primary-700 disabled:bg-gray-300"
-            >
-              {loading ? 'Đang gợi ý...' : 'Gợi ý'}
-            </button>
-          </div>
-        </form>
-
-        {error && (
-          <div className="mt-4 flex items-start gap-2 rounded-md bg-red-50 p-3 text-sm text-red-700">
-            <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        {result && (
-          <div className="mt-6 space-y-4">
-            <div className="rounded-lg bg-green-50 border border-green-200 p-4">
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <p className="text-sm text-green-700">Kênh đề xuất</p>
-                <DataSourceBadge data={result} />
-              </div>
-              <p className="text-2xl font-bold text-green-900">{result.recommended_channel}</p>
-              <p className="mt-2 text-sm text-green-800">{result.reason}</p>
-              {result.warning && <p className="mt-2 text-sm text-yellow-700">{result.warning}</p>}
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {result.profit_comparison?.map((channel, index) => (
-                <div
-                  key={channel.channel}
-                  className={`p-4 rounded-lg border-2 ${
-                    index === 0 ? 'border-green-500 bg-green-50' : 'border-gray-200'
-                  }`}
-                >
-                  <p className="font-medium text-gray-900">
-                    {channel.channel_name}
-                    {index === 0 && (
-                      <span className="ml-2 text-xs bg-green-500 text-white px-2 py-1 rounded">
-                        Tốt nhất
-                      </span>
-                    )}
-                  </p>
-                  <p className="text-sm text-gray-600 mt-2">
-                    Giá ước tính: {channel.estimated_price.toLocaleString()} VND/kg
-                  </p>
-                  <p className="text-lg font-bold text-gray-900 mt-1">
-                    {channel.estimated_total_revenue.toLocaleString()} VND
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
     </div>
   );
 };

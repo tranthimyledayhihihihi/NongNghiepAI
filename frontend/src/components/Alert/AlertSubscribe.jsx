@@ -4,6 +4,7 @@ import DataSourceBadge from '../DataSourceBadge';
 import { PageError } from '../StatusState';
 import { getApiErrorMessage } from '../../services/api';
 import { alertApi } from '../../services/alertApi';
+import { sourceNameLabel, translateUiText } from '../../utils/vietnameseText';
 
 const formatCurrency = (value) => Number(value || 0).toLocaleString('vi-VN');
 
@@ -210,7 +211,7 @@ const AlertSubscribe = ({ mode = 'price', onCreated }) => {
       <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
         <div className="flex items-center gap-3 text-sm text-gray-600">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Đang tải danh mục từ backend...
+          Đang tải danh mục cảnh báo...
         </div>
       </section>
     );
@@ -227,7 +228,7 @@ const AlertSubscribe = ({ mode = 'price', onCreated }) => {
             {mode === 'weather' ? 'Tạo cảnh báo thời tiết nông vụ' : 'Tạo cảnh báo thông minh'}
           </h2>
           <p className="text-sm text-gray-600">
-            Dữ liệu danh mục, giá hiện tại và trạng thái nguồn đều đi qua backend.
+            Dữ liệu danh mục, giá hiện tại và trạng thái nguồn được lấy từ hệ thống.
           </p>
         </div>
       </div>
@@ -305,7 +306,7 @@ const AlertSubscribe = ({ mode = 'price', onCreated }) => {
                   <DataSourceBadge data={currentPrice} />
                 </div>
                 <div className="mt-3 text-xs text-blue-900">
-                  Nguồn: {currentPrice.source_name || currentPrice.source || 'backend'} · Cập nhật:{' '}
+                  Nguồn: {sourceNameLabel(currentPrice.source_name || currentPrice.source)} · Cập nhật:{' '}
                   {currentPrice.last_updated ? new Date(currentPrice.last_updated).toLocaleString('vi-VN') : 'chưa rõ'}
                 </div>
               </div>
@@ -331,7 +332,7 @@ const AlertSubscribe = ({ mode = 'price', onCreated }) => {
                           ? `${formatCurrency(suggestion.target_price)} VND/kg`
                           : `${suggestion.threshold_percent}%`}
                         {' · '}
-                        {suggestion.reason}
+                        {translateUiText(suggestion.reason)}
                       </div>
                     </button>
                   ))}
@@ -370,17 +371,17 @@ const AlertSubscribe = ({ mode = 'price', onCreated }) => {
             <div className="rounded-lg border border-amber-100 bg-amber-50 p-4">
               <div className="flex items-center gap-2 text-sm font-semibold text-amber-900">
                 <ThermometerSun className="h-4 w-4" />
-                Cảnh báo thời tiết hiện có từ backend
+                Cảnh báo thời tiết hiện có
               </div>
               <div className="mt-3 space-y-2">
                 {weatherAlerts.length ? (
                   weatherAlerts.slice(0, 3).map((item, index) => (
                     <div key={`${item.title}-${index}`} className="rounded-lg bg-white p-3 text-sm text-gray-700">
                       <div className="flex items-center justify-between gap-2">
-                        <div className="font-medium text-gray-900">{item.title || item.alert_type}</div>
-                        <DataSourceBadge data={item.source ? item : { ...item, source: 'realtime_api', source_name: 'Weather alerts API' }} />
+                        <div className="font-medium text-gray-900">{translateUiText(item.title || item.alert_type)}</div>
+                        <DataSourceBadge data={item.source ? item : { ...item, source: 'realtime_api', source_name: 'Cảnh báo thời tiết' }} />
                       </div>
-                      <div className="mt-1">{item.message}</div>
+                      <div className="mt-1">{translateUiText(item.message)}</div>
                     </div>
                   ))
                 ) : (
@@ -427,7 +428,7 @@ const AlertSubscribe = ({ mode = 'price', onCreated }) => {
             />
             {formData.notifyMethod === 'zalo' && (
               <p className="mt-1 text-xs text-gray-500">
-                Zalo cần UID của người dùng đã quan tâm OA; cấu hình backend phải có ZALO_OA_TOKEN.
+                Nhập UID của người dùng đã quan tâm Zalo OA để hệ thống gửi cảnh báo.
               </p>
             )}
             {formData.notifyMethod === 'email' && (

@@ -51,10 +51,11 @@ const statusClass = (status) => {
 };
 
 const statusLabel = (status) => ({
+  ok: 'Hoạt động',
   ready: 'Sẵn sàng',
   disabled: 'Đã tắt',
   pending_verification: 'Thiếu người nhận',
-  missing_token: 'Thiếu token',
+  missing_token: 'Thiếu mã cấu hình',
   not_configured: 'Chưa cấu hình',
   mock: 'Chế độ thử',
   failed_last_test: 'Lỗi lần thử',
@@ -62,7 +63,14 @@ const statusLabel = (status) => ({
   stored: 'Đã lưu',
   mock_sent: 'Đã giả lập',
   failed: 'Thất bại',
-}[status] || status || 'Không rõ');
+}[status] || 'Không rõ');
+
+const channelLabel = (channel) => ({
+  app: 'Ứng dụng',
+  email: 'Email',
+  zalo: 'Zalo',
+  sms: 'SMS',
+}[channel] || 'Kênh gửi');
 
 const ChannelStatus = ({ channel, status, testState, onTest }) => {
   const active = testState.channel === channel;
@@ -74,7 +82,7 @@ const ChannelStatus = ({ channel, status, testState, onTest }) => {
     <div className="rounded-lg border border-gray-200 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="font-semibold text-gray-900">{channel.toUpperCase()}</div>
+          <div className="font-semibold text-gray-900">{channelLabel(channel)}</div>
           <div className="mt-1 text-xs text-gray-500">{status?.receiver || 'Chưa có người nhận'}</div>
         </div>
         <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClass(status?.status)}`}>
@@ -82,7 +90,7 @@ const ChannelStatus = ({ channel, status, testState, onTest }) => {
         </span>
       </div>
       <div className="mt-3 text-xs text-gray-500">
-        {status?.last_tested_at ? `Test gần nhất: ${new Date(status.last_tested_at).toLocaleString('vi-VN')}` : 'Chưa gửi thử'}
+        {status?.last_tested_at ? `Lần thử gần nhất: ${new Date(status.last_tested_at).toLocaleString('vi-VN')}` : 'Chưa gửi thử'}
       </div>
       {status?.error && <div className="mt-2 text-xs text-amber-700">{status.error}</div>}
       <div className="mt-3 flex items-center gap-3">
@@ -190,7 +198,7 @@ const SettingsPage = () => {
           smsChannel: Boolean(alertPrefs.channels?.sms),
         }));
         if (failed.length) {
-          setError('Mot so cau hinh phan hoi cham, trang dang hien thi phan du lieu tai duoc.');
+          setError('Một số cấu hình phản hồi chậm, trang đang hiển thị phần dữ liệu tải được.');
         }
       } catch (err) {
         if (active) setError(getApiErrorMessage(err, 'Không thể tải cài đặt'));
@@ -233,7 +241,7 @@ const SettingsPage = () => {
       setTestState({
         channel,
         status: ok ? 'ok' : 'error',
-        message: ok ? result.status : result?.error || 'Gửi thất bại.',
+        message: ok ? statusLabel(result.status) : result?.error || 'Gửi thất bại.',
       });
       await loadChannelStatus();
     } catch (err) {
@@ -300,7 +308,7 @@ const SettingsPage = () => {
       }));
       setSaved(true);
       if (failed.length) {
-        setError('Mot so muc cai dat chua luu duoc do phan hoi cham. Cac muc con lai da duoc cap nhat.');
+        setError('Một số mục cài đặt chưa lưu được do phản hồi chậm. Các mục còn lại đã được cập nhật.');
       }
       await loadChannelStatus();
     } catch (err) {
@@ -322,7 +330,7 @@ const SettingsPage = () => {
   };
 
   if (loading) {
-    return <InlineLoading text="Đang tải cài đặt từ backend..." />;
+    return <InlineLoading text="Đang tải cài đặt từ hệ thống..." />;
   }
 
   return (
@@ -331,11 +339,11 @@ const SettingsPage = () => {
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm font-semibold uppercase tracking-wide text-green-700">Thiết lập vận hành</p>
-            <DataSourceBadge data={sourceMeta.profile || { source: 'database', source_name: 'Users/UserSettings DB', confidence: 0.72 }} />
+            <DataSourceBadge data={sourceMeta.profile || { source: 'database', source_name: 'Hồ sơ người dùng', confidence: 0.72 }} />
           </div>
           <h1 className="mt-2 text-3xl font-bold text-gray-900">Cài đặt</h1>
           <p className="mt-2 text-gray-600">
-            Hồ sơ, vùng chuẩn hóa, ma trận thông báo, trạng thái provider và bảo mật tài khoản.
+            Hồ sơ, vùng chuẩn hóa, ma trận thông báo, trạng thái kênh gửi và bảo mật tài khoản.
           </p>
         </div>
         <button
@@ -352,7 +360,7 @@ const SettingsPage = () => {
       {saved && (
         <div className="flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800">
           <Check className="h-5 w-5" />
-          Đã lưu cấu hình vào backend.
+          Đã lưu cấu hình vào hệ thống.
         </div>
       )}
 
@@ -417,7 +425,7 @@ const SettingsPage = () => {
               </div>
               <div>
                 <h2 className="text-xl font-bold text-gray-900">Vùng và hiển thị</h2>
-                <p className="text-sm text-gray-600">Region dùng chung cho giá, thời tiết và dashboard.</p>
+                <p className="text-sm text-gray-600">Khu vực dùng chung cho giá, thời tiết và bảng điều khiển.</p>
               </div>
             </div>
 
@@ -445,7 +453,7 @@ const SettingsPage = () => {
                   className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
                 >
                   <option value="vi">Tiếng Việt</option>
-                  <option value="en">English</option>
+                  <option value="en">Tiếng Anh</option>
                 </select>
               </div>
               <div>
@@ -470,13 +478,13 @@ const SettingsPage = () => {
               </div>
               <div>
                 <h2 className="text-xl font-bold text-gray-900">Ma trận thông báo</h2>
-                <p className="text-sm text-gray-600">Bật/tắt loại event và kênh nhận tương ứng.</p>
+                <p className="text-sm text-gray-600">Bật/tắt loại thông báo và kênh nhận tương ứng.</p>
               </div>
             </div>
 
             <div className="overflow-hidden rounded-lg border border-gray-200">
               <div className="grid grid-cols-[1fr_repeat(4,80px)] bg-gray-50 text-sm font-semibold text-gray-700">
-                <div className="p-3">Loại event</div>
+                <div className="p-3">Loại thông báo</div>
                 {channels.map((channel) => (
                   <div key={channel.key} className="p-3 text-center">
                     {channel.label}
@@ -512,7 +520,7 @@ const SettingsPage = () => {
               </div>
               <div>
                 <h2 className="text-lg font-bold text-gray-900">Kênh nhận và trạng thái</h2>
-                <p className="text-xs text-gray-500">Status lấy từ backend/provider, không chỉ là toggle.</p>
+                <p className="text-xs text-gray-500">Trạng thái lấy từ hệ thống và kênh gửi, không chỉ là nút bật/tắt.</p>
               </div>
             </div>
 
@@ -587,35 +595,35 @@ const SettingsPage = () => {
 
           <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-lg font-bold text-gray-900">Data source status</h2>
-              <DataSourceBadge data={sourceMeta.channels || { source: 'database', source_name: 'Settings channel status', confidence: 0.7 }} />
+              <h2 className="text-lg font-bold text-gray-900">Trạng thái nguồn dữ liệu</h2>
+              <DataSourceBadge data={sourceMeta.channels || { source: 'database', source_name: 'Trạng thái kênh thông báo', confidence: 0.7 }} />
             </div>
             <div className="mt-4 space-y-3 text-sm text-gray-700">
               <div className="flex items-center justify-between gap-3">
                 <span className="inline-flex items-center gap-2">
                   <Globe2 className="h-4 w-4 text-green-700" />
-                  Weather API
+                  Dữ liệu thời tiết
                 </span>
                 <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClass(channelStatus.data_sources?.weather?.status)}`}>
-                  {channelStatus.data_sources?.weather?.status || 'unknown'}
+                  {channelStatus.data_sources?.weather?.status === 'ok' ? 'Hoạt động' : 'Chưa rõ'}
                 </span>
               </div>
               <div className="flex items-center justify-between gap-3">
                 <span className="inline-flex items-center gap-2">
                   <MapPin className="h-4 w-4 text-blue-600" />
-                  Price crawler/cache
+                  Dữ liệu giá
                 </span>
                 <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClass(channelStatus.data_sources?.price?.status)}`}>
-                  {channelStatus.data_sources?.price?.status || 'unknown'}
+                  {channelStatus.data_sources?.price?.status === 'ok' ? 'Hoạt động' : 'Chưa rõ'}
                 </span>
               </div>
               <div className="flex items-center justify-between gap-3">
                 <span className="inline-flex items-center gap-2">
                   <Smartphone className="h-4 w-4 text-amber-600" />
-                  SMS provider
+                  Nhà cung cấp SMS
                 </span>
                 <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClass(channelStatus.sms?.status)}`}>
-                  {channelStatus.sms?.status || 'unknown'}
+                  {channelStatus.sms?.status === 'ok' ? 'Hoạt động' : 'Chưa rõ'}
                 </span>
               </div>
             </div>

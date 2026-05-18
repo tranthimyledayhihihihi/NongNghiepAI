@@ -72,6 +72,9 @@ class Settings(BaseSettings):
         ]
     )
     ENABLE_STOOQ_PRICE_SOURCE: bool = True
+    MARKET_PRICE_API_URL: str = ""
+    MARKET_PRICE_API_KEY: str = ""
+    ENABLE_REALTIME_PRICE: bool = True
     EXCHANGE_RATE_API_URL: str = "https://open.er-api.com/v6/latest/USD"
     MARKET_API_BASE_URL: str = ""
     TAVILY_API_KEY: str = ""

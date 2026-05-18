@@ -2,6 +2,7 @@ import { CloudSun, History, MailCheck, Trash2, TrendingDown, TrendingUp } from '
 import { useEffect, useState } from 'react';
 import { alertApi } from '../../services/alertApi';
 import { getApiErrorMessage } from '../../services/api';
+import { severityLabel, statusLabel as systemStatusLabel, translateUiText } from '../../utils/vietnameseText';
 import DataSourceBadge from '../DataSourceBadge';
 import { EmptyState, InlineLoading, PageError } from '../StatusState';
 
@@ -26,7 +27,7 @@ const channelLabel = (channel) => ({
 const statusLabel = (status) => ({
   sent: 'đã gửi',
   stored: 'đã lưu',
-  mock_sent: 'chế độ thử',
+  mock_sent: 'đã ghi nhận thử',
   failed: 'lỗi gửi',
   error: 'lỗi gửi',
   pending: 'đang chờ',
@@ -106,10 +107,10 @@ const AlertHistory = ({ refreshKey = 0 }) => {
       <div className="border-b border-gray-200 p-5">
         <h2 className="text-lg font-semibold text-gray-900">Cảnh báo đang hoạt động</h2>
         <p className="mt-1 text-sm text-gray-600">
-          Theo dõi subscription, lần kích hoạt gần nhất và trạng thái gửi qua từng kênh.
+          Theo dõi gói cảnh báo, lần kích hoạt gần nhất và trạng thái gửi qua từng kênh.
         </p>
         <div className="mt-3">
-          <DataSourceBadge data={{ source: 'database', source_name: 'Alert rules DB', confidence: 0.7 }} />
+          <DataSourceBadge data={{ source: 'database', source_name: 'Quy tắc cảnh báo', confidence: 0.7 }} />
         </div>
       </div>
 
@@ -150,20 +151,17 @@ const AlertHistory = ({ refreshKey = 0 }) => {
                       </p>
                       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-gray-600">
                         <span className="rounded-full bg-gray-100 px-2.5 py-1 font-medium text-gray-700">
-                          alert_type: {alert.alert_type || alert.alert_kind || 'price'}
+                          Mức độ: {severityLabel(alert.severity || alert.priority)}
                         </span>
-                        <span className="rounded-full bg-gray-100 px-2.5 py-1 font-medium text-gray-700">
-                          severity: {alert.severity || alert.priority || 'medium'}
-                        </span>
-                        <span>affected_crop: {alert.affected_crop || alert.crop_name || 'N/A'}</span>
-                        <span>send_channels: {(alert.send_channels || [alert.notification_channel || 'app']).join(', ')}</span>
-                        <span>confidence: {alert.confidence ?? 'N/A'}</span>
-                        {alert.sent_status && <span>sent_status: {alert.sent_status}</span>}
+                        <span>Nông sản: {alert.affected_crop || alert.crop_name || 'N/A'}</span>
+                        <span>Kênh gửi: {(alert.send_channels || [alert.notification_channel || 'app']).map(channelLabel).join(', ')}</span>
+                        {alert.confidence !== undefined && <span>Độ tin cậy: {Math.round(Number(alert.confidence || 0) * 100)}%</span>}
+                        {alert.sent_status && <span>Trạng thái gửi: {systemStatusLabel(alert.sent_status)}</span>}
                         <DataSourceBadge data={alert} />
                       </div>
                       {(alert.recommended_action || alert.suggested_action || alert.recommendation) && (
                         <p className="mt-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">
-                          recommended_action: {alert.recommended_action || alert.suggested_action || alert.recommendation}
+                          Khuyến nghị: {translateUiText(alert.recommended_action || alert.suggested_action || alert.recommendation)}
                         </p>
                       )}
                       <p className="mt-1 text-xs text-gray-500">
@@ -237,7 +235,7 @@ const AlertHistory = ({ refreshKey = 0 }) => {
               </div>
             ) : (
               <div className="rounded-lg border border-dashed border-gray-300 p-4 text-sm text-gray-600">
-                Chưa có trigger event. Dùng nút “Kiểm tra ngay” để demo quét cảnh báo.
+                Chưa có lịch sử kích hoạt. Dùng nút “Kiểm tra ngay” để quét cảnh báo thử.
               </div>
             )}
           </div>

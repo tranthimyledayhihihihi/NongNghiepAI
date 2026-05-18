@@ -9,7 +9,7 @@ const articles = [
     id: 1,
     title: "5 dấu hiệu thời tiết cần theo dõi trước khi thu hoạch",
     category: "Thời tiết",
-    badge: "Realtime API",
+    badge: "Dữ liệu thời gian thực",
     readTime: "5 phút đọc",
     date: "Hôm nay",
     description:
@@ -21,7 +21,7 @@ const articles = [
     id: 2,
     title: "Khi nào nên bán nông sản? Cách đọc xu hướng giá đơn giản",
     category: "Giá nông sản",
-    badge: "AI Pricing",
+    badge: "Định giá AI",
     readTime: "7 phút đọc",
     date: "Mới cập nhật",
     description:
@@ -45,7 +45,7 @@ const articles = [
     id: 4,
     title: "So sánh kênh bán: thương lái, chợ đầu mối, sàn TMĐT và doanh nghiệp thu mua",
     category: "Thị trường",
-    badge: "Market Insight",
+    badge: "Thông tin thị trường",
     readTime: "8 phút đọc",
     date: "Nổi bật",
     description:
@@ -57,7 +57,7 @@ const articles = [
     id: 5,
     title: "Cách đặt câu hỏi để AI tư vấn nông nghiệp chính xác hơn",
     category: "AI nông nghiệp",
-    badge: "AI Chat",
+    badge: "Trợ lý AI",
     readTime: "3 phút đọc",
     date: "Gợi ý",
     description:
@@ -136,8 +136,8 @@ export default function ArticlesPage() {
                     <p className="text-xs text-slate-500">chủ đề</p>
                   </div>
                   <div className="rounded-2xl bg-amber-50 p-3">
-                    <p className="text-2xl font-black text-amber-700">API</p>
-                    <p className="text-xs text-slate-500">có thể nối</p>
+                    <p className="text-2xl font-black text-amber-700">Dữ liệu</p>
+                    <p className="text-xs text-slate-500">có thể tích hợp</p>
                   </div>
                 </div>
                 <Link to={featuredArticle.action} className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-emerald-600 px-4 py-3 font-bold text-white transition hover:bg-emerald-700">
@@ -215,8 +215,8 @@ export default function ArticlesPage() {
             <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
               <h3 className="text-xl font-black">Nguồn nội dung nên nâng cấp</h3>
               <ul className="mt-4 space-y-3 text-sm leading-6 text-slate-600">
-                <li>• Tin tức thị trường: lấy từ RSS/API nông nghiệp.</li>
-                <li>• Bài hướng dẫn: lưu DB để admin quản lý.</li>
+                <li>• Tin tức thị trường: lấy từ nguồn tin nông nghiệp đáng tin cậy.</li>
+                <li>• Bài hướng dẫn: lưu trong hệ thống để quản trị viên quản lý.</li>
                 <li>• Bài gợi ý AI: sinh tóm tắt theo dữ liệu thời tiết/giá.</li>
               </ul>
             </div>

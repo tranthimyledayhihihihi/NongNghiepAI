@@ -7,37 +7,37 @@ const coreModules = [
     title: "Thời tiết nông nghiệp",
     route: "/weather",
     icon: "🌦️",
-    description: "Theo dõi thời tiết realtime, lượng mưa, độ ẩm, gió và cảnh báo rủi ro theo vùng trồng.",
-    tag: "Realtime API",
+    description: "Theo dõi thời tiết thời gian thực, lượng mưa, độ ẩm, gió và cảnh báo rủi ro theo vùng trồng.",
+    tag: "Dữ liệu thời gian thực",
   },
   {
     title: "Định giá nông sản",
     route: "/pricing",
     icon: "📈",
     description: "Cập nhật giá hiện tại, so sánh vùng miền, xem xu hướng và nhận gợi ý thời điểm bán.",
-    tag: "AI Pricing",
+    tag: "Định giá AI",
   },
   {
     title: "Dự báo thu hoạch",
     route: "/harvest",
     icon: "🌾",
-    description: "Dự báo ngày thu hoạch, hiển thị timeline mùa vụ và checklist chuẩn bị trước thu hoạch.",
-    tag: "Forecast",
+    description: "Dự báo ngày thu hoạch, hiển thị tiến độ mùa vụ và danh sách việc cần chuẩn bị trước thu hoạch.",
+    tag: "Dự báo",
   },
   {
     title: "Thị trường tiêu thụ",
     route: "/market",
     icon: "🛒",
     description: "Theo dõi nhu cầu thị trường, tin tức nông sản và gợi ý kênh bán phù hợp.",
-    tag: "Market Data",
+    tag: "Dữ liệu thị trường",
   },
 ];
 
 const stats = [
-  ["5+", "module chính"],
+  ["5+", "phân hệ chính"],
   ["24/7", "AI hỗ trợ"],
-  ["API", "dữ liệu realtime"],
-  ["DB", "lưu lịch sử"],
+  ["Dữ liệu", "thời gian thực"],
+  ["Lịch sử", "lưu trong hệ thống"],
 ];
 
 const workflow = [
@@ -48,7 +48,7 @@ const workflow = [
   },
   {
     step: "02",
-    title: "Kết hợp API + DB + AI",
+    title: "Kết hợp dữ liệu và AI",
     description: "Hệ thống lấy thời tiết, giá thị trường, lịch sử mùa vụ và dùng AI để phân tích dữ liệu.",
   },
   {
@@ -75,7 +75,7 @@ export default function LandingPage() {
                 Nền tảng AI hỗ trợ nông dân dự báo, định giá và ra quyết định tốt hơn
               </h1>
               <p className="mt-6 max-w-2xl text-base leading-8 text-emerald-50 sm:text-lg">
-                Trang chủ được thiết kế lại theo hướng landing page hiện đại: có thanh menu, logo AgriAI, CTA rõ ràng, card dữ liệu nhanh và điều hướng trực tiếp tới các module chính.
+                Trang chủ được thiết kế theo hướng hiện đại: có thanh menu, logo AgriAI, nút hành động rõ ràng, thẻ dữ liệu nhanh và điều hướng trực tiếp tới các tính năng chính.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <Link to="/features" className="rounded-2xl bg-white px-5 py-3 font-bold text-emerald-800 shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:bg-emerald-50">
@@ -103,7 +103,7 @@ export default function LandingPage() {
               <div className="rounded-[1.5rem] bg-white p-6 text-slate-900">
                 <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <p className="text-sm font-black uppercase tracking-wide text-emerald-600">AgriAI Dashboard</p>
+                    <p className="text-sm font-black uppercase tracking-wide text-emerald-600">Bảng điều khiển AgriAI</p>
                     <h2 className="mt-2 text-2xl font-black">Tình hình hôm nay</h2>
                   </div>
                   <div className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-[1.5rem] border border-emerald-100 bg-white shadow-sm">
@@ -136,7 +136,7 @@ export default function LandingPage() {
                 </div>
 
                 <Link to="/dashboard" className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-slate-900 px-4 py-3 font-bold text-white transition hover:bg-emerald-700">
-                  Vào dashboard
+                  Vào bảng điều khiển
                 </Link>
               </div>
             </div>
@@ -150,7 +150,7 @@ export default function LandingPage() {
             <p className="text-sm font-black uppercase tracking-wide text-emerald-600">Module nổi bật</p>
             <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">Đi thẳng tới công cụ bạn cần</h2>
             <p className="mt-3 max-w-2xl leading-7 text-slate-600">
-              Các card dưới đây giúp người dùng nhìn là hiểu hệ thống có những chức năng gì và bấm sang sử dụng ngay.
+              Các thẻ dưới đây giúp người dùng nhìn là hiểu hệ thống có những chức năng gì và bấm sang sử dụng ngay.
             </p>
           </div>
           <Link to="/features" className="inline-flex rounded-2xl border border-slate-200 bg-white px-5 py-3 font-bold text-slate-700 transition hover:border-emerald-200 hover:text-emerald-700">
@@ -224,7 +224,7 @@ export default function LandingPage() {
               <p className="text-sm font-black uppercase tracking-wide text-emerald-300">Sẵn sàng trải nghiệm</p>
               <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">Bắt đầu với trợ lý AI nông nghiệp</h2>
               <p className="mt-4 max-w-2xl leading-8 text-slate-300">
-                Người dùng có thể hỏi AI về thời tiết, giá cả, thu hoạch, thị trường hoặc chuyển sang dashboard để xem dữ liệu chi tiết.
+                Người dùng có thể hỏi AI về thời tiết, giá cả, thu hoạch, thị trường hoặc chuyển sang bảng điều khiển để xem dữ liệu chi tiết.
               </p>
             </div>
             <div className="flex flex-wrap gap-3 lg:justify-end">
@@ -232,7 +232,7 @@ export default function LandingPage() {
                 Hỏi AI ngay
               </Link>
               <Link to="/dashboard" className="rounded-2xl border border-white/20 px-5 py-3 font-bold text-white transition hover:bg-white/10">
-                Vào dashboard
+                Vào bảng điều khiển
               </Link>
             </div>
           </div>

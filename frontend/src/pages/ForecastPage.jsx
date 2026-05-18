@@ -26,6 +26,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import DataSourceBadge from '../components/DataSourceBadge';
 import { getApiErrorMessage } from '../services/api';
 import { weatherApi } from '../services/weatherApi';
+import { severityLabel, translateUiText } from '../utils/vietnameseText';
 
 const regions = [
   { value: 'Ha Noi', label: 'Hà Nội' },
@@ -459,7 +460,7 @@ const ForecastPage = () => {
           </div>
           <h1 className="mt-3 text-3xl font-bold text-slate-950">Dự báo thời tiết canh tác</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            Theo dõi realtime, dự báo 7 ngày, cảnh báo rủi ro và khuyến nghị tưới, phun thuốc, bón phân, thu hoạch theo cây trồng.
+            Theo dõi thời gian thực, dự báo 7 ngày, cảnh báo rủi ro và khuyến nghị tưới, phun thuốc, bón phân, thu hoạch theo cây trồng.
           </p>
         </div>
         {current && (
@@ -553,19 +554,19 @@ const ForecastPage = () => {
             <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2">
               <div className="flex items-center gap-2">
                 <Bot className="h-5 w-5 text-indigo-600" />
-                <h2 className="text-lg font-bold text-slate-950">Khuyến nghị AI/rule</h2>
+                <h2 className="text-lg font-bold text-slate-950">Khuyến nghị canh tác</h2>
                 <DataSourceBadge data={data.farming_recommendation || data.risk_analysis || {}} />
               </div>
-              <p className="mt-3 text-sm leading-6 text-slate-700">{data.ai_recommendation.summary}</p>
-              <p className="mt-2 text-sm leading-6 text-slate-700">{data.ai_recommendation.risk_explanation}</p>
+              <p className="mt-3 text-sm leading-6 text-slate-700">{translateUiText(data.ai_recommendation.summary)}</p>
+              <p className="mt-2 text-sm leading-6 text-slate-700">{translateUiText(data.ai_recommendation.risk_explanation)}</p>
               <div className="mt-4 grid gap-3 md:grid-cols-2">
                 {data.ai_recommendation.action_plan.map((item) => (
-                  <div key={item} className="rounded-lg border border-indigo-100 bg-indigo-50 p-3 text-sm leading-6 text-indigo-900">{item}</div>
+                  <div key={item} className="rounded-lg border border-indigo-100 bg-indigo-50 p-3 text-sm leading-6 text-indigo-900">{translateUiText(item)}</div>
                 ))}
               </div>
               {data.ai_recommendation.crop_note && (
                 <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm leading-6 text-emerald-800">
-                  {data.ai_recommendation.crop_note}
+                  {translateUiText(data.ai_recommendation.crop_note)}
                 </div>
               )}
             </section>
@@ -581,12 +582,12 @@ const ForecastPage = () => {
                     <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-700">
                       {index + 1}
                     </span>
-                    <p className="text-sm leading-6 text-slate-600">{item}</p>
+                    <p className="text-sm leading-6 text-slate-600">{translateUiText(item)}</p>
                   </div>
                 ))}
               </div>
               <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm leading-6 text-slate-700">
-                {data.ai_recommendation.data_note}
+                {translateUiText(data.ai_recommendation.data_note)}
               </div>
             </section>
           </div>
@@ -615,11 +616,11 @@ const ForecastPage = () => {
                     className={`rounded-lg border p-4 ${severityStyles[alert.severity] || severityStyles.medium}`}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <h3 className="font-bold">{alert.title}</h3>
-                      <span className="rounded-full bg-white/80 px-2 py-1 text-xs font-semibold">{alert.severity}</span>
+                      <h3 className="font-bold">{translateUiText(alert.title)}</h3>
+                      <span className="rounded-full bg-white/80 px-2 py-1 text-xs font-semibold">{severityLabel(alert.severity)}</span>
                     </div>
-                    <p className="mt-2 text-sm leading-6">{alert.message}</p>
-                    <p className="mt-2 text-sm font-medium leading-6">{alert.recommendation}</p>
+                    <p className="mt-2 text-sm leading-6">{translateUiText(alert.message)}</p>
+                    <p className="mt-2 text-sm font-medium leading-6">{translateUiText(alert.recommendation)}</p>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       <p className="text-xs font-semibold">{formatDate(alert.forecast_date)}</p>
                       <DataSourceBadge data={alert.source ? alert : (data.risk_analysis || data.farming_recommendation || current)} compact />
@@ -642,10 +643,10 @@ const ForecastPage = () => {
                   key={item.action_type}
                   className={`rounded-lg border p-4 ${priorityStyles[item.priority] || priorityStyles.medium}`}
                 >
-                  <h3 className="font-bold">{item.action}</h3>
-                  <p className="mt-2 text-xl font-bold text-slate-950">{item.decision}</p>
-                  <p className="mt-2 text-sm leading-6">{item.reason}</p>
-                  {item.timing && <p className="mt-3 text-xs font-semibold uppercase">{item.timing}</p>}
+                  <h3 className="font-bold">{translateUiText(item.action)}</h3>
+                  <p className="mt-2 text-xl font-bold text-slate-950">{translateUiText(item.decision)}</p>
+                  <p className="mt-2 text-sm leading-6">{translateUiText(item.reason)}</p>
+                  {item.timing && <p className="mt-3 text-xs font-semibold uppercase">{translateUiText(item.timing)}</p>}
                   <div className="mt-3">
                     <DataSourceBadge data={item.source ? item : (data.farming_recommendation || data.risk_analysis || current)} compact />
                   </div>
@@ -757,7 +758,7 @@ const ForecastPage = () => {
                       </td>
                       <td className="px-3 py-3 text-slate-700">{formatNumber(item.humidity, '%', 0)}</td>
                       <td className="px-3 py-3 text-slate-700">{formatNumber(item.wind_speed, ' km/h')}</td>
-                      <td className="max-w-sm px-3 py-3 text-slate-700">{item.recommendation}</td>
+                      <td className="max-w-sm px-3 py-3 text-slate-700">{translateUiText(item.recommendation)}</td>
                       <td className="px-3 py-3">
                         <div className="flex items-center gap-2">
                           <DataSourceBadge data={item} compact />
@@ -786,7 +787,7 @@ const ForecastPage = () => {
                   <p className="mt-2 text-sm text-slate-600">{formatNumber(item.temperature, '°C')}</p>
                   <p className="text-sm text-slate-600">{formatNumber(item.humidity, '%', 0)} ẩm</p>
                   <p className="text-sm text-slate-600">{formatNumber(item.rain_probability, '%', 0)} mưa</p>
-                  <p className="mt-2 text-xs leading-5 text-slate-500">{item.recommendation}</p>
+                  <p className="mt-2 text-xs leading-5 text-slate-500">{translateUiText(item.recommendation)}</p>
                   <div className="mt-2">
                     <DataSourceBadge data={item.source ? item : current} compact />
                   </div>

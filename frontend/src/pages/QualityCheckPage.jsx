@@ -91,7 +91,7 @@ const QualityCheckPage = () => {
       <div>
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Kiểm Tra Chất Lượng</h1>
         <p className="text-gray-600">
-          Tải ảnh nông sản lên và phân tích bằng API backend /api/quality/check.
+          Tải ảnh nông sản lên để hệ thống phân tích chất lượng.
         </p>
       </div>
 
@@ -221,7 +221,7 @@ const QualityCheckPage = () => {
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center space-x-2">
                   <Sparkles className="w-5 h-5" />
-                  <span className="text-sm font-medium">KẾT QUẢ TỪ API</span>
+                  <span className="text-sm font-medium">KẾT QUẢ PHÂN TÍCH</span>
                 </div>
                 <ResultIcon className="w-6 h-6" />
               </div>
@@ -262,7 +262,7 @@ const QualityCheckPage = () => {
               </div>
               <h3 className="font-bold text-gray-900 mb-2">Chờ Phân Tích</h3>
               <p className="text-sm text-gray-600">
-                Tải ảnh lên để frontend gọi backend và hiển thị kết quả.
+                Tải ảnh lên để hệ thống phân tích và hiển thị kết quả.
               </p>
             </div>
           )}

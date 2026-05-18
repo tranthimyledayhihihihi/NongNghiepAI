@@ -5,7 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.models.price import MarketPrice, PriceHistory, PricingRequest
-from app.repositories.common import ensure_crop, ensure_user, to_db_grade
+from app.repositories.common import ensure_crop, ensure_user, normalize_text, to_db_grade
 
 
 ALLOWED_MARKET_TYPES = {"Ban le", "Cho dau moi", "Thuong lai", "Xuat khau"}
@@ -52,12 +52,12 @@ def create_market_price(
     timestamp = collected_at or datetime.now()
     market_price = MarketPrice(
         CropID=crop.CropID,
-        Region=region,
+        Region=region.strip(),
         PricePerKg=price,
         QualityGrade=to_db_grade(quality_grade),
         MarketType=to_db_market_type(market_type),
         SourceName=source,
-        PriceDate=timestamp.date(),
+        PriceDate=(price_date or timestamp.date()),
         UpdatedAt=timestamp,
     )
     try:
@@ -109,13 +109,15 @@ def get_latest_price(
 ) -> MarketPrice | None:
     try:
         crop = ensure_crop(db, crop_name)
-        query = db.query(MarketPrice).filter(
-            MarketPrice.CropID == crop.CropID,
-            MarketPrice.Region == region,
-        )
+        target_region = normalize_text(region)
+        query = db.query(MarketPrice).filter(MarketPrice.CropID == crop.CropID)
         if quality_grade:
             query = query.filter(MarketPrice.QualityGrade == to_db_grade(quality_grade))
-        return query.order_by(desc(MarketPrice.PriceDate), desc(MarketPrice.UpdatedAt)).first()
+        rows = query.order_by(desc(MarketPrice.PriceDate), desc(MarketPrice.UpdatedAt)).all()
+        for row in rows:
+            if normalize_text(row.Region) == target_region:
+                return row
+        return None
     except SQLAlchemyError:
         db.rollback()
         return None
@@ -134,16 +136,17 @@ def get_price_history(db: Session, crop_name: str, region: str, days: int = 30) 
     start_date = date.today() - timedelta(days=days)
     try:
         crop = ensure_crop(db, crop_name)
-        return (
+        target_region = normalize_text(region)
+        rows = (
             db.query(PriceHistory)
             .filter(
                 PriceHistory.CropID == crop.CropID,
-                PriceHistory.Region == region,
                 PriceHistory.RecordDate >= start_date,
             )
             .order_by(PriceHistory.RecordDate)
             .all()
         )
+        return [row for row in rows if normalize_text(row.Region) == target_region]
     except SQLAlchemyError:
         db.rollback()
         return []
@@ -158,17 +161,18 @@ def get_price_history_range(
 ) -> list[PriceHistory]:
     try:
         crop = ensure_crop(db, crop_name)
-        return (
+        target_region = normalize_text(region)
+        rows = (
             db.query(PriceHistory)
             .filter(
                 PriceHistory.CropID == crop.CropID,
-                PriceHistory.Region == region,
                 PriceHistory.RecordDate >= start_date,
                 PriceHistory.RecordDate <= end_date,
             )
             .order_by(PriceHistory.RecordDate)
             .all()
         )
+        return [row for row in rows if normalize_text(row.Region) == target_region]
     except SQLAlchemyError:
         db.rollback()
         return []
@@ -177,13 +181,15 @@ def get_price_history_range(
 def get_recent_market_prices(db: Session, crop_name: str, region: str, limit: int = 7) -> list[MarketPrice]:
     try:
         crop = ensure_crop(db, crop_name)
-        return (
+        target_region = normalize_text(region)
+        rows = (
             db.query(MarketPrice)
-            .filter(MarketPrice.CropID == crop.CropID, MarketPrice.Region == region)
+            .filter(MarketPrice.CropID == crop.CropID)
             .order_by(desc(MarketPrice.PriceDate), desc(MarketPrice.UpdatedAt))
-            .limit(limit)
             .all()
         )
+        matched = [row for row in rows if normalize_text(row.Region) == target_region]
+        return matched[:limit]
     except SQLAlchemyError:
         db.rollback()
         return []
@@ -224,17 +230,18 @@ def bulk_upsert_market_prices(db: Session, records: list[dict]) -> dict:
 
             query = db.query(MarketPrice).filter(
                 MarketPrice.CropID == crop.CropID,
-                MarketPrice.Region == record["region"],
                 MarketPrice.QualityGrade == quality_grade,
                 MarketPrice.MarketType == market_type,
                 MarketPrice.PriceDate == record_date,
             )
-            if source_name:
-                query = query.filter(MarketPrice.SourceName == source_name)
-            else:
-                query = query.filter(MarketPrice.SourceName.is_(None))
-
-            market_price = query.first()
+            normalized_region = normalize_text(record["region"])
+            rows = query.order_by(desc(MarketPrice.PriceDate), desc(MarketPrice.UpdatedAt)).all()
+            market_price = next((row for row in rows if normalize_text(row.Region) == normalized_region), None)
+            if market_price is None and source_name:
+                market_price = next(
+                    (row for row in rows if normalize_text(row.Region) == normalized_region and (row.SourceName or "") == source_name),
+                    None,
+                )
             if market_price is None:
                 market_price = MarketPrice(
                     CropID=crop.CropID,

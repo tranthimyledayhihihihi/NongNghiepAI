@@ -6,13 +6,13 @@ const supportChannels = [
   {
     title: "Tư vấn sử dụng hệ thống",
     value: "support@agriai.vn",
-    description: "Hỏi về tài khoản, gói dịch vụ, dashboard và cách dùng AI.",
+    description: "Hỏi về tài khoản, gói dịch vụ, bảng điều khiển và cách dùng AI.",
     icon: "💬",
   },
   {
     title: "Hỗ trợ kỹ thuật",
     value: "tech@agriai.vn",
-    description: "Báo lỗi API, dữ liệu thời tiết, giá nông sản hoặc cảnh báo.",
+    description: "Báo lỗi hệ thống, dữ liệu thời tiết, giá nông sản hoặc cảnh báo.",
     icon: "🛠️",
   },
   {
@@ -26,7 +26,7 @@ const supportChannels = [
 const topics = [
   "Tư vấn gói dịch vụ",
   "Báo lỗi hệ thống",
-  "Kết nối API dữ liệu",
+  "Kết nối nguồn dữ liệu",
   "Triển khai cho hợp tác xã",
   "Góp ý giao diện / tính năng",
 ];
@@ -48,7 +48,7 @@ export default function ContactPage() {
 
   const handleSubmit = (event) => {
     event.preventDefault();
-    // Có thể thay bằng API thật: await contactApi.createMessage(form)
+    // Có thể thay bằng lời gọi hệ thống thật: await contactApi.createMessage(form)
     setSubmitted(true);
   };
 
@@ -67,7 +67,7 @@ export default function ContactPage() {
                 Liên hệ để được hỗ trợ về AI nông nghiệp, dữ liệu và triển khai hệ thống
               </h1>
               <p className="mt-5 max-w-2xl text-lg leading-8 text-emerald-50">
-                Trang liên hệ nên giúp người dùng gửi yêu cầu nhanh, chọn đúng nhóm hỗ trợ và đi tiếp sang các tính năng chính như AI Chat, thời tiết, giá nông sản hoặc gói dịch vụ.
+                Trang liên hệ giúp người dùng gửi yêu cầu nhanh, chọn đúng nhóm hỗ trợ và đi tiếp sang các tính năng chính như Trợ lý AI, thời tiết, giá nông sản hoặc gói dịch vụ.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <Link to="/ai-chat" className="rounded-2xl bg-white px-5 py-3 font-black text-emerald-800 shadow-lg shadow-black/10 hover:bg-emerald-50">
@@ -92,8 +92,8 @@ export default function ContactPage() {
                     <p className="text-sm text-slate-600">hỗ trợ: sử dụng, kỹ thuật, hợp tác dữ liệu</p>
                   </div>
                   <div className="rounded-2xl bg-amber-50 p-4">
-                    <p className="text-2xl font-black text-amber-700">API-ready</p>
-                    <p className="text-sm text-slate-600">có thể lưu yêu cầu vào DB và gửi email/Zalo</p>
+                    <p className="text-2xl font-black text-amber-700">Sẵn sàng tích hợp</p>
+                    <p className="text-sm text-slate-600">có thể lưu yêu cầu vào hệ thống và gửi Email/Zalo</p>
                   </div>
                 </div>
               </div>
@@ -119,12 +119,12 @@ export default function ContactPage() {
             <div className="mb-7">
               <p className="text-sm font-black uppercase tracking-wide text-emerald-700">Gửi yêu cầu hỗ trợ</p>
               <h2 className="mt-2 text-3xl font-black">Chúng tôi có thể giúp gì cho bạn?</h2>
-              <p className="mt-2 text-slate-600">Biểu mẫu này có thể nối backend để lưu vào bảng contact_messages và gửi thông báo qua email/Zalo.</p>
+              <p className="mt-2 text-slate-600">Biểu mẫu này có thể kết nối hệ thống để lưu yêu cầu và gửi thông báo qua Email/Zalo.</p>
             </div>
 
             {submitted && (
               <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-700">
-                ✅ Đã ghi nhận yêu cầu mẫu. Khi nối API thật, nội dung này sẽ được lưu vào database và gửi cho đội hỗ trợ.
+                Đã ghi nhận yêu cầu mẫu. Khi kết nối hệ thống thật, nội dung này sẽ được lưu lại và gửi cho đội hỗ trợ.
               </div>
             )}
 
@@ -209,12 +209,12 @@ export default function ContactPage() {
             </div>
 
             <div className="rounded-[2rem] border border-amber-200 bg-amber-50 p-6">
-              <h2 className="text-2xl font-black">Nâng cấp backend nên có</h2>
+              <h2 className="text-2xl font-black">Nâng cấp hệ thống nên có</h2>
               <ul className="mt-4 space-y-3 text-sm leading-6 text-slate-700">
-                <li>• Tạo bảng contact_messages để lưu yêu cầu.</li>
+                <li>• Lưu yêu cầu liên hệ vào hệ thống.</li>
                 <li>• Gửi email/Zalo OA khi có yêu cầu mới.</li>
-                <li>• Thêm trạng thái: new, processing, done.</li>
-                <li>• Cho admin xem và phản hồi trong dashboard.</li>
+                <li>• Thêm trạng thái: mới, đang xử lý, đã xử lý.</li>
+                <li>• Cho quản trị viên xem và phản hồi trong bảng điều khiển.</li>
               </ul>
             </div>
           </aside>

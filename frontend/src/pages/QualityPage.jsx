@@ -295,7 +295,7 @@ const QualityPage = () => {
                       <DataSourceBadge data={result} className="bg-white/90" />
                       {Number.isFinite(result.confidence) && (
                         <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-semibold">
-                          Confidence {(result.confidence * 100).toFixed(0)}%
+                          Độ tin cậy {(result.confidence * 100).toFixed(0)}%
                         </span>
                       )}
                     </div>

@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useAuth } from '../contexts/AuthContext';
 import { aiApi } from '../services/aiApi';
+import { translateUiText } from '../utils/vietnameseText';
 
 const initialMessages = [
   {
@@ -217,12 +218,12 @@ const AIChatPage = () => {
     const status = error?.response?.status;
     const message = error?.message || '';
     if (status === 504 || error?.isTimeout) {
-      return 'AI phan hoi qua lau. Vui long thu lai sau it phut.';
+      return 'Trợ lý AI phản hồi quá lâu. Vui lòng thử lại sau ít phút.';
     }
     if (message.includes('GOOGLE_API_KEY') || error?.response?.data?.error === 'missing_google_api_key') {
-      return 'Backend chua cau hinh GOOGLE_API_KEY nen chua the goi Gemini.';
+      return 'Hệ thống chưa cấu hình khóa gọi trợ lý AI nên chưa thể trả lời bằng AI.';
     }
-    return message || 'AI Chat dang tam thoi bi gian doan. Vui long thu lai sau.';
+    return message || 'Trợ lý AI đang tạm thời gián đoạn. Vui lòng thử lại sau.';
   };
 
   const createBotResponse = (data = null) => ({
@@ -262,7 +263,7 @@ const AIChatPage = () => {
       setMessages((current) => [...current, createBotResponse({
         reply: getFriendlyAiError(error),
         source: 'error',
-        source_name: 'AI Chat error',
+        source_name: 'Lỗi trợ lý AI',
         is_mock: false,
         fallback_used: true,
         timeout: error?.isTimeout || error?.response?.status === 504,
@@ -296,7 +297,7 @@ const AIChatPage = () => {
         {
           id: crypto.randomUUID(),
           type: 'bot',
-          content: 'Tôi đã nhận ảnh. Khi BE xử lý ảnh sẵn sàng, ảnh này sẽ được gửi sang API kiểm định chất lượng.',
+          content: 'Tôi đã nhận ảnh. Khi hệ thống xử lý ảnh sẵn sàng, ảnh này sẽ được dùng để kiểm định chất lượng.',
           timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
         },
       ]);
@@ -548,18 +549,18 @@ const AIChatPage = () => {
                         <div className="text-xs font-semibold uppercase tracking-wide text-green-700">
                           Kết quả tham khảo
                         </div>
-                        <div className="mt-2 font-bold text-gray-900">{message.analysis.diagnosis}</div>
+                        <div className="mt-2 font-bold text-gray-900">{translateUiText(message.analysis.diagnosis)}</div>
                         <div className="mt-3 space-y-2">
                           {message.analysis.details.map((detail) => (
                             <div key={detail} className="text-sm text-gray-700">
-                              {detail}
+                              {translateUiText(detail)}
                             </div>
                           ))}
                         </div>
                         <div className="mt-4 space-y-2">
                           {message.analysis.recommendations.map((recommendation) => (
                             <div key={recommendation} className="text-sm text-gray-700">
-                              {recommendation}
+                              {translateUiText(recommendation)}
                             </div>
                           ))}
                         </div>

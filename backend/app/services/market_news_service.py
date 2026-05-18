@@ -322,7 +322,7 @@ class MarketNewsService:
         return {
             "opportunities": [
                 {
-                    "title": "Batch selling opportunity",
+                    "title": "Cơ hội bán theo từng đợt",
                     "crop": trend["crop"],
                     "region": trend["region"],
                     "reason": trend.get("recommendation"),
@@ -333,7 +333,7 @@ class MarketNewsService:
                 }
             ],
             "source": trend.get("source"),
-            "source_name": "AI Market Intelligence",
+            "source_name": "Phân tích thị trường AI",
             "is_mock": trend.get("is_mock", False),
             "confidence": trend.get("confidence", 0.0),
             "updated_at": trend.get("updated_at"),
@@ -345,18 +345,18 @@ class MarketNewsService:
         return {
             "risks": [
                 {
-                    "title": "Price volatility",
+                    "title": "Biến động giá",
                     "severity": risk,
                     "crop": trend["crop"],
                     "region": trend["region"],
-                    "recommendation": "Create price alert and avoid selling all stock at one time.",
+                    "recommendation": "Nên tạo cảnh báo giá và tránh bán hết hàng cùng một lúc.",
                     "source": trend.get("source"),
-                    "source_name": "AI Market Risk Engine",
+                    "source_name": "Bộ phân tích rủi ro thị trường",
                     "updated_at": trend.get("updated_at"),
                 }
             ],
             "source": trend.get("source"),
-            "source_name": "AI Market Risk Engine",
+            "source_name": "Bộ phân tích rủi ro thị trường",
             "is_mock": trend.get("is_mock", False),
             "confidence": trend.get("confidence", 0.0),
             "updated_at": trend.get("updated_at"),

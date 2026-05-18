@@ -1,10 +1,10 @@
 const SOURCE_LABELS = {
-  realtime_api: 'Realtime API',
-  database: 'Database',
-  cached: 'Cached',
-  ai_generated: 'AI Generated',
-  mock: 'Du lieu du phong',
-  legacy: 'Legacy',
+  realtime_api: 'Dữ liệu thời gian thực',
+  database: 'Dữ liệu hệ thống',
+  cached: 'Dữ liệu đã lưu',
+  ai_generated: 'Dữ liệu do AI tạo',
+  mock: 'Dữ liệu mô phỏng',
+  legacy: 'Dữ liệu cũ',
 };
 
 const SOURCE_KEYS = {
@@ -62,7 +62,7 @@ export const getSourceBadgeProps = (item = {}, defaultSource = 'database') => {
   const meta = normalizeSourceMeta(item, defaultSource);
   return {
     key: SOURCE_KEYS[meta.source] || 'unknown',
-    label: SOURCE_LABELS[meta.source] || meta.source_name || 'Unknown',
+    label: SOURCE_LABELS[meta.source] || meta.source_name || 'Không rõ',
     meta,
   };
 };

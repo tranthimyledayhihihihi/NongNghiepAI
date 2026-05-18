@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from app.services.agri_data_aggregator_service import agri_data_aggregator_service
 from app.services.data_source_service import data_source_service
 from app.services.ai_intent_service import normalize_intent
+from app.services.pricing_service import pricing_service
 
 
 class AIContextService:
@@ -40,6 +41,16 @@ class AIContextService:
             lambda: agri_data_aggregator_service.get_market_bundle(db, crop=selected_crop, region=selected_region),
             "market",
         ) if needs_market else {}
+        market_analysis = self._safe(
+            lambda: pricing_service.analyze_market(
+                db,
+                crop_name=selected_crop,
+                region=selected_region,
+                quantity=1000,
+                quality_grade="grade_2",
+            ),
+            "market_analysis",
+        ) if needs_pricing else {}
         alert_bundle = self._safe(
             lambda: agri_data_aggregator_service.get_alert_notification_bundle(
                 db,
@@ -73,7 +84,10 @@ class AIContextService:
                 "trends": market_bundle.get("trends", {}),
                 "opportunities": market_bundle.get("opportunities", []),
                 "risks": market_bundle.get("risks", []),
+                "analysis": market_analysis,
             },
+            "market_analysis": market_analysis,
+            "pricing_analysis": market_analysis,
             "quality_history": quality_history,
             "harvest_status": harvest_status,
             "alerts": alert_bundle.get("alerts", []),

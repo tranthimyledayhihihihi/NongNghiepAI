@@ -7,7 +7,7 @@ import { useAuth } from "../contexts/AuthContext";
 const featureBullets = [
   "Theo dõi thời tiết, giá nông sản và cảnh báo quan trọng",
   "Lưu lịch sử mùa vụ, dự báo thu hoạch và khuyến nghị AI",
-  "Truy cập dashboard quản lý dữ liệu nông nghiệp tập trung",
+  "Truy cập bảng điều khiển quản lý dữ liệu nông nghiệp tập trung",
 ];
 
 const pickFunction = (moduleObject, names) => {
@@ -94,7 +94,7 @@ export default function LoginPage() {
         err?.response?.data?.detail ||
         err?.response?.data?.message ||
         err?.message ||
-        "Không thể xử lý yêu cầu. Vui lòng kiểm tra tài khoản hoặc backend API.";
+        "Không thể xử lý yêu cầu. Vui lòng kiểm tra tài khoản hoặc kết nối hệ thống.";
       setError(message);
     } finally {
       setLoading(false);
@@ -116,7 +116,7 @@ export default function LoginPage() {
               Truy cập hệ thống AI hỗ trợ nông nghiệp thông minh
             </h1>
             <p className="mt-6 max-w-2xl text-base leading-8 text-emerald-50 sm:text-lg">
-              Giao diện đăng nhập được đồng bộ với landing page, features, articles, pricing plans và contact: có logo, navbar mới, CTA rõ ràng và bố cục hiện đại hơn.
+              Giao diện đăng nhập được đồng bộ với trang giới thiệu, tính năng, bài viết, gói dịch vụ và liên hệ: có logo, thanh điều hướng mới, nút hành động rõ ràng và bố cục hiện đại hơn.
             </p>
 
             <div className="mt-8 grid gap-3 sm:max-w-xl">

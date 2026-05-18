@@ -77,16 +77,16 @@ async def get_dashboard_realtime_status(
         crop_name=crop_name,
     )
     channels = [
-        {"name": "Weather", "status": "ok" if any(s["name"].startswith("Open-Meteo") and s["status"] == "OK" for s in health["sources"]) else "fallback"},
-        {"name": "Market", "status": "ok" if any(s["name"].startswith("Market Price") and s["status"] == "OK" for s in health["sources"]) else "fallback"},
-        {"name": "Gemini/Claude", "status": "configured_or_fallback"},
-        {"name": "Database", "status": "ok"},
-        {"name": "Zalo/Email/SMS", "status": "configured_or_mock"},
+        {"name": "Thời tiết", "status": "Hoạt động" if any(s["name"].startswith("Open-Meteo") and s["status"] == "OK" for s in health["sources"]) else "Dữ liệu dự phòng"},
+        {"name": "Thị trường", "status": "Hoạt động" if any(s["name"].startswith("Market Price") and s["status"] == "OK" for s in health["sources"]) else "Dữ liệu dự phòng"},
+        {"name": "Trợ lý AI", "status": "Đã cấu hình / dự phòng"},
+        {"name": "Cơ sở dữ liệu", "status": "Hoạt động"},
+        {"name": "Zalo / Email / SMS", "status": "Đã cấu hình / mô phỏng"},
     ]
     return api_response(
         {"api_status": channels, "health": health},
         source="database",
-        source_name="API health rules",
+        source_name="Quy tắc trạng thái hệ thống",
         cache_status="computed",
         confidence=0.7,
     )

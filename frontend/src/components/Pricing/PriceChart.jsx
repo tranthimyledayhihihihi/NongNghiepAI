@@ -1,4 +1,5 @@
 import { Line } from 'react-chartjs-2';
+import { translateUiText } from '../../utils/vietnameseText';
 
 const PriceChart = ({ forecast, days }) => {
   if (!forecast || !forecast.forecast_data) {
@@ -71,7 +72,7 @@ const PriceChart = ({ forecast, days }) => {
           <p className="text-sm font-medium text-blue-900 mb-2">
             Khuyến nghị:
           </p>
-          <p className="text-blue-800">{forecast.recommendation}</p>
+          <p className="text-blue-800">{translateUiText(forecast.recommendation)}</p>
         </div>
       )}
     </div>

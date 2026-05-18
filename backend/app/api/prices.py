@@ -1,19 +1,18 @@
-from typing import List, Optional
 from datetime import date, datetime, timedelta
+from typing import List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import desc, func
-from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from app.api.response import api_response
 from app.core.database import get_db
 from app.models.price import MarketPrice
-# Giả định đường dẫn đến model CropType của bạn
-from app.models.crop import CropType
 from app.services.location_service import location_service
 from app.services.pricing_service import pricing_service
 
 router = APIRouter(prefix="/api/prices", tags=["Market Prices"])
+
 
 class PriceResponse(BaseModel):
     price_id: int
@@ -42,6 +41,10 @@ def _cache_status(updated_at: datetime | None) -> tuple[str, int | None]:
     return "from_db", age_seconds
 
 
+def _resolve_crop_name(crop_name: str | None) -> str:
+    return (crop_name or "lua").strip() or "lua"
+
+
 @router.get("/current")
 def get_current_price(
     crop_name: str | None = Query(default=None),
@@ -53,33 +56,26 @@ def get_current_price(
 ):
     resolved_region = location_service.resolve_region(db, region_key or region)
 
-    crop = None
     if crop_id:
-        crop = db.query(CropType).filter(CropType.CropID == crop_id).first()
-    if crop is None and crop_name:
-        crop = (
-            db.query(CropType)
-            .filter(func.lower(CropType.CropName) == crop_name.strip().lower())
-            .first()
-        )
-    if crop is None and not crop_name:
-        crop = db.query(CropType).order_by(CropType.CropName).first()
-    if crop is None and not crop_name:
-        raise HTTPException(status_code=404, detail="crop not found")
+        crop = db.query(MarketPrice).filter(MarketPrice.CropID == crop_id).first()
+        resolved_crop_name = _resolve_crop_name(crop.Crop.CropName if crop and getattr(crop, "Crop", None) else crop_name)
+    else:
+        resolved_crop_name = _resolve_crop_name(crop_name)
 
-    display_crop_name = crop.CropName if crop else crop_name.strip()
     data = pricing_service.get_current_price(
         db,
-        display_crop_name,
+        resolved_crop_name,
         resolved_region,
         include_weather=False,
+        force_refresh=force_refresh,
     )
     data.update(
         {
-            "crop_id": crop.CropID if crop else None,
+            "crop_id": crop_id,
             "region_key": location_service.region_key(resolved_region),
             "price": float(data.get("current_price") or 0),
-            "unit": "VND/kg",
+            "unit": "VNĐ/kg",
+            "source_type": data.get("source", "database"),
         }
     )
     return api_response(
@@ -87,110 +83,45 @@ def get_current_price(
         source=data.get("source", "database"),
         source_name=data.get("source_name"),
         is_mock=data.get("is_mock", False),
+        is_realtime=data.get("source") == "realtime",
         cache_status=data.get("cache_status", "from_db"),
         last_updated=data.get("last_updated"),
+        fetched_at=data.get("fetched_at"),
         confidence=data.get("confidence", 0.0),
     )
-    base_query = db.query(MarketPrice)
-    if crop:
-        base_query = base_query.filter(MarketPrice.CropID == crop.CropID)
-
-    latest = None
-    if resolved_region:
-        lookup_key = location_service.region_key(resolved_region)
-        latest = (
-            base_query.filter(func.lower(MarketPrice.Region) == resolved_region.lower())
-            .order_by(desc(MarketPrice.PriceDate), desc(MarketPrice.UpdatedAt))
-            .first()
-        )
-        if latest is None:
-            latest = (
-                base_query.filter(MarketPrice.Region.ilike(f"%{resolved_region}%"))
-                .order_by(desc(MarketPrice.PriceDate), desc(MarketPrice.UpdatedAt))
-                .first()
-            )
-        if latest is None:
-            candidates = base_query.order_by(desc(MarketPrice.PriceDate), desc(MarketPrice.UpdatedAt)).limit(100).all()
-            latest = next(
-                (row for row in candidates if location_service.region_key(row.Region) == lookup_key),
-                None,
-            )
-    if latest is None and not resolved_region:
-        latest = base_query.order_by(desc(MarketPrice.PriceDate), desc(MarketPrice.UpdatedAt)).first()
-
-    if latest:
-        cache_status, age_seconds = _cache_status(latest.UpdatedAt)
-        return {
-            "crop_id": latest.CropID,
-            "crop_name": display_crop_name,
-            "region": latest.Region,
-            "region_key": location_service.region_key(latest.Region),
-            "price": float(latest.PricePerKg),
-            "current_price": float(latest.PricePerKg),
-            "unit": "VND/kg",
-            "source": "database",
-            "source_name": latest.SourceName or "MarketPrices DB",
-            "source_url": latest.SourceURL,
-            "observed_at": _serialize_dt(latest.PriceDate),
-            "last_updated": _serialize_dt(latest.UpdatedAt),
-            "cache_status": cache_status,
-            "cache_age_seconds": age_seconds,
-            "confidence": 0.86 if cache_status == "cached" else 0.7,
-            "is_realtime": force_refresh and cache_status == "cached",
-            "is_mock": False,
-        }
-
-    fallback = pricing_service.get_current_price(
-        db,
-        display_crop_name,
-        resolved_region,
-        include_weather=False,
-    )
-    return {
-        "crop_id": crop.CropID if crop else None,
-        "crop_name": display_crop_name,
-        "region": resolved_region,
-        "region_key": location_service.region_key(resolved_region),
-        "price": float(fallback["current_price"]),
-        "current_price": float(fallback["current_price"]),
-        "unit": "VND/kg",
-        "source": "fallback",
-        "source_name": "Pricing fallback",
-        "source_url": None,
-        "observed_at": _serialize_dt(fallback.get("last_updated")),
-        "last_updated": _serialize_dt(fallback.get("last_updated") or datetime.now()),
-        "cache_status": "mock",
-        "cache_age_seconds": 0,
-        "confidence": 0.45,
-        "is_realtime": False,
-        "is_mock": True,
-    }
 
 
-@router.get("", response_model=List[PriceResponse])
+@router.get("")
 def get_latest_prices(limit: int = 20, db: Session = Depends(get_db)):
     """
     Lấy danh sách giá thị trường mới nhất (mặc định 20 dòng).
     """
     results = (
-        db.query(MarketPrice, CropType.CropName)
-        .join(CropType, MarketPrice.CropID == CropType.CropID)
+        db.query(MarketPrice)
         .order_by(MarketPrice.UpdatedAt.desc())
         .limit(limit)
         .all()
     )
-    
+    try:
+        from app.models.crop import CropType
+        crop_map = {
+            item.CropID: item.CropName
+            for item in db.query(CropType).all()
+        }
+    except Exception:
+        crop_map = {}
+
     return [
         PriceResponse(
             price_id=price.PriceID,
-            crop_name=crop_name,
+            crop_name=crop_map.get(price.CropID, "Không rõ"),
             region=price.Region,
             price_per_kg=price.PricePerKg,
             quality_grade=price.QualityGrade,
             market_type=price.MarketType,
             source_name=price.SourceName,
             price_date=price.PriceDate,
-            updated_at=price.UpdatedAt
+            updated_at=price.UpdatedAt,
         )
-        for price, crop_name in results
+        for price in results
     ]

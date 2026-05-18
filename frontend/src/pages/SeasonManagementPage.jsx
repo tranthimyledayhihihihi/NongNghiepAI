@@ -482,7 +482,7 @@ const SeasonManagementPage = () => {
           ) : (
             <EmptyState
               title={seasons.length ? 'Không tìm thấy mùa vụ phù hợp' : 'Chưa có mùa vụ'}
-              description={seasons.length ? 'Thử đổi bộ lọc hoặc từ khóa tìm kiếm.' : 'Tạo mùa vụ đầu tiên để dashboard hiển thị số liệu đang theo dõi.'}
+              description={seasons.length ? 'Thử đổi bộ lọc hoặc từ khóa tìm kiếm.' : 'Tạo mùa vụ đầu tiên để bảng điều khiển hiển thị số liệu đang theo dõi.'}
               action={
                 !seasons.length && (
                   <button

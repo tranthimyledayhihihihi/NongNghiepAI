@@ -1,5 +1,7 @@
 import api, { getApiErrorMessage } from './api';
 import { normalizeApiResponse } from '../utils/apiResponse';
+import { normalizePriceInput } from '../utils/priceInputs';
+import { pricingApi } from './pricingApi';
 
 const unwrap = (response) => normalizeApiResponse(response);
 const request = async (factory, fallback) => {
@@ -11,9 +13,16 @@ const request = async (factory, fallback) => {
   }
 };
 
+const normalizeMarketQuery = (crop, region, qualityGrade = 'grade_1', quantity = undefined) => ({
+  crop_name: normalizePriceInput(crop),
+  region: normalizePriceInput(region),
+  quality_grade: qualityGrade,
+  quantity: quantity === undefined ? undefined : Number(quantity),
+});
+
 export const marketApi = {
   getChannels: async () => {
-    return request(() => api.get('/api/market/channels'), 'Khong tai duoc legacy market channels');
+    return request(() => api.get('/api/market/channels'), 'Không tải được danh sách kênh bán');
   },
 
   getNews: async ({ limit = 10, crop, region } = {}) => {
@@ -23,13 +32,20 @@ export const marketApi = {
         crop: crop || undefined,
         region: region || undefined,
       },
-    }), 'Khong tai duoc market news');
+    }), 'Không tải được tin thị trường');
   },
 
-  getPrices: async ({ crop = 'lua', region = 'Ha Noi' } = {}) => {
-    return request(() => api.get('/api/market/prices', {
-      params: { crop, region },
-    }), 'Khong tai duoc market prices');
+  getPrices: async ({ crop = 'lua', region = 'Ha Noi', qualityGrade = 'grade_1' } = {}) => {
+    const response = await pricingApi.getCurrentPrice({
+      cropName: crop,
+      region,
+      qualityGrade,
+    });
+    return response;
+  },
+
+  analyzeMarket: async ({ cropName, region, quantity, qualityGrade = 'grade_2' }) => {
+    return request(() => api.post('/api/market/analyze', normalizeMarketQuery(cropName, region, qualityGrade, quantity)), 'Không phân tích được thị trường');
   },
 
   analyzeNews: async ({ title, summary, crop, region }) => {
@@ -38,53 +54,40 @@ export const marketApi = {
       summary,
       crop,
       region,
-    }), 'Khong phan tich duoc tin thi truong');
+    }), 'Không phân tích được tin thị trường');
   },
 
   getTrends: async ({ crop = 'lua', region = 'Ha Noi' } = {}) => {
     return request(() => api.get('/api/market/trends', {
       params: { crop, region },
-    }), 'Khong tai duoc market trends');
-  },
-
-  getOpportunities: async ({ crop = 'lua', region = 'Ha Noi' } = {}) => {
-    return request(() => api.get('/api/market/opportunities', {
-      params: { crop, region },
-    }), 'Khong tai duoc market opportunities');
-  },
-
-  getRisks: async ({ crop = 'lua', region = 'Ha Noi' } = {}) => {
-    return request(() => api.get('/api/market/risks', {
-      params: { crop, region },
-    }), 'Khong tai duoc market risks');
+    }), 'Không tải được xu hướng thị trường');
   },
 
   suggestMarket: async (cropName, region, quantity, qualityGrade = 'grade_1') => {
     return request(() => api.post('/api/market/suggest', {
-      crop_name: cropName,
-      region,
+      crop_name: normalizePriceInput(cropName),
+      region: normalizePriceInput(region),
       quantity: Number(quantity),
       quality_grade: qualityGrade,
-    }), 'Khong goi y duoc kenh ban hang');
+    }), 'Không gợi ý được kênh bán hàng');
   },
 
   getHistory: async (userId = 1, limit = 50) => {
     return request(() => api.get(`/api/market/history/${encodeURIComponent(userId)}`, {
       params: { limit },
-    }), 'Khong tai duoc market history legacy');
+    }), 'Không tải được lịch sử kênh bán');
   },
 
   getDemand: async (cropName) => {
-    return request(() => api.get(`/api/market/demand/${encodeURIComponent(cropName)}`), 'Khong tai duoc demand legacy');
+    return request(() => api.get(`/api/market/demand/${encodeURIComponent(cropName)}`), 'Không tải được nhu cầu thị trường');
   },
 };
 
 marketApi.getMarketNews = marketApi.getNews;
 marketApi.getMarketPrices = marketApi.getPrices;
 marketApi.getMarketTrends = (crop, region) => marketApi.getTrends({ crop, region });
-marketApi.getMarketOpportunities = marketApi.getOpportunities;
-marketApi.getMarketRisks = marketApi.getRisks;
 marketApi.analyzeMarketNews = marketApi.analyzeNews;
+marketApi.getMarketAnalysis = marketApi.analyzeMarket;
 
 marketApi.getLegacyChannels = marketApi.getChannels;
 marketApi.suggestMarketLegacy = marketApi.suggestMarket;

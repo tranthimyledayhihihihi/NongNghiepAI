@@ -17,6 +17,7 @@ import DataSourceBadge from '../components/DataSourceBadge';
 import { EmptyState, InlineLoading, PageError } from '../components/StatusState';
 import { getApiErrorMessage } from '../services/api';
 import { notificationsApi } from '../services/notificationsApi';
+import { statusLabel as systemStatusLabel, translateUiText } from '../utils/vietnameseText';
 
 const baseFilters = [
   { value: 'all', label: 'Tất cả' },
@@ -26,7 +27,7 @@ const baseFilters = [
   { value: 'weather', label: 'Thời tiết' },
   { value: 'air_quality', label: 'Không khí' },
   { value: 'harvest', label: 'Mùa vụ' },
-  { value: 'delivery_failed', label: 'Delivery lỗi' },
+  { value: 'delivery_failed', label: 'Gửi lỗi' },
   { value: 'system', label: 'Hệ thống' },
 ];
 
@@ -74,6 +75,36 @@ const deliveryClass = (status) => {
   return 'bg-gray-100 text-gray-700';
 };
 
+const priorityLabel = (priority) => ({
+  high: 'Cao',
+  medium: 'Trung bình',
+  low: 'Thấp',
+  urgent: 'Khẩn cấp',
+}[priority] || 'Không rõ');
+
+const streamStatusLabel = (status) => ({
+  connected: 'Đã kết nối',
+  reconnecting: 'Đang kết nối lại',
+  offline: 'Ngoại tuyến',
+  connecting: 'Đang kết nối',
+}[status] || 'Chưa rõ');
+
+const channelLabel = (channel) => ({
+  app: 'Ứng dụng',
+  email: 'Email',
+  zalo: 'Zalo',
+  sms: 'SMS',
+}[channel] || translateUiText(channel, 'Kênh gửi'));
+
+const entityTypeLabel = (type) => ({
+  price_alert: 'Cảnh báo giá',
+  weather_alert: 'Cảnh báo thời tiết',
+  alert: 'Cảnh báo',
+  harvest: 'Mùa vụ',
+  season: 'Mùa vụ',
+  crop: 'Nông sản',
+}[type] || 'Liên quan');
+
 const NotificationsPage = () => {
   const [notifications, setNotifications] = useState([]);
   const [summary, setSummary] = useState({ total: 0, unread: 0, by_type: {}, delivery_failed: 0, high_priority: 0 });
@@ -97,7 +128,7 @@ const NotificationsPage = () => {
       ...data,
       unread: unread.unread_count ?? data.unread,
       source: 'database',
-      source_name: 'Notifications DB',
+      source_name: 'Thông báo hệ thống',
       confidence: 0.7,
     });
   };
@@ -247,18 +278,18 @@ const NotificationsPage = () => {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-semibold uppercase tracking-wide text-green-700">Realtime inbox</p>
+            <p className="text-sm font-semibold uppercase tracking-wide text-green-700">Hộp thông báo trực tiếp</p>
             <DataSourceBadge data={summary} />
           </div>
           <h1 className="mt-2 text-3xl font-bold text-gray-900">Thông báo</h1>
           <p className="mt-2 text-gray-600">
-            Inbox DB-first cho alert, thời tiết, mùa vụ và delivery log, có luồng cập nhật từ backend.
+            Thông báo giá, thời tiết, mùa vụ và lịch sử gửi được cập nhật tại đây.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <span className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700">
             <StreamIcon className="h-4 w-4" />
-            {streamStatus === 'connected' ? 'Connected' : streamStatus === 'reconnecting' ? 'Reconnecting' : 'Offline'}
+            {streamStatusLabel(streamStatus)}
           </span>
           <button
             type="button"
@@ -295,7 +326,7 @@ const NotificationsPage = () => {
             <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
               <ShieldAlert className="mb-3 h-6 w-6 text-red-600" />
               <div className="text-2xl font-bold text-gray-900">{summary.delivery_failed || 0}</div>
-              <div className="text-sm text-gray-600">delivery lỗi</div>
+              <div className="text-sm text-gray-600">gửi lỗi</div>
             </div>
           </div>
 
@@ -320,7 +351,7 @@ const NotificationsPage = () => {
               className="ml-auto inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
             >
               <Trash2 className="h-4 w-4" />
-              Xóa theo filter
+              Xóa theo bộ lọc
             </button>
           </div>
 
@@ -350,17 +381,17 @@ const NotificationsPage = () => {
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
-                            <h2 className="font-bold text-gray-900">{notification.title}</h2>
+                            <h2 className="font-bold text-gray-900">{translateUiText(notification.title)}</h2>
                             {!notification.read && <span className="h-2 w-2 rounded-full bg-green-600" />}
                           </div>
-                          <p className="mt-1 text-sm leading-6 text-gray-600">{notification.description}</p>
+                          <p className="mt-1 text-sm leading-6 text-gray-600">{translateUiText(notification.description)}</p>
                           <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-gray-500">
                             <span>{notification.time}</span>
                             <span className="rounded-full bg-gray-100 px-2.5 py-1 font-medium text-gray-700">
-                              {notification.priority}
+                              {priorityLabel(notification.priority)}
                             </span>
                             <DataSourceBadge data={notification} />
-                            {notification.relatedEntityType && <span>{notification.relatedEntityType} #{notification.relatedEntityId}</span>}
+                            {notification.relatedEntityType && <span>{entityTypeLabel(notification.relatedEntityType)} #{notification.relatedEntityId}</span>}
                           </div>
                         </div>
                         <ChevronRight className="mt-1 h-5 w-5 shrink-0 text-gray-400" />
@@ -376,7 +407,7 @@ const NotificationsPage = () => {
                     <div className="mb-5 flex items-start justify-between gap-4">
                       <div>
                         <p className="text-sm font-semibold uppercase tracking-wide text-green-700">Chi tiết</p>
-                        <h2 className="mt-2 text-xl font-bold text-gray-900">{selectedNotification.title}</h2>
+                        <h2 className="mt-2 text-xl font-bold text-gray-900">{translateUiText(selectedNotification.title)}</h2>
                       </div>
                       <button
                         type="button"
@@ -391,10 +422,10 @@ const NotificationsPage = () => {
                       <InlineLoading text="Đang tải chi tiết..." />
                     ) : (
                       <>
-                        <p className="text-sm leading-7 text-gray-600">{detail?.message || selectedNotification.description}</p>
+                        <p className="text-sm leading-7 text-gray-600">{translateUiText(detail?.message || selectedNotification.description)}</p>
                         {detail?.related_entity && (
                           <div className="mt-5 rounded-lg bg-green-50 p-4 text-sm text-green-900">
-                            <div className="font-semibold">Related entity</div>
+                            <div className="font-semibold">Thông tin liên quan</div>
                             <p className="mt-2">
                               {detail.related_entity.crop_name} · {detail.related_entity.region} · ngưỡng{' '}
                               {Number(detail.related_entity.target_price).toLocaleString('vi-VN')} VND/kg
@@ -402,25 +433,25 @@ const NotificationsPage = () => {
                           </div>
                         )}
                         <div className="mt-5">
-                          <div className="mb-3 font-semibold text-gray-900">Delivery timeline</div>
+                          <div className="mb-3 font-semibold text-gray-900">Lịch sử gửi</div>
                           <div className="space-y-2">
                             {(detail?.deliveries || []).map((delivery) => (
                               <div key={delivery.delivery_id} className="rounded-lg border border-gray-200 p-3 text-sm">
                                 <div className="flex items-center justify-between gap-3">
-                                  <span className="font-medium text-gray-900">{delivery.channel}</span>
+                                  <span className="font-medium text-gray-900">{channelLabel(delivery.channel)}</span>
                                   <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${deliveryClass(delivery.status)}`}>
-                                    {delivery.status}
+                                    {systemStatusLabel(delivery.status)}
                                   </span>
                                 </div>
                                 <div className="mt-1 text-xs text-gray-500">
-                                  {formatTime(delivery.sent_at)} {delivery.provider_message_id ? `· ${delivery.provider_message_id}` : ''}
+                                  {formatTime(delivery.sent_at)}
                                 </div>
                                 {delivery.error_message && <div className="mt-1 text-xs text-red-600">{delivery.error_message}</div>}
                               </div>
                             ))}
                             {!detail?.deliveries?.length && (
                               <div className="rounded-lg border border-dashed border-gray-300 p-3 text-sm text-gray-600">
-                                Chưa có delivery log.
+                                Chưa có lịch sử gửi.
                               </div>
                             )}
                           </div>
@@ -453,7 +484,7 @@ const NotificationsPage = () => {
           ) : (
             <EmptyState
               title="Chưa có thông báo"
-              description="Cảnh báo giá, thời tiết, delivery log và nhắc mùa vụ sẽ xuất hiện tại đây khi backend tạo event."
+              description="Cảnh báo giá, thời tiết, lịch sử gửi và nhắc mùa vụ sẽ xuất hiện tại đây khi hệ thống tạo thông báo."
             />
           )}
         </>

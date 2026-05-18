@@ -1,6 +1,8 @@
 from sqlalchemy import or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from unicodedata import normalize as uni_normalize
+import unicodedata
 
 from app.models.crop import Crop
 from app.models.user import User
@@ -111,9 +113,23 @@ def to_db_channel(value: str | None) -> str:
     return CHANNEL_API_TO_DB.get(value, value)
 
 
+def normalize_text(value: str | None) -> str:
+    if not value:
+        return ""
+    text = str(value).strip().lower()
+    text = unicodedata.normalize("NFD", text)
+    text = "".join(char for char in text if unicodedata.category(char) != "Mn")
+    return " ".join(text.replace("đ", "d").replace("Đ", "d").split())
+
+
 def ensure_crop(db: Session, crop_name: str) -> Crop:
     try:
+        normalized = normalize_text(crop_name)
         crop = db.query(Crop).filter(Crop.CropName == crop_name).first()
+        if crop:
+            return crop
+        crops = db.query(Crop).order_by(Crop.CropID).all()
+        crop = next((item for item in crops if normalize_text(item.CropName) == normalized), None)
         if crop:
             return crop
         crop = Crop(

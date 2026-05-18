@@ -14,14 +14,14 @@ const plans = [
     route: "/ai-chat",
   },
   {
-    name: "Nhà nông Pro",
+    name: "Nhà nông nâng cao",
     audience: "Nông dân cá nhân",
     monthly: 99000,
     yearly: 990000,
     popular: true,
     description: "Gói cân bằng giữa chi phí và khả năng hỗ trợ ra quyết định hằng ngày.",
     features: ["Dự báo thời tiết nông nghiệp 7 ngày", "Cảnh báo mưa, gió, độ ẩm", "Dự báo ngày thu hoạch", "AI tư vấn không giới hạn hợp lý", "Theo dõi giá theo khu vực", "Tạo cảnh báo giá"],
-    cta: "Chọn gói Pro",
+    cta: "Chọn gói nâng cao",
     route: "/contact",
   },
   {
@@ -39,18 +39,18 @@ const plans = [
     audience: "Đơn vị thu mua / phân phối",
     monthly: null,
     yearly: null,
-    description: "Tùy chỉnh API, dashboard và tích hợp dữ liệu theo quy trình doanh nghiệp.",
-    features: ["Dashboard tùy chỉnh", "Tích hợp API nội bộ", "Theo dõi vùng nguyên liệu", "Phân quyền tài khoản", "Hỗ trợ kỹ thuật ưu tiên", "Tư vấn triển khai riêng"],
+    description: "Tùy chỉnh bảng điều khiển và tích hợp dữ liệu theo quy trình doanh nghiệp.",
+    features: ["Bảng điều khiển tùy chỉnh", "Tích hợp dữ liệu nội bộ", "Theo dõi vùng nguyên liệu", "Phân quyền tài khoản", "Hỗ trợ kỹ thuật ưu tiên", "Tư vấn triển khai riêng"],
     cta: "Liên hệ triển khai",
     route: "/contact",
   },
 ];
 
 const comparisonRows = [
-  ["Thời tiết realtime", "Cơ bản", "Nâng cao", "Nâng cao", "Tùy chỉnh"],
+  ["Thời tiết thời gian thực", "Cơ bản", "Nâng cao", "Nâng cao", "Tùy chỉnh"],
   ["Dự báo thu hoạch", "1 mùa vụ", "Không giới hạn hợp lý", "Nhiều mùa vụ", "Theo vùng nguyên liệu"],
-  ["Giá nông sản", "Dữ liệu mẫu", "Theo khu vực", "So sánh vùng miền", "API riêng"],
-  ["AI Chat", "5 lượt/ngày", "Ưu tiên", "Ưu tiên nhóm", "Tùy chỉnh tri thức"],
+  ["Giá nông sản", "Dữ liệu mẫu", "Theo khu vực", "So sánh vùng miền", "Tích hợp riêng"],
+  ["Trợ lý AI", "5 lượt/ngày", "Ưu tiên", "Ưu tiên nhóm", "Tùy chỉnh tri thức"],
   ["Báo cáo", "Không", "Cơ bản", "PDF/Excel", "Theo yêu cầu"],
 ];
 
@@ -78,7 +78,7 @@ export default function SubscriptionPricingPage() {
               Chọn gói phù hợp với quy mô sản xuất của bạn
             </h1>
             <p className="mt-5 text-lg leading-8 text-emerald-50">
-              Trang pricing nên thể hiện rõ giá trị của hệ thống: thời tiết realtime, dự báo thu hoạch, định giá nông sản, thị trường và AI tư vấn.
+              Trang gói dịch vụ nên thể hiện rõ giá trị của hệ thống: thời tiết thời gian thực, dự báo thu hoạch, định giá nông sản, thị trường và AI tư vấn.
             </p>
 
             <div className="mt-8 inline-flex rounded-2xl border border-white/15 bg-white/10 p-1 backdrop-blur">
@@ -161,11 +161,11 @@ export default function SubscriptionPricingPage() {
               </div>
               <div className="rounded-2xl bg-white p-4 shadow-sm">
                 <h3 className="font-black">Liên kết thanh toán sau</h3>
-                <p className="mt-1 text-sm leading-6 text-slate-600">Hiện tại có thể để nút liên hệ. Sau này có thể nối VNPay, Momo hoặc quản lý subscription trong DB.</p>
+                <p className="mt-1 text-sm leading-6 text-slate-600">Hiện tại có thể để nút liên hệ. Sau này có thể nối VNPay, Momo hoặc quản lý gói đăng ký trong hệ thống.</p>
               </div>
               <div className="rounded-2xl bg-white p-4 shadow-sm">
                 <h3 className="font-black">Phân quyền theo gói</h3>
-                <p className="mt-1 text-sm leading-6 text-slate-600">Ẩn/hiện tính năng AI, cảnh báo giá, báo cáo và số mùa vụ theo plan của tài khoản.</p>
+                <p className="mt-1 text-sm leading-6 text-slate-600">Ẩn/hiện tính năng AI, cảnh báo giá, báo cáo và số mùa vụ theo gói của tài khoản.</p>
               </div>
             </div>
           </div>
