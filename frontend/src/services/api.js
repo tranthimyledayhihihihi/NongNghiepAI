@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8001';
+const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
 export const API_TIMEOUTS = {
   default: Number(import.meta.env.VITE_API_TIMEOUT_MS || 18000),

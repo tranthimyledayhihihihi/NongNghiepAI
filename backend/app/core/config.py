@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     EXCHANGE_RATE_API_URL: str = "https://open.er-api.com/v6/latest/USD"
     MARKET_API_BASE_URL: str = ""
     TAVILY_API_KEY: str = ""
+    GOOGLE_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
     USD_VND_FALLBACK_RATE: float = 26000.0
     MARKET_NEWS_RSS_URLS_JSON: str = json.dumps(

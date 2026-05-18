@@ -207,10 +207,36 @@ const AIChatPage = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
 
+  const extractAiReply = (data = {}) => {
+    const candidates = [
+      data?.reply,
+      data?.response,
+      data?.data?.reply,
+      data?.data?.response,
+      data?.answer,
+      data?.data?.answer,
+      data?.message,
+      data?.data?.message,
+    ];
+    return candidates.find((value) => typeof value === 'string' && value.trim())?.trim();
+  };
+
+  const getFriendlyAiError = (error) => {
+    const status = error?.response?.status;
+    const message = error?.message || '';
+    if (status === 504 || error?.isTimeout) {
+      return 'AI phan hoi qua lau. Vui long thu lai sau it phut.';
+    }
+    if (message.includes('GOOGLE_API_KEY') || error?.response?.data?.error === 'missing_google_api_key') {
+      return 'Backend chua cau hinh GOOGLE_API_KEY nen chua the goi Gemini.';
+    }
+    return message || 'AI Chat dang tam thoi bi gian doan. Vui long thu lai sau.';
+  };
+
   const createBotResponse = (data = null) => ({
     id: crypto.randomUUID(),
     type: 'bot',
-    content: data?.answer ||
+    content: extractAiReply(data) ||
       'Tôi đã nhận được thông tin. Bạn nên bổ sung khu vực canh tác, tuổi cây, ảnh cận cảnh và lịch bón phân gần nhất để tôi phân tích chính xác hơn.',
     timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
     source: data ? {
@@ -249,8 +275,9 @@ const AIChatPage = () => {
     try {
       const data = await aiApi.chat({
         question: trimmedMessage,
-        cropName: 'ca chua',
+        crop: 'ca chua',
         region: 'Ha Noi',
+        context: 'Nguoi dung dang chat tu trang AI Chat cua frontend NongNghiepAI.',
         userId: 1,
         sessionId: 'frontend-session',
       });
@@ -258,14 +285,14 @@ const AIChatPage = () => {
       loadHistory();
     } catch (error) {
       setMessages((current) => [...current, createBotResponse({
-        answer: 'AI dang phan tich cham hoac ket noi bi timeout. Ban co the gui lai cau hoi sau it phut; du lieu cache/fallback van duoc giu tren cac trang lien quan.',
-        source: 'mock',
-        source_name: 'AI timeout fallback',
-        is_mock: true,
+        reply: getFriendlyAiError(error),
+        source: 'error',
+        source_name: 'AI Chat error',
+        is_mock: false,
         fallback_used: true,
-        timeout: true,
+        timeout: error?.isTimeout || error?.response?.status === 504,
         error: error?.message,
-        confidence: 0.35,
+        confidence: 0,
       })]);
     } finally {
       setIsTyping(false);

@@ -11,11 +11,14 @@ const request = async (factory, fallback) => {
 };
 
 export const aiApi = {
-  chat: async ({ question, cropName, region, sessionId }) => {
+  chat: async ({ question, crop, cropName, region, context, sessionId }) => {
+    const selectedCrop = crop || cropName;
     return request(() => api.post('/api/ai-chat/message', {
       message: question,
-      crop_name: cropName,
+      crop: selectedCrop,
+      crop_name: selectedCrop,
       region,
+      context,
       session_id: sessionId,
     }, withApiTimeout('ai')), 'Khong goi duoc AI chat');
   },

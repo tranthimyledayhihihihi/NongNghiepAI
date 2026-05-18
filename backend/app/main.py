@@ -112,7 +112,7 @@ async def root():
         "status": "running",
         "endpoints": {
             "health": "/health",
-            "ai_chat": "/api/chat",
+            "ai_chat": "/api/ai-chat/message",
             "db_test": "/db-test",
             "crops_list": "/api/crops",
             "crop_detail": "/api/crops/{crop_id}",
