@@ -98,7 +98,58 @@ class NotificationCenterService:
             "delivery_failed": int(delivery_failed),
             "high_priority": int(by_priority.get("high", 0)),
             "updated_at": datetime.now(),
+            "source": "database",
+            "source_name": "Notifications DB",
+            "confidence": 0.7,
         }
+
+    def get_priority_notifications(self, db: Session, user: User, min_priority: str = "high") -> dict:
+        priority_order = {"low": 0, "medium": 1, "high": 2, "urgent": 3}
+        listed = self.list_notifications(db, user, limit=100)
+        threshold = priority_order.get(min_priority, 2)
+        items = [
+            item for item in listed.get("notifications", [])
+            if priority_order.get(item.get("priority", "low"), 0) >= threshold
+        ]
+        return {
+            "notifications": items,
+            "total": len(items),
+            "source": "database",
+            "source_name": "Notifications priority view",
+            "confidence": 0.7,
+            "updated_at": datetime.now(),
+        }
+
+    def get_unread_notification_count(self, db: Session, user: User) -> dict:
+        summary = self.summary(db, user)
+        return {
+            "unread_count": summary.get("unread", 0),
+            "summary": summary,
+            "source": "database",
+            "source_name": "Notifications DB",
+            "confidence": 0.7,
+            "updated_at": datetime.now(),
+        }
+
+    def create_notification_from_alert(self, db: Session, user: User, alert: dict) -> dict:
+        notification = self.create_notification(
+            db,
+            NotificationCreate(
+                user_id=user.UserID,
+                type=alert.get("alert_type") or "alert",
+                title=alert.get("title") or "AgriAI alert",
+                message=alert.get("message") or alert.get("suggested_action") or "Alert requires review.",
+                priority=alert.get("priority") or alert.get("severity") or "medium",
+                channel="app",
+                related_entity_type="alert",
+                related_entity_id=alert.get("alert_id") or alert.get("related_alert_id"),
+            ),
+        )
+        notification["related_alert_id"] = alert.get("alert_id") or alert.get("related_alert_id")
+        notification["severity"] = alert.get("severity")
+        notification["suggested_action"] = alert.get("suggested_action")
+        notification["action_required"] = alert.get("action_required", notification.get("priority") in {"high", "urgent"})
+        return notification
 
     def get_detail(self, db: Session, user: User, notification_id: int) -> dict | None:
         row = self._get_owned(db, user, notification_id)
@@ -393,6 +444,15 @@ class NotificationCenterService:
             "channel": row.Channel,
             "created_at": row.CreatedAt,
             "read_at": row.ReadAt,
+            "related_alert_id": row.RelatedEntityID if row.RelatedEntityType in {"alert", "price_alert", "weather_alert"} else None,
+            "severity": row.Priority,
+            "suggested_action": None,
+            "action_required": row.Priority in {"high", "urgent"},
+            "source": "database",
+            "source_name": "Notifications DB",
+            "fetched_at": datetime.now(),
+            "updated_at": row.CreatedAt,
+            "confidence": 0.7,
         }
 
 

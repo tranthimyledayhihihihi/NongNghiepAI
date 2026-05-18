@@ -12,7 +12,7 @@ import {
   Wifi,
   WifiOff,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import DataSourceBadge from '../components/DataSourceBadge';
 import { EmptyState, InlineLoading, PageError } from '../components/StatusState';
 import { getApiErrorMessage } from '../services/api';
@@ -57,6 +57,14 @@ const normalizeNotification = (item) => ({
   channel: item.channel || 'app',
   relatedEntityType: item.related_entity_type,
   relatedEntityId: item.related_entity_id,
+  relatedAlertId: item.related_alert_id,
+  source: item.source,
+  source_name: item.source_name,
+  fetched_at: item.fetched_at,
+  updated_at: item.updated_at || item.created_at,
+  confidence: item.confidence,
+  actionRequired: item.action_required,
+  suggestedAction: item.suggested_action,
 });
 
 const deliveryClass = (status) => {
@@ -76,12 +84,15 @@ const NotificationsPage = () => {
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState(null);
+  const reloadTimerRef = useRef(null);
 
   const loadSummary = async () => {
-    const [data, unread] = await Promise.all([
+    const results = await Promise.allSettled([
       notificationsApi.summary(),
       notificationsApi.unreadCount(),
     ]);
+    const data = results[0].status === 'fulfilled' ? results[0].value : summary;
+    const unread = results[1].status === 'fulfilled' ? results[1].value : {};
     setSummary({
       ...data,
       unread: unread.unread_count ?? data.unread,
@@ -139,13 +150,19 @@ const NotificationsPage = () => {
       setStreamStatus('connected');
       try {
         setSummary(JSON.parse(event.data));
-        loadNotifications();
+        window.clearTimeout(reloadTimerRef.current);
+        reloadTimerRef.current = window.setTimeout(() => {
+          loadNotifications();
+        }, 600);
       } catch {
         loadSummary().catch(() => {});
       }
     });
     source.addEventListener('error', () => setStreamStatus('reconnecting'));
-    return () => source.close();
+    return () => {
+      window.clearTimeout(reloadTimerRef.current);
+      source.close();
+    };
   }, []);
 
   useEffect(() => {
@@ -342,7 +359,7 @@ const NotificationsPage = () => {
                             <span className="rounded-full bg-gray-100 px-2.5 py-1 font-medium text-gray-700">
                               {notification.priority}
                             </span>
-                            <DataSourceBadge data={{ source: 'database', source_name: 'Notifications DB', confidence: 0.7, fetched_at: notification.createdAt }} />
+                            <DataSourceBadge data={notification} />
                             {notification.relatedEntityType && <span>{notification.relatedEntityType} #{notification.relatedEntityId}</span>}
                           </div>
                         </div>

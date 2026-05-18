@@ -150,6 +150,32 @@ class SettingsService:
             },
         }
 
+    def get_combined_settings(self, db: Session, user: User) -> dict:
+        profile = self.get_settings(db, user)
+        channels = self.get_channel_status(db, user)
+        return {
+            "profile": profile,
+            "farm": {
+                "region": user.Region,
+                "source": "database",
+                "source_name": "Users/UserSettings DB",
+                "updated_at": profile.get("updated_at"),
+            },
+            "preferences": {
+                "price_alerts": profile.get("price_alerts"),
+                "weather_alerts": profile.get("weather_alerts"),
+                "harvest_reminders": profile.get("harvest_reminders"),
+                "language": profile.get("language"),
+                "unit": profile.get("unit"),
+                "theme": profile.get("theme"),
+            },
+            "channels": channels,
+            "source": "database",
+            "source_name": "Users/UserSettings DB",
+            "updated_at": profile.get("updated_at"),
+            "confidence": 0.72,
+        }
+
     def test_channel(self, db: Session, user: User, channel: str, receiver: str | None = None) -> dict:
         channel = channel.lower().strip()
         receiver = receiver or self._default_receiver(user, channel)

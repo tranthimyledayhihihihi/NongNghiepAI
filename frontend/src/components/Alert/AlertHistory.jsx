@@ -56,12 +56,18 @@ const AlertHistory = ({ refreshKey = 0 }) => {
     setError(null);
 
     try {
-      const [alertData, triggerData] = await Promise.all([
+      const results = await Promise.allSettled([
         alertApi.getAlerts(),
         alertApi.getTriggers(),
       ]);
-      setAlerts(alertData.alerts || []);
-      setTriggers(triggerData.events || []);
+      const [alertData, triggerData] = results.map((item) => (
+        item.status === 'fulfilled' ? item.value : null
+      ));
+      if (results.every((item) => item.status === 'rejected')) {
+        throw results[0].reason;
+      }
+      setAlerts(alertData?.alerts || []);
+      setTriggers(triggerData?.events || []);
     } catch (err) {
       setError(getApiErrorMessage(err, 'Không thể tải danh sách cảnh báo'));
     } finally {
@@ -142,6 +148,24 @@ const AlertHistory = ({ refreshKey = 0 }) => {
                           ? `Ngưỡng ${formatNumber(alert.target_price)} ${alert.trigger_unit || ''} qua ${channelLabel(alert.notification_channel)}`
                           : `${alert.condition === 'above' ? 'Giá trên' : 'Giá dưới'} ${formatCurrency(alert.target_price)} VND/kg qua ${channelLabel(alert.notification_channel)}`}
                       </p>
+                      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-gray-600">
+                        <span className="rounded-full bg-gray-100 px-2.5 py-1 font-medium text-gray-700">
+                          alert_type: {alert.alert_type || alert.alert_kind || 'price'}
+                        </span>
+                        <span className="rounded-full bg-gray-100 px-2.5 py-1 font-medium text-gray-700">
+                          severity: {alert.severity || alert.priority || 'medium'}
+                        </span>
+                        <span>affected_crop: {alert.affected_crop || alert.crop_name || 'N/A'}</span>
+                        <span>send_channels: {(alert.send_channels || [alert.notification_channel || 'app']).join(', ')}</span>
+                        <span>confidence: {alert.confidence ?? 'N/A'}</span>
+                        {alert.sent_status && <span>sent_status: {alert.sent_status}</span>}
+                        <DataSourceBadge data={alert} />
+                      </div>
+                      {(alert.recommended_action || alert.suggested_action || alert.recommendation) && (
+                        <p className="mt-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">
+                          recommended_action: {alert.recommended_action || alert.suggested_action || alert.recommendation}
+                        </p>
+                      )}
                       <p className="mt-1 text-xs text-gray-500">
                         Tạo: {formatDate(alert.created_at)} · Kích hoạt gần nhất: {formatDate(alert.last_triggered_at)}
                       </p>

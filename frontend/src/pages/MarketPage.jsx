@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import DataSourceBadge from '../components/DataSourceBadge';
 import { getApiErrorMessage } from '../services/api';
 import { marketApi } from '../services/marketApi';
+import { marketNewsApi } from '../services/marketNewsApi';
 
 const fallbackChannels = [
   { id: 'wholesale', name: 'Chợ đầu mối', commission: '5-10%' },
@@ -29,6 +30,8 @@ const MarketPage = () => {
   const [trend, setTrend] = useState(null);
   const [opportunities, setOpportunities] = useState(null);
   const [risks, setRisks] = useState(null);
+  const [intelligenceLoading, setIntelligenceLoading] = useState(false);
+  const [intelligenceError, setIntelligenceError] = useState(null);
 
   useEffect(() => {
     const loadChannels = async () => {
@@ -49,27 +52,89 @@ const MarketPage = () => {
   useEffect(() => {
     let active = true;
     const loadIntelligence = async () => {
+      setIntelligenceLoading(true);
+      setIntelligenceError(null);
       try {
-        const [newsData, priceData, trendData, opportunityData, riskData] = await Promise.all([
-          marketApi.getNews({ limit: 4, crop: formData.cropName, region: formData.region }),
-          marketApi.getPrices({ crop: formData.cropName, region: formData.region }),
-          marketApi.getTrends({ crop: formData.cropName, region: formData.region }),
-          marketApi.getOpportunities({ crop: formData.cropName, region: formData.region }),
-          marketApi.getRisks({ crop: formData.cropName, region: formData.region }),
+        const results = await Promise.allSettled([
+          marketApi.getMarketNews({ limit: 4, crop: formData.cropName, region: formData.region }),
+          marketApi.getMarketPrices({ crop: formData.cropName, region: formData.region }),
+          marketApi.getMarketTrends(formData.cropName, formData.region),
+          marketApi.getMarketOpportunities({ crop: formData.cropName, region: formData.region }),
+          marketApi.getMarketRisks({ crop: formData.cropName, region: formData.region }),
         ]);
+        const [newsData, priceData, trendData, opportunityData, riskData] = results.map((item) => (
+          item.status === 'fulfilled' ? item.value : null
+        ));
+        if (results.every((item) => item.status === 'rejected')) {
+          throw results[0].reason;
+        }
+        const newsItems = newsData?.news || [];
+        const enrichedResults = await Promise.allSettled(newsItems.map(async (item) => {
+          try {
+            const analysis = await marketApi.analyzeMarketNews({
+              title: item.title,
+              summary: item.summary,
+              crop: formData.cropName,
+              region: formData.region,
+            });
+            return {
+              ...item,
+              ...analysis,
+              affected_crops: analysis.affected_crops?.length ? analysis.affected_crops : [formData.cropName],
+              affected_regions: analysis.affected_regions?.length ? analysis.affected_regions : [formData.region],
+            };
+          } catch {
+            return {
+              ...item,
+              affected_crops: [formData.cropName],
+              affected_regions: [formData.region],
+              impact: item.impact || item.sentiment || 'neutral',
+              impact_score: item.impact_score ?? 0.5,
+              price_effect: item.price_effect || 'stable',
+              source: item.source || 'cached',
+              source_name: item.source_name || 'Market news cache',
+              confidence: item.confidence ?? 0.5,
+            };
+          }
+        }));
+        const enrichedNews = enrichedResults.map((item, index) => (
+          item.status === 'fulfilled' ? item.value : newsItems[index]
+        )).filter(Boolean);
         if (!active) return;
-        setNews(newsData.news || []);
+        setNews(enrichedNews);
         setMarketPrice(priceData);
         setTrend(trendData);
         setOpportunities(opportunityData);
         setRisks(riskData);
-      } catch {
+        const failed = results.filter((item) => item.status === 'rejected');
+        setIntelligenceError(failed.length ? 'Mot so khoi market phan hoi cham, giao dien dang hien thi phan du lieu con lai.' : null);
+      } catch (err) {
         if (!active) return;
-        setNews([]);
+        try {
+          const legacyNews = await marketNewsApi.getLegacyLatest(4);
+          if (!active) return;
+          setNews((legacyNews.news || []).map((item) => ({
+            ...item,
+            source: 'legacy',
+            source_name: item.source_name || 'Legacy /api/market-news',
+            confidence: item.confidence ?? 0.45,
+            affected_crops: [formData.cropName],
+            affected_regions: [formData.region],
+            impact: item.impact || item.sentiment || 'neutral',
+            impact_score: item.impact_score ?? 0.5,
+            price_effect: item.price_effect || 'stable',
+          })));
+          setIntelligenceError('Endpoint moi loi, dang hien thi tin legacy/cache.');
+        } catch {
+          setNews([]);
+          setIntelligenceError(getApiErrorMessage(err, 'Khong tai duoc market intelligence'));
+        }
         setMarketPrice(null);
         setTrend(null);
         setOpportunities(null);
         setRisks(null);
+      } finally {
+        if (active) setIntelligenceLoading(false);
       }
     };
     loadIntelligence();
@@ -111,6 +176,17 @@ const MarketPage = () => {
         </p>
       </div>
 
+      {intelligenceLoading && (
+        <div className="mb-4 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+          Dang tai market intelligence tu endpoint moi...
+        </div>
+      )}
+      {intelligenceError && (
+        <div className="mb-4 rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {intelligenceError}
+        </div>
+      )}
+
       <section className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-3">
         <div className="rounded-lg border border-gray-200 bg-white p-5 shadow">
           <div className="mb-3 flex items-center justify-between gap-3">
@@ -121,6 +197,7 @@ const MarketPage = () => {
             {marketPrice?.current_price ? `${Number(marketPrice.current_price).toLocaleString('vi-VN')} VND/kg` : 'N/A'}
           </p>
           <p className="mt-2 text-sm text-gray-600">{marketPrice?.crop_name || formData.cropName} · {marketPrice?.region || formData.region}</p>
+          {marketPrice?.recommendation && <p className="mt-2 text-sm text-green-700">Recommendation: {marketPrice.recommendation}</p>}
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-5 shadow">
           <div className="mb-3 flex items-center justify-between gap-3">
@@ -129,6 +206,7 @@ const MarketPage = () => {
           </div>
           <p className="text-2xl font-bold text-gray-900">{trend?.trend || 'stable'}</p>
           <p className="mt-2 text-sm text-gray-600">{trend?.evidence?.[0] || 'Dang tong hop du lieu thi truong.'}</p>
+          {trend?.recommendation && <p className="mt-2 text-sm text-green-700">Recommendation: {trend.recommendation}</p>}
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-5 shadow">
           <div className="mb-3 flex items-center justify-between gap-3">
@@ -172,29 +250,86 @@ const MarketPage = () => {
         })}
       </div>
 
-      {news.length > 0 && (
+      {true && (
         <section className="mt-8 rounded-lg border border-gray-200 bg-white p-6 shadow">
           <div className="mb-4 flex flex-wrap items-center gap-3">
-            <h2 className="text-lg font-semibold text-gray-900">Tin tức thị trường realtime</h2>
-            <DataSourceBadge data={{ source: 'realtime_api', source_name: 'RSS market news cache', is_realtime: true, confidence: 0.7 }} />
+            <h2 className="text-lg font-semibold text-gray-900">Market News</h2>
+            <DataSourceBadge data={news[0] || { source: intelligenceError ? 'legacy' : 'realtime_api', source_name: intelligenceError ? 'Legacy /api/market-news' : 'RSS market news cache', confidence: intelligenceError ? 0.45 : 0.7 }} />
           </div>
+          {news.length ? (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {news.map((item) => (
               <a
-                key={item.source_url}
-                href={item.source_url}
+                key={item.source_url || item.title}
+                href={item.source_url || '#'}
                 target="_blank"
                 rel="noreferrer"
                 className="rounded-lg border border-gray-200 p-4 hover:border-green-300 hover:bg-green-50"
               >
-                <p className="text-sm font-semibold text-gray-900">{item.title}</p>
-                <p className="mt-2 line-clamp-2 text-sm text-gray-600">{item.summary}</p>
-                <p className="mt-3 text-xs text-gray-500">{item.source_name}</p>
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm font-semibold text-gray-900">{item.title}</p>
+                  <DataSourceBadge data={item} />
+                </div>
+                <p className="mt-2 line-clamp-2 text-sm text-gray-600">{item.summary || item.ai_summary}</p>
+                <div className="mt-3 grid gap-2 text-xs text-gray-600">
+                  <p><span className="font-semibold">AI news summary:</span> {item.ai_summary || item.recommendation || item.summary || 'Dang tong hop.'}</p>
+                  <p><span className="font-semibold">affected_crops:</span> {(item.affected_crops || []).join(', ') || formData.cropName}</p>
+                  <p><span className="font-semibold">affected_regions:</span> {(item.affected_regions || []).join(', ') || formData.region}</p>
+                  <p><span className="font-semibold">impact:</span> {item.impact || 'neutral'} · score {item.impact_score ?? 'N/A'} · price_effect {item.price_effect || 'stable'}</p>
+                  <p><span className="font-semibold">updated:</span> {item.updated_at || item.published_at || 'N/A'}</p>
+                </div>
               </a>
             ))}
           </div>
+          ) : (
+            <div className="rounded-lg border border-dashed border-gray-300 p-5 text-center text-sm text-gray-600">
+              Chua co market news phu hop.
+            </div>
+          )}
         </section>
       )}
+
+      <section className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="rounded-lg border border-gray-200 bg-white p-5 shadow">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-gray-900">Opportunities</h2>
+            <DataSourceBadge data={opportunities || { source: 'mock', source_name: 'Market opportunities fallback' }} />
+          </div>
+          <div className="space-y-3">
+            {(opportunities?.opportunities || []).map((item) => (
+              <div key={`${item.title}-${item.region}`} className="rounded-lg border border-green-100 bg-green-50 p-3 text-sm text-green-900">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-semibold">{item.title}</span>
+                  <DataSourceBadge data={item} />
+                </div>
+                <p className="mt-1">{item.reason || item.recommendation || 'Theo doi co hoi ban theo dot.'}</p>
+                <p className="mt-1 text-xs">confidence: {item.confidence ?? opportunities?.confidence ?? 'N/A'}</p>
+              </div>
+            ))}
+            {!opportunities?.opportunities?.length && <p className="text-sm text-gray-600">Chua co opportunity tu endpoint moi.</p>}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-gray-200 bg-white p-5 shadow">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-gray-900">Risks</h2>
+            <DataSourceBadge data={risks || { source: 'mock', source_name: 'Market risks fallback' }} />
+          </div>
+          <div className="space-y-3">
+            {(risks?.risks || []).map((item) => (
+              <div key={`${item.title}-${item.region}`} className="rounded-lg border border-amber-100 bg-amber-50 p-3 text-sm text-amber-900">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-semibold">{item.title}</span>
+                  <DataSourceBadge data={item} />
+                </div>
+                <p className="mt-1">severity: {item.severity || 'medium'}</p>
+                <p className="mt-1">recommendation: {item.recommendation || 'Tao canh bao gia va tranh ban tat ca cung luc.'}</p>
+              </div>
+            ))}
+            {!risks?.risks?.length && <p className="text-sm text-gray-600">Chua co risk tu endpoint moi.</p>}
+          </div>
+        </div>
+      </section>
 
       <div className="mt-8 bg-white rounded-lg shadow p-6">
         <h2 className="text-lg font-semibold mb-4">Công cụ gợi ý kênh bán</h2>

@@ -1,12 +1,30 @@
-import api from './api';
+import api, { getApiErrorMessage } from './api';
+import { normalizeApiResponse } from '../utils/apiResponse';
+
+const request = async (factory, fallback) => {
+  try {
+    return normalizeApiResponse(await factory());
+  } catch (error) {
+    error.message = getApiErrorMessage(error, fallback);
+    throw error;
+  }
+};
 
 export const marketNewsApi = {
-  getLatest: async (limit = 6) => {
-    const response = await api.get('/api/market-news/', { params: { limit } });
-    return response.data;
+  getLatest: async (limit = 6, { crop, region } = {}) => {
+    return request(() => api.get('/api/market/news', {
+      params: {
+        limit,
+        crop: crop || undefined,
+        region: region || undefined,
+      },
+    }), 'Khong tai duoc market news');
   },
   refresh: async () => {
-    const response = await api.post('/api/market-news/refresh');
-    return response.data;
+    return request(() => api.post('/api/market-news/refresh'), 'Khong refresh duoc legacy market news');
   },
+};
+
+marketNewsApi.getLegacyLatest = async (limit = 6) => {
+  return request(() => api.get('/api/market-news/', { params: { limit } }), 'Khong tai duoc legacy market news');
 };

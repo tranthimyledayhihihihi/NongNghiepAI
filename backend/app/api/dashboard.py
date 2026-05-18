@@ -33,7 +33,7 @@ async def get_dashboard_summary(
     )
     return api_response(
         data,
-        source="dashboard_cache" if data.get("cache_status") == "hit" else "dashboard",
+        source="cached" if data.get("cache_status") == "hit" else "database",
         is_mock=data["featured_crop"].get("is_mock", False),
         cache_status=data.get("cache_status", "fresh"),
         last_updated=data.get("generated_at"),
@@ -222,7 +222,7 @@ async def get_price_trend(
         region=_region_from(current_user, region),
         days=days,
     )
-    return api_response(data, source="forecast", is_mock=data.get("is_mock", False), cache_status="computed")
+    return api_response(data, source="ai_generated", source_name="Pricing forecast engine", is_mock=data.get("is_mock", False), cache_status="computed")
 
 
 @router.get("/weather-overview")
@@ -239,7 +239,7 @@ async def get_weather_overview(
     )
     return api_response(
         data,
-        source="weather",
+        source="realtime_api" if data.get("is_realtime") else "cached" if not data.get("is_mock") else "mock",
         is_realtime=data.get("is_realtime", False),
         is_mock=data.get("is_mock", False),
         cache_status=data.get("cache_status", "unknown"),
@@ -265,7 +265,7 @@ async def get_weather_risk(
     )
     return api_response(
         data,
-        source="weather_risk",
+        source="ai_generated" if not data.get("is_mock") else "mock",
         is_realtime=data.get("is_realtime", False),
         is_mock=data.get("is_mock", False),
         cache_status=data.get("cache_status", "unknown"),
@@ -286,7 +286,14 @@ async def get_regional_prices(
         regions=regions,
         force_refresh=force_refresh,
     )
-    return api_response(data, source="regional_prices", is_mock=all(item.get("is_mock") for item in data["regions"]), cache_status=data.get("cache_status", "from_db"))
+    return api_response(
+        data,
+        source=data.get("source", "database"),
+        source_name=data.get("source_name", "Pricing comparison service"),
+        is_mock=all(item.get("is_mock") for item in data["regions"]),
+        cache_status=data.get("cache_status", "from_db"),
+        confidence=data.get("confidence", 0.0),
+    )
 
 
 @router.get("/realtime-market")
@@ -305,7 +312,7 @@ async def get_realtime_market(
     )
     return api_response(
         data,
-        source="price_aggregator",
+        source="database" if not data["featured_crop"].get("is_mock", False) else "mock",
         is_mock=data["featured_crop"].get("is_mock", False),
         cache_status=data.get("cache_status", "unknown"),
         last_updated=data.get("last_updated"),
@@ -328,7 +335,14 @@ async def get_dashboard_news(
         region=_region_from(current_user, region) if region else None,
         force_refresh=force_refresh,
     )
-    return api_response(data, source="rss", is_realtime=True, is_mock=False, cache_status=data.get("cache_status", "from_db"))
+    return api_response(
+        data,
+        source=data.get("source", "database"),
+        source_name=data.get("source_name", "RSS market news cache"),
+        is_realtime=data.get("is_realtime", False),
+        is_mock=data.get("is_mock", False),
+        cache_status=data.get("cache_status", "from_db"),
+    )
 
 
 @router.get("/data-health")
@@ -343,7 +357,7 @@ async def get_dashboard_data_health(
         region=_region_from(current_user, region),
         crop_name=crop_name,
     )
-    return api_response(data, source="data_health", cache_status="computed")
+    return api_response(data, source="database", source_name="Data health rules", cache_status="computed")
 
 
 @router.post("/refresh")
@@ -360,7 +374,7 @@ async def refresh_dashboard(
         region=_region_from(current_user, region),
         crop_name=crop_name,
     )
-    return api_response(data, source="refresh", cache_status="refreshed", last_updated=data.get("refreshed_at"))
+    return api_response(data, source="realtime_api", source_name="Dashboard refresh aggregator", cache_status="refreshed", last_updated=data.get("refreshed_at"))
 
 
 @router.post("/reset")
@@ -378,7 +392,7 @@ async def reset_dashboard(
     )
     return api_response(
         data,
-        source="dashboard_reset",
+        source="realtime_api",
         is_mock=data["featured_crop"].get("is_mock", False),
         cache_status=data.get("cache_status", "reset_refreshed"),
         last_updated=data.get("generated_at"),

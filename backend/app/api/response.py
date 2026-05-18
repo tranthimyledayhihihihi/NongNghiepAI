@@ -7,6 +7,7 @@ SOURCE_DATABASE = "database"
 SOURCE_AI = "ai_generated"
 SOURCE_CACHED = "cached"
 SOURCE_MOCK = "mock"
+SOURCE_LEGACY = "legacy"
 
 
 def _normalized_source(
@@ -18,6 +19,8 @@ def _normalized_source(
 ) -> str:
     raw = (source or "").lower()
     cache = (cache_status or "").lower()
+    if raw in {"legacy", "old_api", "deprecated"}:
+        return SOURCE_LEGACY
     if is_mock or raw in {"mock", "fallback", "demo"} or cache in {"mock", "miss"}:
         return SOURCE_MOCK
     if raw in {"ai", "ai_generated", "rule", "rule_based_ai", "explainable_rule_ai"}:
@@ -45,6 +48,9 @@ def api_response(
     fetched_at: datetime | None = None,
     confidence: float | None = None,
     message: str = "OK",
+    fallback_used: bool | None = None,
+    timeout: bool | None = None,
+    error: str | None = None,
 ) -> dict:
     if isinstance(data, dict):
         source_name = source_name or data.get("source_name") or data.get("source") or source
@@ -53,8 +59,14 @@ def api_response(
         is_realtime = is_realtime or bool(data.get("is_realtime"))
         is_mock = is_mock or bool(data.get("is_mock"))
         cache_status = data.get("cache_status") or cache_status
+        fallback_used = bool(data.get("fallback_used")) if fallback_used is None else fallback_used
+        timeout = bool(data.get("timeout")) if timeout is None else timeout
+        error = error or data.get("error")
 
     fetched_at = fetched_at or last_updated or datetime.now()
+    updated_at = last_updated or fetched_at
+    fallback_used = bool(fallback_used)
+    timeout = bool(timeout)
     normalized_source = _normalized_source(
         source,
         is_realtime=is_realtime,
@@ -69,6 +81,7 @@ def api_response(
         "source": normalized_source,
         "source_name": source_name or source,
         "fetched_at": fetched_at,
+        "updated_at": updated_at,
         "confidence": confidence if confidence is not None else 0.0,
         "message": message,
         "meta": {
@@ -76,9 +89,13 @@ def api_response(
             "source_name": source_name or source,
             "is_realtime": is_realtime,
             "is_mock": is_mock,
+            "fallback_used": fallback_used,
+            "timeout": timeout,
+            "error": error,
             "cache_status": cache_status,
-            "last_updated": last_updated or datetime.now(),
+            "last_updated": updated_at,
             "fetched_at": fetched_at,
+            "updated_at": updated_at,
             "confidence": confidence if confidence is not None else 0.0,
         },
     })

@@ -305,11 +305,12 @@ class QualityService:
         if base_price is None:
             try:
                 import asyncio
+                from app.core.config import settings
                 from app.integrations.tavily_client import ask_price_qa
-                result = asyncio.run(asyncio.to_thread(
+                result = asyncio.run(asyncio.wait_for(asyncio.to_thread(
                     ask_price_qa,
                     f"giá {crop_name} hiện nay tại {region} VNĐ/kg"
-                ))
+                ), timeout=settings.AI_TIMEOUT_SECONDS))
                 import re
                 nums = re.findall(r'\d[\d\.]{2,8}', result.get("tavily_answer", ""))
                 if nums:

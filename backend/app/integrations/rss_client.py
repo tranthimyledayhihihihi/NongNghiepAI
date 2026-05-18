@@ -5,9 +5,8 @@ from datetime import datetime
 from email.utils import parsedate_to_datetime
 from xml.etree import ElementTree
 
-import httpx
-
 from app.core.config import settings
+from app.core.resilience import build_timeout, resilient_request
 
 
 class RSSClient:
@@ -31,8 +30,13 @@ class RSSClient:
         return [url for url in urls if isinstance(url, str) and url.startswith(("http://", "https://"))]
 
     def _fetch_feed(self, url: str) -> list[dict]:
-        response = httpx.get(url, timeout=3, follow_redirects=True)
-        response.raise_for_status()
+        response = resilient_request(
+            "GET",
+            url,
+            timeout=build_timeout(total=20, connect=5, read=10),
+            retries=2,
+            service_name="RSS market news",
+        )
         root = ElementTree.fromstring(response.content)
         channel_title = root.findtext("./channel/title") or self._host_name(url)
         records = []

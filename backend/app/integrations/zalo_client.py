@@ -1,8 +1,7 @@
 from uuid import uuid4
 
-import httpx
-
 from app.core.config import settings
+from app.core.resilience import build_timeout, resilient_request
 
 
 class ZaloClient:
@@ -15,13 +14,15 @@ class ZaloClient:
                 "error": "ZALO_OA_TOKEN chưa được cấu hình",
             }
         try:
-            response = httpx.post(
+            response = resilient_request(
+                "POST",
                 f"{settings.ZALO_API_BASE_URL.rstrip('/')}/v2.0/oa/message",
                 headers={"access_token": settings.ZALO_OA_TOKEN},
                 json={"recipient": {"user_id": receiver}, "message": {"text": message}},
-                timeout=15,
+                timeout=build_timeout(total=20, connect=5, read=12),
+                retries=1,
+                service_name="Zalo OA",
             )
-            response.raise_for_status()
             data = response.json()
             status = "sent" if data.get("error", 0) == 0 else "failed"
             return {

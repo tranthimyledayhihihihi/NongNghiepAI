@@ -52,10 +52,14 @@ async def get_weather_forecast(region: str, days: int = 7, db: Session = Depends
     forecast = weather_service.get_forecast(db, region, days)
     is_mock = bool(forecast) and all(item.get("is_mock") for item in forecast)
     is_realtime = any(item.get("is_realtime") for item in forecast)
+    fallback_used = any(item.get("fallback_used") for item in forecast)
+    timed_out = any(item.get("timeout") for item in forecast)
     data = {
         "region": region,
         "days": days,
         "forecast": forecast,
+        "fallback_used": fallback_used,
+        "timeout": timed_out,
     }
     return api_response(
         data,
@@ -66,6 +70,8 @@ async def get_weather_forecast(region: str, days: int = 7, db: Session = Depends
         cache_status=(forecast[0].get("cache_status") if forecast else "empty"),
         last_updated=(forecast[0].get("last_updated") if forecast else None),
         confidence=0.84 if is_realtime else 0.68 if not is_mock else 0.42,
+        fallback_used=fallback_used,
+        timeout=timed_out,
     )
 
 
@@ -107,6 +113,8 @@ async def get_agriculture_weather(
         include_hourly=include_hourly,
     )
     current = data.get("current", {})
+    data["fallback_used"] = bool(current.get("fallback_used"))
+    data["timeout"] = bool(current.get("timeout"))
     return api_response(
         data,
         source="ai_generated",
@@ -116,6 +124,8 @@ async def get_agriculture_weather(
         cache_status=current.get("cache_status", "computed"),
         last_updated=data.get("generated_at"),
         confidence=0.86 if current.get("is_realtime") else 0.72,
+        fallback_used=data["fallback_used"],
+        timeout=data["timeout"],
     )
 
 
@@ -147,7 +157,7 @@ async def get_weather_farming_recommendation(region: str, crop: str, db: Session
     )
 
 
-@router.get("/alerts/{region}", response_model=list[WeatherAlertResponse])
+@router.get("/alerts/{region}")
 async def get_agriculture_weather_alerts(
     region: str,
     crop_name: str | None = Query(default=None),
@@ -157,10 +167,19 @@ async def get_agriculture_weather_alerts(
 ):
     current = weather_service.get_current_weather(db, region)
     forecast = weather_service.get_forecast(db, region, days)
-    return weather_service.generate_alerts(current, forecast, crop_name=crop_name, growth_stage=growth_stage)
+    alerts = weather_service.generate_alerts(current, forecast, crop_name=crop_name, growth_stage=growth_stage)
+    return api_response(
+        {"alerts": alerts, "total": len(alerts), "region": region},
+        source="ai_generated" if not current.get("is_mock") else "mock",
+        source_name="Weather alert rules",
+        is_mock=current.get("is_mock", False),
+        cache_status=current.get("cache_status", "computed"),
+        last_updated=current.get("last_updated"),
+        confidence=0.72 if not current.get("is_mock") else 0.42,
+    )
 
 
-@router.get("/recommendations/{region}", response_model=list[WeatherActivityRecommendation])
+@router.get("/recommendations/{region}")
 async def get_weather_activity_recommendations(
     region: str,
     crop_name: str | None = Query(default=None),
@@ -170,12 +189,21 @@ async def get_weather_activity_recommendations(
     current = weather_service.get_current_weather(db, region)
     forecast = weather_service.get_forecast(db, region, 7)
     hourly = weather_service.get_hourly_forecast(db, region, 24)
-    return weather_service.build_activity_recommendations(
+    recommendations = weather_service.build_activity_recommendations(
         current,
         forecast,
         hourly,
         crop_name=crop_name,
         growth_stage=growth_stage,
+    )
+    return api_response(
+        {"recommendations": recommendations, "total": len(recommendations), "region": region},
+        source="ai_generated" if not current.get("is_mock") else "mock",
+        source_name="Weather recommendation rules",
+        is_mock=current.get("is_mock", False),
+        cache_status=current.get("cache_status", "computed"),
+        last_updated=current.get("last_updated"),
+        confidence=0.72 if not current.get("is_mock") else 0.42,
     )
 
 

@@ -75,7 +75,7 @@ const AlertSubscribe = ({ mode = 'price', onCreated }) => {
     let active = true;
     const loadPriceContext = async () => {
       try {
-        const [priceData, suggestionData] = await Promise.all([
+        const results = await Promise.allSettled([
           alertApi.getCurrentPrice({
             cropName: selectedCrop.crop_name,
             cropId: selectedCrop.crop_id,
@@ -89,6 +89,8 @@ const AlertSubscribe = ({ mode = 'price', onCreated }) => {
             regionKey: selectedRegion.region_key,
           }),
         ]);
+        const priceData = results[0].status === 'fulfilled' ? results[0].value : null;
+        const suggestionData = results[1].status === 'fulfilled' ? results[1].value : { suggestions: [] };
         if (!active) return;
         setCurrentPrice(priceData);
         setSuggestions(suggestionData.suggestions || []);
@@ -374,7 +376,10 @@ const AlertSubscribe = ({ mode = 'price', onCreated }) => {
                 {weatherAlerts.length ? (
                   weatherAlerts.slice(0, 3).map((item, index) => (
                     <div key={`${item.title}-${index}`} className="rounded-lg bg-white p-3 text-sm text-gray-700">
-                      <div className="font-medium text-gray-900">{item.title || item.alert_type}</div>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="font-medium text-gray-900">{item.title || item.alert_type}</div>
+                        <DataSourceBadge data={item.source ? item : { ...item, source: 'realtime_api', source_name: 'Weather alerts API' }} />
+                      </div>
                       <div className="mt-1">{item.message}</div>
                     </div>
                   ))

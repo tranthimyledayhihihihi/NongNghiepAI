@@ -28,6 +28,21 @@ async def get_alert_options(
     return alert_service.get_options(db, current_user)
 
 
+@alerts_router.get("/options")
+async def get_alert_options_alias(
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
+):
+    data = alert_service.get_options(db, current_user)
+    return api_response(
+        data,
+        source="database",
+        source_name="Alert rules DB",
+        cache_status="from_db",
+        confidence=0.7,
+    )
+
+
 @router.get("/suggestions")
 async def get_alert_suggestions(
     crop_name: str | None = None,
@@ -71,6 +86,22 @@ async def list_alert_triggers(
     return alert_service.get_trigger_history(db, current_user, limit=limit)
 
 
+@alerts_router.get("/triggers")
+async def list_alert_triggers_alias(
+    limit: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
+):
+    data = alert_service.get_trigger_history(db, current_user, limit=limit)
+    return api_response(
+        data,
+        source="database",
+        source_name="Alert trigger history DB",
+        cache_status="from_db",
+        confidence=0.7,
+    )
+
+
 @router.post("/create", response_model=AlertResponse)
 async def create_price_alert(
     request: AlertCreateRequest,
@@ -109,6 +140,20 @@ async def deactivate_price_alert(alert_id: int, db: Session = Depends(get_db)):
     if result is None:
         raise HTTPException(status_code=404, detail="alert not found")
     return result
+
+
+@alerts_router.delete("/{alert_id}")
+async def deactivate_price_alert_alias(alert_id: int, db: Session = Depends(get_db)):
+    result = alert_service.deactivate_price_alert(db, alert_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="alert not found")
+    return api_response(
+        result,
+        source="database",
+        source_name="Alert rules DB",
+        cache_status="from_db",
+        confidence=0.7,
+    )
 
 
 class WeatherAlertCreateRequest(BaseModel):
@@ -191,7 +236,7 @@ async def smart_alert_list(
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_current_user),
 ):
-    alerts = alert_service.list_price_alerts(db, current_user)
+    alerts = alert_service.get_active_alerts(db, user_id=current_user.UserID if current_user else None)
     return api_response(
         {"alerts": alerts, "total": len(alerts)},
         source="database",
@@ -206,10 +251,11 @@ async def smart_alert_evaluate(
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_current_user),
 ):
-    price_events = alert_service.check_and_trigger_alerts(db, current_user)
-    weather_events = alert_service.check_and_trigger_weather_alerts(db, current_user)
+    events = alert_service.evaluate_alert_rules(db, {}, current_user)
+    price_events = [item for item in events if item.get("alert_kind") != "weather"]
+    weather_events = [item for item in events if item.get("alert_kind") == "weather"]
     data = {
-        "events": price_events + weather_events,
+        "events": events,
         "price_events": price_events,
         "weather_events": weather_events,
     }
@@ -221,22 +267,16 @@ async def smart_alert_auto_generate(
     request: SmartAlertRequest,
     db: Session = Depends(get_db),
 ):
-    from app.services.weather_service import weather_service
     crop = request.crop_name or "lua"
-    risk = weather_service.analyze_agriculture_risk(db, request.region, crop)
-    data = {
-        "alert_type": request.alert_type or "weather",
-        "severity": "critical" if risk.get("risk_level") == "high" else risk.get("risk_level", "medium"),
-        "title": request.title or f"AI alert for {crop} in {request.region}",
-        "message": request.message or f"Risk level is {risk.get('risk_level')}; review recommended actions.",
-        "affected_crop": crop,
-        "recommended_action": request.recommended_action or risk.get("reasons", []),
+    data = alert_service.auto_generate_alerts(db, {"crop_name": crop, "region": request.region})
+    first_alert = (data.get("alerts") or [{}])[0]
+    first_alert.update({
+        "alert_type": request.alert_type or first_alert.get("alert_type"),
+        "title": request.title or first_alert.get("title"),
+        "message": request.message or first_alert.get("message"),
+        "recommended_action": request.recommended_action or [first_alert.get("suggested_action")],
         "send_channels": request.send_channels,
-        "confidence": risk.get("confidence", 0.0),
-        "source": "ai_generated" if not risk.get("is_mock") else "mock",
-        "source_name": "AI Smart Alert generator",
-        "is_mock": risk.get("is_mock", False),
-    }
+    })
     return api_response(
         data,
         source=data["source"],
@@ -281,7 +321,16 @@ async def create_weather_alert(
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_current_user),
 ):
-    return alert_service.create_weather_alert(db, request.model_dump(), current_user)
+    data = alert_service.create_weather_alert(db, request.model_dump(), current_user)
+    return api_response(
+        data,
+        source=data.get("source", "database"),
+        source_name=data.get("source_name", "WeatherAlert DB"),
+        is_mock=data.get("is_mock", False),
+        cache_status=data.get("cache_status", "from_db"),
+        last_updated=data.get("created_at"),
+        confidence=data.get("confidence", 0.7),
+    )
 
 
 @weather_alert_router.delete("/{alert_id}", response_model=AlertDeactivateResponse)

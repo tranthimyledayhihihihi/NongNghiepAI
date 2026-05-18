@@ -1,13 +1,14 @@
 import api from './api';
+import { normalizeApiResponse } from '../utils/apiResponse';
 
 export const harvestApi = {
   forecastHarvest: async (cropName, plantingDate, region) => {
     const response = await api.post('/api/harvest/forecast', {
       crop_name: cropName,
       planting_date: plantingDate,
-      region: region,
+      region,
     });
-    return response.data;
+    return normalizeApiResponse(response);
   },
 
   optimizeHarvest: async (cropName, plantingDate, region) => {
@@ -16,17 +17,17 @@ export const harvestApi = {
       planting_date: plantingDate,
       region,
     });
-    return response.data;
+    return normalizeApiResponse(response);
   },
 
   getCalendar: async () => {
     const response = await api.get('/api/harvest/calendar');
-    return response.data;
+    return normalizeApiResponse(response);
   },
 
   getRisk: async (seasonId) => {
     const response = await api.get(`/api/harvest/risk/${encodeURIComponent(seasonId)}`);
-    return response.data;
+    return normalizeApiResponse(response);
   },
 
   recalculate: async (cropName, plantingDate, region) => {
@@ -35,20 +36,19 @@ export const harvestApi = {
       planting_date: plantingDate,
       region,
     });
-    return response.data;
+    return normalizeApiResponse(response);
   },
 
   predictHarvest: async (cropName, plantingDate, region) => {
-    const response = await api.post('/api/harvest/predict', null, {
-      params: {
-        crop_name: cropName,
-        planting_date: plantingDate,
-        region,
-      },
+    const response = await api.post('/api/harvest/predict', {
+      crop_name: cropName,
+      planting_date: plantingDate,
+      region,
     });
+    const data = normalizeApiResponse(response);
     return {
-      ...response.data,
-      predicted_harvest_date: response.data.predicted_harvest_date || response.data.expected_harvest_date,
+      ...data,
+      predicted_harvest_date: data.predicted_harvest_date || data.expected_harvest_date,
     };
   },
 
@@ -56,32 +56,32 @@ export const harvestApi = {
     const response = await api.get(`/api/harvest/history/${encodeURIComponent(userId)}`, {
       params: { limit },
     });
-    return response.data;
+    return normalizeApiResponse(response);
   },
 
   getSchedules: async (userId = 1, limit = 50) => {
     const response = await api.get(`/api/harvest/schedules/${encodeURIComponent(userId)}`, {
       params: { limit },
     });
-    return response.data;
+    return normalizeApiResponse(response);
   },
 
   getMyHistory: async (limit = 50) => {
     const response = await api.get('/api/harvest/history/me', {
       params: { limit },
     });
-    return response.data;
+    return normalizeApiResponse(response);
   },
 
   getMySchedules: async (limit = 50) => {
     const response = await api.get('/api/harvest/schedules/me', {
       params: { limit },
     });
-    return response.data;
+    return normalizeApiResponse(response);
   },
 
   createSchedule: async (payload) => {
     const response = await api.post('/api/harvest/schedules', payload);
-    return response.data;
+    return normalizeApiResponse(response);
   },
 };

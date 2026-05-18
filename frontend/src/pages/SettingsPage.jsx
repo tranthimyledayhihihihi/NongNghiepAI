@@ -149,7 +149,7 @@ const SettingsPage = () => {
       setLoading(true);
       setError(null);
       try {
-        const [profileData, farmData, alertPrefs, aiPrefs, locationData, channelData] = await Promise.all([
+        const results = await Promise.allSettled([
           settingsApi.getProfile(),
           settingsApi.getFarm(),
           settingsApi.getAlertPreferences(),
@@ -157,6 +157,10 @@ const SettingsPage = () => {
           settingsApi.getLocations(),
           settingsApi.getChannelStatus(),
         ]);
+        const [profileData, farmData, alertPrefs, aiPrefs, locationData, channelData] = results.map((item) => (
+          item.status === 'fulfilled' ? item.value : {}
+        ));
+        const failed = results.filter((item) => item.status === 'rejected');
         if (!active) return;
         setLocations(locationData.locations || []);
         setChannelStatus(channelData);
@@ -185,6 +189,9 @@ const SettingsPage = () => {
           zaloChannel: Boolean(alertPrefs.channels?.zalo),
           smsChannel: Boolean(alertPrefs.channels?.sms),
         }));
+        if (failed.length) {
+          setError('Mot so cau hinh phan hoi cham, trang dang hien thi phan du lieu tai duoc.');
+        }
       } catch (err) {
         if (active) setError(getApiErrorMessage(err, 'Không thể tải cài đặt'));
       } finally {
@@ -239,7 +246,7 @@ const SettingsPage = () => {
     setError(null);
     setSaved(false);
     try {
-      const [profile, farm, alertPrefs, aiPrefs] = await Promise.all([
+      const results = await Promise.allSettled([
         settingsApi.saveProfile({
           full_name: settings.fullName,
           email: settings.email,
@@ -268,6 +275,13 @@ const SettingsPage = () => {
           explanation_level: 'balanced',
         }),
       ]);
+      const failed = results.filter((item) => item.status === 'rejected');
+      if (failed.length === results.length) {
+        throw failed[0].reason;
+      }
+      const [profile, farm, alertPrefs, aiPrefs] = results.map((item) => (
+        item.status === 'fulfilled' ? item.value : {}
+      ));
       setSourceMeta((current) => ({
         ...current,
         profile,
@@ -285,6 +299,9 @@ const SettingsPage = () => {
         location: farm.region || profile.region || current.location,
       }));
       setSaved(true);
+      if (failed.length) {
+        setError('Mot so muc cai dat chua luu duoc do phan hoi cham. Cac muc con lai da duoc cap nhat.');
+      }
       await loadChannelStatus();
     } catch (err) {
       setError(getApiErrorMessage(err, 'Không thể lưu cài đặt'));

@@ -355,7 +355,7 @@ const ForecastPage = () => {
     setSelectedHour(null);
     setHourlyByDate({});
     try {
-      const [result, riskAnalysis, farmingRecommendation] = await Promise.all([
+      const results = await Promise.allSettled([
         weatherApi.getAgricultureWeather({
           region,
           cropName,
@@ -366,11 +366,23 @@ const ForecastPage = () => {
         weatherApi.getRiskAnalysis({ region, cropName }),
         weatherApi.getFarmingRecommendation({ region, cropName }),
       ]);
+      const [weatherResult, riskResult, recommendationResult] = results;
+      if (weatherResult.status === 'rejected') {
+        throw weatherResult.reason;
+      }
+      const result = weatherResult.value;
+      const riskAnalysis = riskResult.status === 'fulfilled' ? riskResult.value : result.risk_analysis;
+      const farmingRecommendation = recommendationResult.status === 'fulfilled'
+        ? recommendationResult.value
+        : result.farming_recommendation;
       setData({
         ...result,
         risk_analysis: riskAnalysis,
         farming_recommendation: farmingRecommendation,
       });
+      if (riskResult.status === 'rejected' || recommendationResult.status === 'rejected') {
+        setError('Mot so khoi khuyen nghi phan hoi cham, du bao chinh van dang hien thi.');
+      }
     } catch (err) {
       setError(getApiErrorMessage(err, 'Không thể tải dữ liệu thời tiết nông vụ'));
     } finally {
@@ -608,7 +620,10 @@ const ForecastPage = () => {
                     </div>
                     <p className="mt-2 text-sm leading-6">{alert.message}</p>
                     <p className="mt-2 text-sm font-medium leading-6">{alert.recommendation}</p>
-                    <p className="mt-3 text-xs font-semibold">{formatDate(alert.forecast_date)}</p>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <p className="text-xs font-semibold">{formatDate(alert.forecast_date)}</p>
+                      <DataSourceBadge data={alert.source ? alert : (data.risk_analysis || data.farming_recommendation || current)} compact />
+                    </div>
                   </article>
                 ))}
               </div>
@@ -631,6 +646,9 @@ const ForecastPage = () => {
                   <p className="mt-2 text-xl font-bold text-slate-950">{item.decision}</p>
                   <p className="mt-2 text-sm leading-6">{item.reason}</p>
                   {item.timing && <p className="mt-3 text-xs font-semibold uppercase">{item.timing}</p>}
+                  <div className="mt-3">
+                    <DataSourceBadge data={item.source ? item : (data.farming_recommendation || data.risk_analysis || current)} compact />
+                  </div>
                 </article>
               ))}
             </div>
@@ -741,7 +759,10 @@ const ForecastPage = () => {
                       <td className="px-3 py-3 text-slate-700">{formatNumber(item.wind_speed, ' km/h')}</td>
                       <td className="max-w-sm px-3 py-3 text-slate-700">{item.recommendation}</td>
                       <td className="px-3 py-3">
-                        <ChevronDown className={`h-4 w-4 transition-transform ${selectedDate === item.date ? 'rotate-180 text-emerald-600' : 'text-gray-300'}`} />
+                        <div className="flex items-center gap-2">
+                          <DataSourceBadge data={item} compact />
+                          <ChevronDown className={`h-4 w-4 transition-transform ${selectedDate === item.date ? 'rotate-180 text-emerald-600' : 'text-gray-300'}`} />
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -766,6 +787,9 @@ const ForecastPage = () => {
                   <p className="text-sm text-slate-600">{formatNumber(item.humidity, '%', 0)} ẩm</p>
                   <p className="text-sm text-slate-600">{formatNumber(item.rain_probability, '%', 0)} mưa</p>
                   <p className="mt-2 text-xs leading-5 text-slate-500">{item.recommendation}</p>
+                  <div className="mt-2">
+                    <DataSourceBadge data={item.source ? item : current} compact />
+                  </div>
                 </article>
               ))}
             </div>

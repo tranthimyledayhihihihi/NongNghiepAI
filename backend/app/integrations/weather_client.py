@@ -1,14 +1,16 @@
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
-import httpx
-
+from app.core.resilience import resilient_request, weather_timeout
 from app.core.config import settings
 
 
 class WeatherProviderError(RuntimeError):
     pass
+
+
+_OPEN_METEO_FAILURE_UNTIL: datetime | None = None
 
 
 WEATHER_CODE_CONDITIONS = {
@@ -180,17 +182,24 @@ class WeatherClient:
         return result
 
     def _get_json(self, url: str, params: dict[str, Any]) -> dict:
-        last_error: Exception | None = None
-        attempts = max(settings.WEATHER_RETRY_COUNT + 1, 1)
-        for _ in range(attempts):
-            try:
-                with httpx.Client(timeout=settings.WEATHER_TIMEOUT_SECONDS) as client:
-                    response = client.get(url, params=params)
-                    response.raise_for_status()
-                    return response.json()
-            except Exception as exc:
-                last_error = exc
-        raise WeatherProviderError(f"Weather provider request failed: {last_error}") from last_error
+        global _OPEN_METEO_FAILURE_UNTIL
+        if _OPEN_METEO_FAILURE_UNTIL and _OPEN_METEO_FAILURE_UNTIL > datetime.now():
+            raise WeatherProviderError("Open-Meteo skipped because a recent provider request failed")
+        try:
+            payload = resilient_request(
+                "GET",
+                url,
+                params=params,
+                headers={"Accept-Encoding": "identity"},
+                timeout=weather_timeout(),
+                retries=settings.WEATHER_RETRY_COUNT,
+                service_name="Open-Meteo",
+            ).json()
+            _OPEN_METEO_FAILURE_UNTIL = None
+            return payload
+        except Exception as exc:
+            _OPEN_METEO_FAILURE_UNTIL = datetime.now() + timedelta(seconds=60)
+            raise WeatherProviderError(f"Weather provider request failed: {exc}") from exc
 
     @staticmethod
     def _first(values: Any, fallback: Any = None) -> Any:

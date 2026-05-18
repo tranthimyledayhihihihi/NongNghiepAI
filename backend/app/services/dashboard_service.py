@@ -1,3 +1,4 @@
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 
@@ -11,18 +12,21 @@ from app.integrations.weather_client import WeatherClient
 from app.models.crop import Crop
 from app.models.harvest import HarvestSchedule
 from app.models.market_news import MarketNews
-from app.models.notification import Notification
 from app.models.price import MarketPrice
 from app.models.quality import QualityCheck
+from app.models.user import User
 from app.models.weather import WeatherData, WeatherObservation
 from app.repositories.common import ensure_crop
+from app.services.alert_service import alert_service
 from app.services.market_news_service import market_news_service
+from app.services.notification_center_service import notification_center_service
 from app.services.price_aggregator_service import price_aggregator_service
 from app.services.pricing_service import pricing_service
 from app.services.weather_service import weather_service
 
 
 DEFAULT_REGIONS = ["Ha Noi", "TP.HCM", "Da Nang", "Can Tho", "Lam Dong", "Dak Lak"]
+logger = logging.getLogger(__name__)
 
 
 class DashboardService:
@@ -41,40 +45,119 @@ class DashboardService:
     ) -> dict:
         selected_region = self._clean_region(region)
         selected_crop = self._clean_crop(crop_name)
+        module_status: list[dict] = []
 
         if force_refresh_market:
-            price_aggregator_service.refresh_prices(db, crop_name=selected_crop)
+            self._safe_dashboard_call(
+                "refresh_prices",
+                lambda: price_aggregator_service.refresh_prices(db, crop_name=selected_crop),
+                {"status": "failed", "records_fetched": 0, "records_saved": 0},
+                module_status,
+            )
         if force_refresh_news:
-            market_news_service.refresh_news()
+            self._safe_dashboard_call(
+                "refresh_news",
+                market_news_service.refresh_news,
+                {"status": "failed", "records_fetched": 0, "records_saved": 0},
+                module_status,
+            )
 
-        featured = self.get_featured_crop(
-            db,
-            crop_name=selected_crop,
-            region=selected_region,
-            force_refresh=False,
+        featured = self._safe_dashboard_call(
+            "featured_crop",
+            lambda: self.get_featured_crop(
+                db,
+                crop_name=selected_crop,
+                region=selected_region,
+                force_refresh=False,
+            ),
+            lambda: self._fallback_featured_crop(selected_crop, selected_region),
+            module_status,
         )
-        weather_risk = self.get_weather_risk(
-            db,
-            region=selected_region,
-            crop_name=selected_crop,
-            force_refresh=force_refresh_weather,
+        weather_risk = self._safe_dashboard_call(
+            "weather_risk",
+            lambda: self.get_weather_risk(
+                db,
+                region=selected_region,
+                crop_name=selected_crop,
+                force_refresh=force_refresh_weather,
+            ),
+            lambda: self._fallback_weather_risk(selected_region, selected_crop),
+            module_status,
         )
-        trend = self.get_price_trend(db, crop_name=selected_crop, region=selected_region, days=7)
-        news = self.get_news(db, limit=6, crop_name=selected_crop, region=None, force_refresh=False)
-        regional_prices = self.get_regional_prices(db, crop_name=selected_crop)["regions"]
-        realtime_market = self.get_realtime_market(db, crop_name=selected_crop, region=selected_region)
+        trend = self._safe_dashboard_call(
+            "price_trend",
+            lambda: self.get_price_trend(db, crop_name=selected_crop, region=selected_region, days=7),
+            lambda: self._fallback_price_trend(selected_crop, selected_region),
+            module_status,
+        )
+        news = self._safe_dashboard_call(
+            "market_news",
+            lambda: self.get_news(db, limit=6, crop_name=selected_crop, region=None, force_refresh=False),
+            lambda: self._fallback_news(),
+            module_status,
+        )
+        regional_price_data = self._safe_dashboard_call(
+            "regional_prices",
+            lambda: self.get_regional_prices(db, crop_name=selected_crop),
+            {"regions": [], "source": "mock", "source_name": "Regional price fallback", "is_mock": True},
+            module_status,
+        )
+        regional_prices = regional_price_data.get("regions", [])
+        realtime_market = self._safe_dashboard_call(
+            "realtime_market",
+            lambda: self.get_realtime_market(db, crop_name=selected_crop, region=selected_region),
+            lambda: self._fallback_realtime_market(featured),
+            module_status,
+        )
+        user = self._get_user(db, user_id)
+        active_alerts = self._safe_dashboard_call(
+            "active_alerts",
+            lambda: alert_service.get_active_alerts(
+                db,
+                user_id=user_id,
+                crop=selected_crop,
+                region=selected_region,
+            ),
+            [],
+            module_status,
+        )
+        if not active_alerts:
+            generated_alerts = self._safe_dashboard_call(
+                "auto_alerts",
+                lambda: alert_service.auto_generate_alerts(
+                    db,
+                    {"crop_name": selected_crop, "region": selected_region},
+                    user,
+                ),
+                {"alerts": []},
+                module_status,
+            )
+            active_alerts = generated_alerts.get("alerts", [])
+        notification_summary = {
+            "total": 0,
+            "unread": 0,
+            "source": "database",
+            "source_name": "Notifications DB",
+            "confidence": 0.7,
+            "updated_at": datetime.now(),
+        }
+        if user:
+            notification_summary = self._safe_dashboard_call(
+                "notification_summary",
+                lambda: notification_center_service.summary(db, user),
+                notification_summary,
+                module_status,
+            )
 
         try:
             schedules_query = db.query(HarvestSchedule)
             quality_query = db.query(QualityCheck)
-            notification_query = db.query(Notification).filter(Notification.IsDeleted.is_(False))
             if user_id:
                 schedules_query = schedules_query.filter(HarvestSchedule.UserID == user_id)
                 quality_query = quality_query.filter(QualityCheck.UserID == user_id)
-                notification_query = notification_query.filter(Notification.UserID == user_id)
             active_seasons = schedules_query.filter(HarvestSchedule.ActualHarvestDate.is_(None)).count()
             quality_checks = quality_query.count()
-            unread_notifications = notification_query.filter(Notification.IsRead.is_(False)).count()
+            unread_notifications = int(notification_summary.get("unread", 0))
         except SQLAlchemyError:
             db.rollback()
             active_seasons = quality_checks = unread_notifications = 0
@@ -83,20 +166,34 @@ class DashboardService:
             "region": selected_region,
             "crop_name": selected_crop,
             "featured_crop": featured,
-            "weather": self.get_weather_overview(db, selected_region, force_refresh=False),
+            "weather": self._safe_dashboard_call(
+                "weather_overview",
+                lambda: self.get_weather_overview(db, selected_region, force_refresh=False),
+                lambda: self._fallback_weather_overview(weather_risk),
+                module_status,
+            ),
             "weather_risk": weather_risk,
-            "forecast": trend["forecast"],
+            "forecast": trend.get("forecast", []),
             "price_trend": trend,
             "regional_prices": regional_prices,
-            "news": news["news"],
+            "news": news.get("news", []),
             "realtime_market": realtime_market,
-            "alert_center": weather_risk.get("alerts", []),
-            "ai_recommendation": self.get_ai_recommendation(db, selected_crop, selected_region),
+            "alert_center": active_alerts,
+            "alert_count": len(active_alerts),
+            "notifications": notification_summary,
+            "ai_recommendation": self._safe_dashboard_call(
+                "ai_recommendation",
+                lambda: self.get_ai_recommendation(db, selected_crop, selected_region),
+                lambda: self._fallback_ai_recommendation(selected_crop, selected_region),
+                module_status,
+            ),
             "active_seasons": active_seasons,
             "quality_checks": quality_checks,
             "unread_notifications": unread_notifications,
             "generated_at": datetime.now(),
             "cache_status": "from_db",
+            "module_status": module_status,
+            "fallback_used": any(not item.get("ok") for item in module_status),
         }
 
     def reset_and_load_dashboard(
@@ -152,22 +249,13 @@ class DashboardService:
         if force_refresh:
             price_aggregator_service.refresh_prices(db, crop_name=selected_crop)
 
-        row = self._latest_market_price_for_crop(db, selected_crop, selected_region)
-        if row:
-            current_price = float(row.PricePerKg)
-            last_updated = row.UpdatedAt
-            source_name = row.SourceName or "database"
-            source_url = row.SourceURL
-            is_mock = False
-            cache_status = "from_db"
-        else:
-            current = pricing_service.get_current_price(db, selected_crop, selected_region)
-            current_price = float(current["current_price"])
-            last_updated = current.get("last_updated") or datetime.now()
-            source_name = current.get("source_name") or "pricing_service"
-            source_url = None
-            is_mock = bool(current.get("is_mock"))
-            cache_status = "mock" if is_mock else "from_db"
+        current = pricing_service.get_current_price(db, selected_crop, selected_region)
+        current_price = float(current["current_price"])
+        last_updated = current.get("last_updated") or datetime.now()
+        source_name = current.get("source_name") or "pricing_service"
+        source_url = current.get("source_url")
+        is_mock = bool(current.get("is_mock"))
+        cache_status = current.get("cache_status", "from_db")
 
         history = pricing_service.get_price_history(db, selected_crop, selected_region, 7)
         previous_day = history[-2]["avg_price"] if len(history) >= 2 else current_price
@@ -186,7 +274,8 @@ class DashboardService:
             "last_updated": last_updated,
             "source_name": source_name,
             "source_url": source_url,
-            "is_realtime": False,
+            "source": current.get("source", "database"),
+            "is_realtime": current.get("is_realtime", False),
             "is_mock": is_mock,
             "cache_status": cache_status,
         }
@@ -210,6 +299,10 @@ class DashboardService:
                     "confidence": "high" if offset <= 3 else "medium",
                     "trend": "up" if direction > 0 else "down",
                     "reason_codes": ["db_price_history", "rule_based_trend"],
+                    "source": "ai_generated" if recent and not any(item.get("is_mock") for item in recent) else "mock",
+                    "source_name": "Pricing forecast engine",
+                    "updated_at": datetime.now(),
+                    "is_mock": any(item.get("is_mock") for item in recent) if recent else True,
                 }
             )
         return {
@@ -219,17 +312,16 @@ class DashboardService:
             "forecast": forecast,
             "trend": trend,
             "is_mock": any(item.get("is_mock") for item in recent) if recent else True,
+            "source": "ai_generated" if recent and not any(item.get("is_mock") for item in recent) else "mock",
+            "source_name": "Pricing forecast engine",
+            "confidence": 0.62 if recent else 0.42,
+            "updated_at": datetime.now(),
         }
 
     def get_weather_overview(self, db: Session, region: str = "Ha Noi", force_refresh: bool = False) -> dict:
         selected_region = self._clean_region(region)
-        if force_refresh:
-            current = weather_service.get_current_weather(db, selected_region, force_refresh=True)
-        else:
-            current = self._current_weather_from_db(db, selected_region) or weather_service.get_current_weather(db, selected_region)
-        forecast = self._weather_forecast_from_db(db, selected_region, 7)
-        if not forecast:
-            forecast = weather_service.get_forecast(db, selected_region, 7)
+        current = weather_service.get_current_weather(db, selected_region, force_refresh=force_refresh)
+        forecast = weather_service.get_weather_forecast(db, selected_region, 7)
         alerts = weather_service.generate_alerts(current, forecast)
         return {
             "current": current,
@@ -249,14 +341,14 @@ class DashboardService:
         growth_stage: str | None = None,
         force_refresh: bool = False,
     ) -> dict:
-        overview = self.get_weather_overview(db, region, force_refresh=force_refresh)
-        current = overview.get("current", {})
-        forecast = overview.get("forecast", [])
-        hourly = weather_service._build_hourly(current)[:24]
-        alerts = weather_service.generate_alerts(current, forecast, crop_name=crop_name, growth_stage=growth_stage)
+        current = weather_service.get_current_weather(db, region, force_refresh=force_refresh)
+        forecast = weather_service.get_weather_forecast(db, region, 7)
+        hourly = weather_service.get_hourly_forecast(db, region, 24)
+        service_risk = weather_service.get_weather_risk(db, region, crop_name)
+        alerts = service_risk.get("alerts") or weather_service.generate_alerts(current, forecast, crop_name=crop_name, growth_stage=growth_stage)
         recommendations = weather_service.build_activity_recommendations(current, forecast, hourly, crop_name, growth_stage)
-        risk_score = self._weather_risk_score(current, forecast, alerts)
-        risk_level = "high" if risk_score >= 70 else "medium" if risk_score >= 40 else "low"
+        risk_score = service_risk.get("risk_score") or self._weather_risk_score(current, forecast, alerts)
+        risk_level = service_risk.get("risk_level") or ("high" if risk_score >= 70 else "medium" if risk_score >= 40 else "low")
         rain_24h = round(sum(float(item.get("rainfall") or 0) for item in hourly[:24]), 1)
         return {
             "region": self._clean_region(region),
@@ -295,50 +387,31 @@ class DashboardService:
         if force_refresh:
             price_aggregator_service.refresh_prices(db, crop_name=selected_crop)
 
-        crop = ensure_crop(db, selected_crop)
-        rows = (
-            db.query(MarketPrice)
-            .filter(MarketPrice.CropID == crop.CropID)
-            .order_by(desc(MarketPrice.PriceDate), desc(MarketPrice.UpdatedAt))
-            .limit(80)
-            .all()
-        )
         wanted = regions or DEFAULT_REGIONS
-        by_region: dict[str, MarketPrice] = {}
-        for row in rows:
-            if row.Region not in by_region:
-                by_region[row.Region] = row
-
-        result = []
-        for region_name in wanted:
-            row = by_region.get(region_name)
-            if row is None:
-                current = pricing_service.get_current_price(db, selected_crop, region_name)
-                result.append(
-                    {
-                        "region": region_name,
-                        "price": float(current["current_price"]),
-                        "unit": "VND/kg",
-                        "source_name": current.get("source_name") or "pricing_service",
-                        "last_updated": current.get("last_updated"),
-                        "is_mock": bool(current.get("is_mock")),
-                        "cache_status": "mock" if current.get("is_mock") else "from_db",
-                    }
-                )
-                continue
-            result.append(
-                {
-                    "region": row.Region,
-                    "price": float(row.PricePerKg),
-                    "unit": "VND/kg",
-                    "source_name": row.SourceName,
-                    "source_url": row.SourceURL,
-                    "last_updated": row.UpdatedAt,
-                    "is_mock": False,
-                    "cache_status": "from_db",
-                }
-            )
-        return {"crop_name": selected_crop, "regions": result, "cache_status": "from_db"}
+        comparison = pricing_service.get_price_comparison(db, selected_crop, wanted)
+        regions_data = [
+            {
+                "region": item.get("region"),
+                "price": float(item.get("current_price") or item.get("market_price") or 0),
+                "unit": item.get("unit") or "VND/kg",
+                "source": item.get("source"),
+                "source_name": item.get("source_name"),
+                "source_url": item.get("source_url"),
+                "last_updated": item.get("last_updated"),
+                "is_mock": bool(item.get("is_mock")),
+                "cache_status": item.get("cache_status"),
+                "confidence": item.get("confidence"),
+            }
+            for item in comparison.get("regions", [])
+        ]
+        return {
+            "crop_name": selected_crop,
+            "regions": regions_data,
+            "cache_status": comparison.get("cache_status", "computed"),
+            "source": comparison.get("source"),
+            "source_name": comparison.get("source_name"),
+            "confidence": comparison.get("confidence"),
+        }
 
     def get_realtime_market(self, db: Session, crop_name: str = "lua", region: str = "Ha Noi", force_refresh: bool = False) -> dict:
         featured = self.get_featured_crop(db, crop_name=crop_name, region=region, force_refresh=force_refresh)
@@ -360,7 +433,7 @@ class DashboardService:
     ) -> dict:
         if force_refresh:
             market_news_service.refresh_news()
-        return market_news_service.get_latest(db, limit=limit, crop_name=crop_name, region=region)
+        return market_news_service.get_market_news(db, limit=limit, crop=crop_name, region=region)
 
     def get_data_health(self, db: Session, region: str = "Ha Noi", crop_name: str = "lua") -> dict:
         weather_count = db.query(WeatherData).filter(WeatherData.Region == self._clean_region(region)).count()
@@ -422,6 +495,156 @@ class DashboardService:
             "period": "7 ngày tới",
             "source": "rule_based_ai",
             "is_mock": bool(current_price.get("is_mock")) or weather["is_mock"],
+            "last_updated": datetime.now(),
+        }
+
+    def _safe_dashboard_call(self, name: str, factory, fallback, statuses: list[dict] | None = None):
+        try:
+            value = factory()
+            if statuses is not None:
+                statuses.append({"module": name, "ok": True, "fallback_used": False})
+            return value
+        except Exception as exc:
+            logger.warning("[dashboard] module=%s failed error=%s", name, exc)
+            value = fallback() if callable(fallback) else fallback
+            if isinstance(value, dict):
+                value = {
+                    **value,
+                    "fallback_used": True,
+                    "timeout": "timeout" in str(exc).lower(),
+                    "error": str(exc),
+                    "source": value.get("source", "mock"),
+                    "source_name": value.get("source_name", f"{name} fallback"),
+                    "is_mock": value.get("is_mock", True),
+                    "cache_status": value.get("cache_status", "mock"),
+                }
+            if statuses is not None:
+                statuses.append({
+                    "module": name,
+                    "ok": False,
+                    "fallback_used": True,
+                    "timeout": "timeout" in str(exc).lower(),
+                    "error": str(exc),
+                })
+            return value
+
+    @staticmethod
+    def _fallback_featured_crop(crop_name: str, region: str) -> dict:
+        return {
+            "name": crop_name,
+            "display_name": crop_name.title(),
+            "location": region,
+            "price": 0,
+            "unit": "VND/kg",
+            "change": "+0.0%",
+            "change_day_pct": 0,
+            "change_week_pct": 0,
+            "trend": "stable",
+            "last_updated": datetime.now(),
+            "source": "mock",
+            "source_name": "Dashboard featured crop fallback",
+            "is_mock": True,
+            "cache_status": "mock",
+            "confidence": 0.3,
+        }
+
+    @staticmethod
+    def _fallback_weather_risk(region: str, crop_name: str) -> dict:
+        current = {
+            "region": region,
+            "temperature": None,
+            "rainfall": None,
+            "humidity": None,
+            "source": "mock",
+            "source_name": "Dashboard weather fallback",
+            "is_mock": True,
+            "cache_status": "mock",
+            "last_updated": datetime.now(),
+        }
+        return {
+            "region": region,
+            "crop_name": crop_name,
+            "risk_score": 0,
+            "risk_level": "low",
+            "current": current,
+            "forecast": [],
+            "hourly_forecast": [],
+            "rain_24h": 0,
+            "alerts": [],
+            "activity_recommendations": [],
+            "source": "mock",
+            "source_name": "Dashboard weather fallback",
+            "is_mock": True,
+            "cache_status": "mock",
+            "last_updated": datetime.now(),
+        }
+
+    @staticmethod
+    def _fallback_weather_overview(weather_risk: dict) -> dict:
+        current = weather_risk.get("current", {})
+        return {
+            "current": current,
+            "forecast": weather_risk.get("forecast", []),
+            "alerts": weather_risk.get("alerts", []),
+            "is_mock": True,
+            "is_realtime": False,
+            "cache_status": current.get("cache_status", "mock"),
+            "last_updated": current.get("last_updated") or datetime.now(),
+        }
+
+    @staticmethod
+    def _fallback_price_trend(crop_name: str, region: str) -> dict:
+        return {
+            "crop_name": crop_name,
+            "region": region,
+            "history": [],
+            "forecast": [],
+            "trend": "stable",
+            "is_mock": True,
+            "source": "mock",
+            "source_name": "Dashboard price trend fallback",
+            "confidence": 0.3,
+            "updated_at": datetime.now(),
+        }
+
+    @staticmethod
+    def _fallback_news() -> dict:
+        return {
+            "news": [],
+            "source": "mock",
+            "source_name": "Dashboard market news fallback",
+            "is_mock": True,
+            "cache_status": "mock",
+            "confidence": 0.3,
+        }
+
+    @staticmethod
+    def _fallback_realtime_market(featured: dict) -> dict:
+        return {
+            "featured_crop": featured,
+            "global_references": [],
+            "exchange_rate": {},
+            "cache_status": featured.get("cache_status", "mock"),
+            "last_updated": featured.get("last_updated") or datetime.now(),
+            "source": "mock",
+            "source_name": "Dashboard realtime market fallback",
+            "is_mock": True,
+        }
+
+    @staticmethod
+    def _fallback_ai_recommendation(crop_name: str, region: str) -> dict:
+        return {
+            "crop_name": crop_name,
+            "region": region,
+            "action": "review",
+            "title": "Kiem tra du lieu noi bo",
+            "description": "AI dashboard dang dung goi y du phong vi mot module phan hoi cham.",
+            "confidence": 0.35,
+            "expected_price": 0,
+            "period": "hom nay",
+            "source": "mock",
+            "source_name": "Dashboard AI fallback",
+            "is_mock": True,
             "last_updated": datetime.now(),
         }
 
@@ -624,6 +847,15 @@ class DashboardService:
     def _display_crop(crop_name: str) -> str:
         labels = {"lua": "Lúa", "gao": "Gạo", "ca phe": "Cà phê", "ho tieu": "Hồ tiêu"}
         return labels.get(crop_name, crop_name.title())
+
+    @staticmethod
+    def _get_user(db: Session, user_id: int | None) -> User | None:
+        if not user_id:
+            return None
+        try:
+            return db.query(User).filter(User.UserID == user_id).first()
+        except Exception:
+            return None
 
     @staticmethod
     def _pct_change(current: float, previous: float | None) -> float:

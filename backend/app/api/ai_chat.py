@@ -8,6 +8,7 @@ from app.api.auth import get_current_user, get_optional_current_user
 from app.api.response import api_response
 from app.core.database import get_db
 from app.models.user import User
+from app.services.ai_context_service import ai_context_service
 from app.services.claude_service import claude_service
 
 router = APIRouter(prefix="/api/ai-chat", tags=["ai-chat"])
@@ -40,7 +41,7 @@ def _build_reasons(context: dict, result: dict) -> list[str]:
     reasons: list[str] = []
     weather = context.get("weather") or {}
     pricing = context.get("pricing") or {}
-    market = context.get("market_trends") or {}
+    market = (context.get("market") or {}).get("trends") or context.get("market_trends") or {}
     if weather:
         reasons.append(
             f"Weather source {weather.get('source_name', 'backend')}: {weather.get('temperature')}C, rain {weather.get('rainfall')}mm."
@@ -66,14 +67,15 @@ def _build_recommendations(context: dict, result: dict) -> list[str]:
     recommendations: list[str] = []
     risk = context.get("weather_risk") or {}
     pricing = context.get("pricing") or {}
-    market_risks = context.get("market_risks") or {}
+    market_risks = (context.get("market") or {}).get("risks") or context.get("market_risks") or {}
     if risk.get("recommended_actions"):
         recommendations.extend(risk.get("recommended_actions")[:3])
     elif risk.get("reasons"):
         recommendations.extend(risk.get("reasons")[:3])
     if pricing.get("recommendation"):
         recommendations.append(pricing["recommendation"])
-    for item in market_risks.get("risks", [])[:2]:
+    risks = market_risks if isinstance(market_risks, list) else market_risks.get("risks", [])
+    for item in risks[:2]:
         if item.get("recommendation"):
             recommendations.append(item["recommendation"])
     if not recommendations:
@@ -85,70 +87,13 @@ def _default_context(db: Session, user: User | None, request: AIChatMessageReque
     region = request.region or (user.Region if user and user.Region else "Ha Noi")
     crop = request.crop_name or "lua"
     intent = _detect_intent(request.message)
-    context: dict = {"intent": intent, "region": region, "crop_name": crop, "tools_used": []}
-    try:
-        from app.services.weather_service import weather_service
-        context["weather"] = weather_service.get_current_weather(db, region)
-        context["weather_risk"] = weather_service.analyze_agriculture_risk(db, region, crop)
-        context["tools_used"].extend(["get_weather", "get_weather_risk"])
-    except Exception as exc:
-        context["weather_error"] = str(exc)
-    if True:
-        try:
-            from app.services.pricing_service import pricing_service
-            context["pricing"] = pricing_service.build_pricing_engine(db, crop_name=crop, region=region)
-            context["tools_used"].append("get_price")
-        except Exception as exc:
-            context["pricing_error"] = str(exc)
-    if True:
-        try:
-            from app.services.pricing_service import pricing_service
-            trend = pricing_service.build_pricing_engine(db, crop_name=crop, region=region)
-            context["market_trends"] = {
-                "crop": crop,
-                "region": region,
-                "trend": trend.get("trend"),
-                "confidence": trend.get("confidence", 0.0),
-                "reasons": trend.get("reasons", []),
-                "recommendation": trend.get("recommendation"),
-                "source": trend.get("source"),
-                "source_name": "Market trend engine",
-                "is_mock": trend.get("is_mock", False),
-            }
-            context["market_risks"] = {
-                "risks": [
-                    {
-                        "title": "Price volatility",
-                        "severity": "high" if trend.get("trend") == "decreasing" else "medium" if trend.get("is_mock") else "low",
-                        "recommendation": "Create price alert and avoid selling all stock at one time.",
-                    }
-                ],
-                "source_name": "AI Market Risk Engine",
-                "confidence": trend.get("confidence", 0.0),
-            }
-            context["tools_used"].extend(["get_market_trends", "get_market_risks"])
-        except Exception as exc:
-            context["market_error"] = str(exc)
-    if user:
-        try:
-            from app.services.quality_service import quality_service
-            context["quality_history"] = quality_service.get_history(db, user.UserID, 5)
-            context["tools_used"].append("get_quality_history")
-        except Exception:
-            context["quality_history"] = []
-        try:
-            from app.services.harvest_service import harvest_service
-            context["harvest_status"] = harvest_service.get_schedules(db, user.UserID, 5)
-            context["tools_used"].append("get_harvest_status")
-        except Exception:
-            context["harvest_status"] = []
-        try:
-            from app.services.alert_service import alert_service
-            context["alerts"] = alert_service.list_price_alerts(db, user)
-            context["tools_used"].append("get_alerts")
-        except Exception:
-            context["alerts"] = []
-    return context
+    return ai_context_service.build_ai_context(
+        db,
+        user_id=user.UserID if user else None,
+        region=region,
+        crop=crop,
+        intent=intent,
+    )
 
 
 @router.post("/message")
@@ -157,7 +102,16 @@ async def ai_chat_message(
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_current_user),
 ):
-    context = _default_context(db, current_user, request)
+    intent = _detect_intent(request.message)
+    region = request.region or (current_user.Region if current_user and current_user.Region else "Ha Noi")
+    crop = request.crop_name or "lua"
+    context = ai_context_service.build_ai_context(
+        db,
+        user_id=current_user.UserID if current_user else None,
+        region=region,
+        crop=crop,
+        intent=intent,
+    )
     result = claude_service.answer_question(
         db,
         question=request.message,
@@ -167,14 +121,25 @@ async def ai_chat_message(
         session_id=request.session_id,
         extra_context=context,
     )
+    recommendations = _build_recommendations(context, result)
     data = {
-        **result,
+        "answer": result.get("answer"),
+        "provider": result.get("provider"),
+        "model": result.get("model"),
+        "token_usage": result.get("token_usage"),
+        "is_mock": result.get("is_mock", False),
+        "error": result.get("error"),
+        "timeout": result.get("timeout", False),
+        "fallback_used": result.get("is_mock", False) or bool(result.get("error")),
+        "created_at": result.get("created_at"),
         "message": request.message,
         "intent": context["intent"],
-        "data_sources": context.get("tools_used", []),
+        "data_sources": context.get("data_sources", []),
+        "context_used": context,
         "tool_context": context,
         "reasons": _build_reasons(context, result),
-        "recommendations": _build_recommendations(context, result),
+        "recommendations": recommendations,
+        "suggested_actions": recommendations,
         "source": "ai_generated" if not result.get("is_mock") else "mock",
         "source_name": result.get("provider") or "AI Farming Assistant",
         "confidence": 0.74 if not result.get("is_mock") else 0.45,
@@ -186,6 +151,9 @@ async def ai_chat_message(
         is_mock=result.get("is_mock", False),
         last_updated=result.get("created_at"),
         confidence=data["confidence"],
+        fallback_used=data["fallback_used"],
+        timeout=data["timeout"],
+        error=data.get("error"),
     )
 
 

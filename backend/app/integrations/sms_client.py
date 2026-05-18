@@ -1,8 +1,7 @@
 from uuid import uuid4
 
-import httpx
-
 from app.core.config import settings
+from app.core.resilience import build_timeout, resilient_request
 
 _ESMS_URL = "https://rest.esms.vn/MainService.svc/json/SendMultipleMessage_V4_post_json/"
 
@@ -26,8 +25,14 @@ class SmsClient:
                 "Brandname": settings.ESMS_BRAND_NAME,
                 "SmsType": str(settings.ESMS_SMS_TYPE),
             }
-            response = httpx.post(_ESMS_URL, json=payload, timeout=15)
-            response.raise_for_status()
+            response = resilient_request(
+                "POST",
+                _ESMS_URL,
+                json=payload,
+                timeout=build_timeout(total=20, connect=5, read=12),
+                retries=1,
+                service_name="ESMS",
+            )
             data = response.json()
             # ESMS trả về CodeResult == "100" là thành công
             if str(data.get("CodeResult", "")) == "100":

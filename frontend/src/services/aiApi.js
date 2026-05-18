@@ -1,28 +1,34 @@
-import api from './api';
+import api, { getApiErrorMessage, withApiTimeout } from './api';
+import { normalizeApiResponse } from '../utils/apiResponse';
+
+const request = async (factory, fallback) => {
+  try {
+    return normalizeApiResponse(await factory());
+  } catch (error) {
+    error.message = getApiErrorMessage(error, fallback);
+    throw error;
+  }
+};
 
 export const aiApi = {
   chat: async ({ question, cropName, region, sessionId }) => {
-    const response = await api.post('/api/ai-chat/message', {
+    return request(() => api.post('/api/ai-chat/message', {
       message: question,
       crop_name: cropName,
       region,
       session_id: sessionId,
-    }, { timeout: 90000 });
-    return response.data;
+    }, withApiTimeout('ai')), 'Khong goi duoc AI chat');
   },
 
   getHistory: async (limit = 20) => {
-    const response = await api.get(`/api/ai-chat/history?limit=${limit}`);
-    return response.data?.data ?? response.data;
+    return request(() => api.get(`/api/ai-chat/history?limit=${limit}`), 'Khong tai duoc lich su chat');
   },
 
   deleteMessage: async (convId) => {
-    const response = await api.delete(`/api/chat/history/${convId}`);
-    return response.data;
+    return request(() => api.delete(`/api/chat/history/${convId}`), 'Khong xoa duoc tin chat');
   },
 
   clearHistory: async () => {
-    const response = await api.delete('/api/chat/history');
-    return response.data;
+    return request(() => api.delete('/api/chat/history'), 'Khong xoa duoc lich su chat');
   },
 };

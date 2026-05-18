@@ -1,81 +1,92 @@
-import api from './api';
+import api, { getApiErrorMessage } from './api';
+import { normalizeApiResponse } from '../utils/apiResponse';
 
-const unwrap = (response) => response.data?.data ?? response.data;
+const unwrap = (response) => normalizeApiResponse(response);
+const request = async (factory, fallback) => {
+  try {
+    return unwrap(await factory());
+  } catch (error) {
+    error.message = getApiErrorMessage(error, fallback);
+    throw error;
+  }
+};
 
 export const marketApi = {
   getChannels: async () => {
-    const response = await api.get('/api/market/channels');
-    return unwrap(response);
+    return request(() => api.get('/api/market/channels'), 'Khong tai duoc legacy market channels');
   },
 
   getNews: async ({ limit = 10, crop, region } = {}) => {
-    const response = await api.get('/api/market/news', {
+    return request(() => api.get('/api/market/news', {
       params: {
         limit,
         crop: crop || undefined,
         region: region || undefined,
       },
-    });
-    return unwrap(response);
+    }), 'Khong tai duoc market news');
   },
 
   getPrices: async ({ crop = 'lua', region = 'Ha Noi' } = {}) => {
-    const response = await api.get('/api/market/prices', {
+    return request(() => api.get('/api/market/prices', {
       params: { crop, region },
-    });
-    return unwrap(response);
+    }), 'Khong tai duoc market prices');
   },
 
   analyzeNews: async ({ title, summary, crop, region }) => {
-    const response = await api.post('/api/market/analyze-news', {
+    return request(() => api.post('/api/market/analyze-news', {
       title,
       summary,
       crop,
       region,
-    });
-    return unwrap(response);
+    }), 'Khong phan tich duoc tin thi truong');
   },
 
   getTrends: async ({ crop = 'lua', region = 'Ha Noi' } = {}) => {
-    const response = await api.get('/api/market/trends', {
+    return request(() => api.get('/api/market/trends', {
       params: { crop, region },
-    });
-    return unwrap(response);
+    }), 'Khong tai duoc market trends');
   },
 
   getOpportunities: async ({ crop = 'lua', region = 'Ha Noi' } = {}) => {
-    const response = await api.get('/api/market/opportunities', {
+    return request(() => api.get('/api/market/opportunities', {
       params: { crop, region },
-    });
-    return unwrap(response);
+    }), 'Khong tai duoc market opportunities');
   },
 
   getRisks: async ({ crop = 'lua', region = 'Ha Noi' } = {}) => {
-    const response = await api.get('/api/market/risks', {
+    return request(() => api.get('/api/market/risks', {
       params: { crop, region },
-    });
-    return unwrap(response);
+    }), 'Khong tai duoc market risks');
   },
 
   suggestMarket: async (cropName, region, quantity, qualityGrade = 'grade_1') => {
-    const response = await api.post('/api/market/suggest', {
+    return request(() => api.post('/api/market/suggest', {
       crop_name: cropName,
       region,
       quantity: Number(quantity),
       quality_grade: qualityGrade,
-    });
-    return unwrap(response);
+    }), 'Khong goi y duoc kenh ban hang');
   },
 
   getHistory: async (userId = 1, limit = 50) => {
-    const response = await api.get(`/api/market/history/${encodeURIComponent(userId)}`, {
+    return request(() => api.get(`/api/market/history/${encodeURIComponent(userId)}`, {
       params: { limit },
-    });
-    return unwrap(response);
+    }), 'Khong tai duoc market history legacy');
   },
 
   getDemand: async (cropName) => {
-    const response = await api.get(`/api/market/demand/${encodeURIComponent(cropName)}`);
-    return unwrap(response);
+    return request(() => api.get(`/api/market/demand/${encodeURIComponent(cropName)}`), 'Khong tai duoc demand legacy');
   },
 };
+
+marketApi.getMarketNews = marketApi.getNews;
+marketApi.getMarketPrices = marketApi.getPrices;
+marketApi.getMarketTrends = (crop, region) => marketApi.getTrends({ crop, region });
+marketApi.getMarketOpportunities = marketApi.getOpportunities;
+marketApi.getMarketRisks = marketApi.getRisks;
+marketApi.analyzeMarketNews = marketApi.analyzeNews;
+
+marketApi.getLegacyChannels = marketApi.getChannels;
+marketApi.suggestMarketLegacy = marketApi.suggestMarket;
+marketApi.getMarketHistoryLegacy = marketApi.getHistory;
+marketApi.getMarketDemandLegacy = marketApi.getDemand;

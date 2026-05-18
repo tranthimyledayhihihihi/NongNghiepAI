@@ -1,9 +1,12 @@
+import asyncio
 import os
 import logging
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 from pathlib import Path
+
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)  # noqa
 
@@ -68,10 +71,13 @@ class GeminiClient:
 
         for model_name in self.model_fallbacks:
             try:
-                response = await self.client.aio.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(system_instruction=system_instruction),
+                response = await asyncio.wait_for(
+                    self.client.aio.models.generate_content(
+                        model=model_name,
+                        contents=prompt,
+                        config=types.GenerateContentConfig(system_instruction=system_instruction),
+                    ),
+                    timeout=settings.AI_TIMEOUT_SECONDS,
                 )
                 return response.text or ""
             except Exception as e:
@@ -138,10 +144,13 @@ class GeminiClient:
 
         for model_name in self.model_fallbacks:
             try:
-                response = await self.client.aio.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(system_instruction=sys_prompt),
+                response = await asyncio.wait_for(
+                    self.client.aio.models.generate_content(
+                        model=model_name,
+                        contents=prompt,
+                        config=types.GenerateContentConfig(system_instruction=sys_prompt),
+                    ),
+                    timeout=settings.AI_TIMEOUT_SECONDS,
                 )
                 return response.text or ""
             except Exception as e:
@@ -187,12 +196,15 @@ Hãy phân tích kỹ và trả lời đầy đủ, chuyên sâu dựa trên d�
 
         for model_name in self.model_fallbacks:
             try:
-                response = await self.client.aio.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system_instruction,
-                    )
+                response = await asyncio.wait_for(
+                    self.client.aio.models.generate_content(
+                        model=model_name,
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            system_instruction=system_instruction,
+                        ),
+                    ),
+                    timeout=settings.AI_TIMEOUT_SECONDS,
                 )
                 if model_name != self.model_fallbacks[0]:
                     logger.info(f"Dùng model fallback thành công: {model_name}")

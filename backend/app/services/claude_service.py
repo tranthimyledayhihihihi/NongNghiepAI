@@ -21,7 +21,10 @@ class ClaudeService:
         session_id: str | None = None,
         extra_context: dict | None = None,
     ) -> dict:
-        context = self._build_context(db, crop_name=crop_name, region=region, user_id=user_id)
+        built_context = {} if extra_context else self._build_context(db, crop_name=crop_name, region=region, user_id=user_id)
+        context = dict(extra_context or {})
+        for key, value in built_context.items():
+            context.setdefault(key, value)
         if extra_context:
             context.update({key: value for key, value in extra_context.items() if key not in {"weather_error", "pricing_error"}})
             context["tools_used"] = extra_context.get("tools_used", [])
@@ -41,6 +44,7 @@ class ClaudeService:
                 "token_usage": None,
                 "is_mock": True,
                 "error": str(exc),
+                "timeout": "timeout" in str(exc).lower(),
             }
 
         self._save_conversation(db, user_id, session_id, question, completion, context, crop_name)
@@ -52,6 +56,7 @@ class ClaudeService:
             "context": context,
             "is_mock": completion.get("is_mock", False),
             "error": completion.get("error"),
+            "timeout": completion.get("timeout", False),
             "created_at": datetime.now(),
         }
 

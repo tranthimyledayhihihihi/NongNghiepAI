@@ -58,6 +58,20 @@ const initialMessages = [
   },
 ];
 
+const starterMessages = [
+  {
+    id: 'welcome',
+    type: 'bot',
+    content: 'Chao ban, toi la AgriBot AI. Hay hoi ve gia, thoi tiet, tin thi truong, canh bao hoac lich thu hoach de toi lay context tu backend.',
+    timestamp: initialMessages[0]?.timestamp || new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+    source: {
+      source: 'database',
+      source_name: 'AI context service',
+      confidence: 0.7,
+    },
+  },
+];
+
 function formatHistoryTime(isoString) {
   if (!isoString) return '';
   const d = new Date(isoString);
@@ -111,7 +125,7 @@ const MessageAvatar = ({ type }) => (
 
 const AIChatPage = () => {
   const { isAuthenticated } = useAuth();
-  const [messages, setMessages] = useState(initialMessages);
+  const [messages, setMessages] = useState(starterMessages);
   const [inputMessage, setInputMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -165,7 +179,7 @@ const AIChatPage = () => {
     try {
       await aiApi.deleteMessage(id);
       setChatHistory((prev) => prev.filter((item) => item.id !== id));
-      if (activeHistoryId === id) { setMessages(initialMessages); setActiveHistoryId(null); }
+      if (activeHistoryId === id) { setMessages(starterMessages); setActiveHistoryId(null); }
     } catch { /* silent */ }
     finally { setDeletingId(null); }
   }, [activeHistoryId]);
@@ -175,7 +189,7 @@ const AIChatPage = () => {
     try {
       await aiApi.clearHistory();
       setChatHistory([]);
-      setMessages(initialMessages);
+      setMessages(starterMessages);
       setActiveHistoryId(null);
     } catch { /* silent */ }
   }, []);
@@ -203,6 +217,9 @@ const AIChatPage = () => {
       source: data.source,
       source_name: data.source_name || data.provider,
       is_mock: data.is_mock,
+      fallback_used: data.fallback_used || data.is_mock,
+      timeout: data.timeout,
+      error: data.error,
       confidence: data.confidence,
       fetched_at: data.fetched_at,
     } : null,
@@ -215,7 +232,7 @@ const AIChatPage = () => {
 
   const handleSendMessage = async () => {
     const trimmedMessage = inputMessage.trim();
-    if (!trimmedMessage) return;
+    if (!trimmedMessage || isTyping) return;
 
     setMessages((current) => [
       ...current,
@@ -239,8 +256,17 @@ const AIChatPage = () => {
       });
       setMessages((current) => [...current, createBotResponse(data)]);
       loadHistory();
-    } catch {
-      setMessages((current) => [...current, createBotResponse()]);
+    } catch (error) {
+      setMessages((current) => [...current, createBotResponse({
+        answer: 'AI dang phan tich cham hoac ket noi bi timeout. Ban co the gui lai cau hoi sau it phut; du lieu cache/fallback van duoc giu tren cac trang lien quan.',
+        source: 'mock',
+        source_name: 'AI timeout fallback',
+        is_mock: true,
+        fallback_used: true,
+        timeout: true,
+        error: error?.message,
+        confidence: 0.35,
+      })]);
     } finally {
       setIsTyping(false);
     }
@@ -418,7 +444,7 @@ const AIChatPage = () => {
 
       <button
         type="button"
-        onClick={() => { setMessages(initialMessages); setActiveHistoryId(null); setHistoryOpen(false); }}
+        onClick={() => { setMessages(starterMessages); setActiveHistoryId(null); setHistoryOpen(false); }}
         className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-green-700 py-2.5 text-sm font-semibold text-white hover:bg-green-800"
       >
         <Plus className="h-4 w-4" />
@@ -562,6 +588,7 @@ const AIChatPage = () => {
             <div className="flex items-start gap-3">
               <MessageAvatar type="bot" />
               <div className="rounded-lg border border-gray-200 bg-white p-4">
+                <div className="mb-2 text-sm text-gray-600">AI dang phan tich...</div>
                 <div className="flex gap-2">
                   <span className="h-2 w-2 animate-bounce rounded-full bg-gray-400" />
                   <span className="h-2 w-2 animate-bounce rounded-full bg-gray-400 [animation-delay:0.15s]" />
@@ -617,15 +644,16 @@ const AIChatPage = () => {
               value={inputMessage}
               onChange={(event) => setInputMessage(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === 'Enter') handleSendMessage();
+                if (event.key === 'Enter' && !isTyping) handleSendMessage();
               }}
+              disabled={isTyping}
               placeholder="Hỏi AgriBot về kỹ thuật, sâu bệnh, giá..."
               className="min-w-0 flex-1 rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100"
             />
             <button
               type="button"
               onClick={handleSendMessage}
-              disabled={!inputMessage.trim()}
+              disabled={!inputMessage.trim() || isTyping}
               className="rounded-lg bg-green-700 p-3 text-white hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-50"
               aria-label="Gửi tin nhắn"
             >

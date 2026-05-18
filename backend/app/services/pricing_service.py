@@ -250,6 +250,12 @@ class PricingService:
                     "avg_price": float(item.avg_price),
                     "min_price": float(item.min_price or item.avg_price),
                     "max_price": float(item.max_price or item.avg_price),
+                    "source": "database",
+                    "source_name": "PriceHistory DB",
+                    "fetched_at": datetime.now(),
+                    "updated_at": item.record_date.isoformat(),
+                    "confidence": 0.68,
+                    "is_mock": False,
                 }
                 for item in history
             ]
@@ -262,6 +268,12 @@ class PricingService:
                 "avg_price": round(base_price * (1 + ((days - i) % 5 - 2) * 0.01), 2),
                 "min_price": round(base_price * 0.94, 2),
                 "max_price": round(base_price * 1.06, 2),
+                "source": "mock",
+                "source_name": "Pricing demo history",
+                "fetched_at": datetime.now(),
+                "updated_at": datetime.now(),
+                "confidence": 0.42,
+                "is_mock": True,
             }
             for i in range(days, 0, -1)
         ]
@@ -427,6 +439,43 @@ class PricingService:
     # Helpers - kết hợp cả Tien và Quang
     # ------------------------------------------------------------------ #
 
+    def get_price_forecast(self, crop_name: str, region: str, days: int = 7) -> dict:
+        return self.forecast_price(crop_name, region, days)
+
+    def get_price_comparison(self, db: Session, crop_name: str, regions: list[str]) -> dict:
+        regions = regions or ["Ha Noi", "TP.HCM", "Da Nang", "Can Tho"]
+        items = [self.get_current_price(db, crop_name, region, include_weather=False) for region in regions]
+        has_real_data = any(not item.get("is_mock") for item in items)
+        return {
+            "crop_name": crop_name,
+            "crop": crop_name,
+            "regions": items,
+            "best_region": max(items, key=lambda item: item.get("current_price", 0), default=None),
+            "source": "database" if has_real_data else "mock",
+            "source_name": "Pricing comparison service",
+            "is_mock": not has_real_data,
+            "cache_status": "computed",
+            "confidence": 0.7 if has_real_data else 0.42,
+            "last_updated": datetime.now(),
+        }
+
+    def get_ai_price_recommendation(
+        self,
+        db: Session,
+        crop_name: str,
+        region: str,
+        quality_grade: str | None = None,
+        quantity: float | None = None,
+    ) -> dict:
+        return self.build_pricing_engine(
+            db,
+            crop_name=crop_name,
+            region=region,
+            quantity=quantity or 1,
+            quality_grade=quality_grade or "grade_1",
+            days=7,
+        )
+
     def _get_price_from_db(self, db: Session, crop_name: str, region: str, quality_grade: str) -> float:
         """Lấy giá từ DB trực tiếp (Quang) rồi fallback mock."""
         try:
@@ -484,6 +533,11 @@ class PricingService:
                 "price": float(item.price),
                 "unit": getattr(item, "unit", "VND/kg"),
                 "collected_at": item.collected_at.isoformat(),
+                "source": "database",
+                "source_name": getattr(item, "source_name", None) or "MarketPrices DB",
+                "updated_at": item.collected_at.isoformat(),
+                "confidence": 0.7,
+                "is_mock": False,
             })
         if result:
             return result
@@ -496,6 +550,11 @@ class PricingService:
                 "price": self._mock_price(crop_name, r, "grade_1"),
                 "unit": "VND/kg",
                 "collected_at": datetime.now().isoformat(),
+                "source": "mock",
+                "source_name": "Pricing regional fallback",
+                "updated_at": datetime.now().isoformat(),
+                "confidence": 0.42,
+                "is_mock": True,
             }
             for r in fallback_regions if r != region
         ][:3]

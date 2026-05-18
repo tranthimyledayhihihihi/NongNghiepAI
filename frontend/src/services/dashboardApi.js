@@ -1,115 +1,114 @@
-import api from './api';
+import api, { getApiErrorMessage, settledValue } from './api';
+import { normalizeApiResponse } from '../utils/apiResponse';
 
-const unwrap = (response) => response.data?.data ?? response.data;
+const unwrap = (response) => normalizeApiResponse(response);
+const request = async (factory, fallback) => {
+  try {
+    return unwrap(await factory());
+  } catch (error) {
+    error.message = getApiErrorMessage(error, fallback);
+    throw error;
+  }
+};
 
 export const dashboardApi = {
   getOverview: async (region, { cropName = 'lua' } = {}) => {
-    const response = await api.get('/api/dashboard/overview', {
+    return request(() => api.get('/api/dashboard/overview', {
       params: {
         region: region || undefined,
         crop_name: cropName,
       },
-    });
-    return unwrap(response);
+    }), 'Khong tai duoc dashboard overview');
   },
 
   getRealtimeStatus: async (region, { cropName = 'lua' } = {}) => {
-    const response = await api.get('/api/dashboard/realtime-status', {
+    return request(() => api.get('/api/dashboard/realtime-status', {
       params: {
         region: region || undefined,
         crop_name: cropName,
       },
-    });
-    return unwrap(response);
+    }), 'Khong tai duoc realtime status');
   },
 
   getAiInsights: async (region, { cropName = 'lua' } = {}) => {
-    const response = await api.get('/api/dashboard/ai-insights', {
+    return request(() => api.get('/api/dashboard/ai-insights', {
       params: {
         region: region || undefined,
         crop_name: cropName,
       },
-    });
-    return unwrap(response);
+    }), 'Khong tai duoc AI insights');
   },
 
   getRiskSummary: async (region, { cropName = 'lua' } = {}) => {
-    const response = await api.get('/api/dashboard/risk-summary', {
+    return request(() => api.get('/api/dashboard/risk-summary', {
       params: {
         region: region || undefined,
         crop_name: cropName,
       },
-    });
-    return unwrap(response);
+    }), 'Khong tai duoc risk summary');
   },
 
   getActionToday: async (region, { cropName = 'lua' } = {}) => {
-    const response = await api.get('/api/dashboard/action-today', {
+    return request(() => api.get('/api/dashboard/action-today', {
       params: {
         region: region || undefined,
         crop_name: cropName,
       },
-    });
-    return unwrap(response);
+    }), 'Khong tai duoc action today');
   },
 
   getSummary: async (region, { cropName = 'lua', forceRefresh = false } = {}) => {
-    const response = await api.get('/api/dashboard/summary', {
+    return request(() => api.get('/api/dashboard/summary', {
       params: {
         region: region || undefined,
         crop_name: cropName,
         force_refresh: forceRefresh,
       },
-    });
-    return unwrap(response);
+    }), 'Khong tai duoc dashboard summary');
   },
 
   getFeaturedCrop: async (region, { cropName = 'lua', forceRefresh = false } = {}) => {
-    const response = await api.get('/api/dashboard/featured-crop', {
+    return request(() => api.get('/api/dashboard/featured-crop', {
       params: {
         region: region || undefined,
         crop_name: cropName,
         force_refresh: forceRefresh,
       },
-    });
-    return unwrap(response);
+    }), 'Khong tai duoc featured crop');
   },
 
   getPriceTrend: async ({ cropName = 'lua', region, days = 7 } = {}) => {
-    const response = await api.get('/api/dashboard/price-trend', {
+    return request(() => api.get('/api/dashboard/price-trend', {
       params: {
         crop_name: cropName,
         region: region || undefined,
         days,
       },
-    });
-    return unwrap(response);
+    }), 'Khong tai duoc price trend');
   },
 
   getWeatherOverview: async (region, { forceRefresh = false } = {}) => {
-    const response = await api.get('/api/dashboard/weather-overview', {
+    return request(() => api.get('/api/dashboard/weather-overview', {
       params: {
         region: region || undefined,
         force_refresh: forceRefresh,
       },
-    });
-    return unwrap(response);
+    }), 'Khong tai duoc weather overview');
   },
 
   getWeatherRisk: async ({ region, cropName = 'lua', growthStage, forceRefresh = false } = {}) => {
-    const response = await api.get('/api/dashboard/weather-risk', {
+    return request(() => api.get('/api/dashboard/weather-risk', {
       params: {
         region: region || undefined,
         crop_name: cropName,
         growth_stage: growthStage || undefined,
         force_refresh: forceRefresh,
       },
-    });
-    return unwrap(response);
+    }), 'Khong tai duoc weather risk');
   },
 
   getRegionalPrices: async ({ cropName = 'lua', regions, forceRefresh = false } = {}) => {
-    const response = await api.get('/api/dashboard/regional-prices', {
+    return request(() => api.get('/api/dashboard/regional-prices', {
       params: {
         crop_name: cropName,
         regions,
@@ -118,71 +117,108 @@ export const dashboardApi = {
       paramsSerializer: {
         indexes: null,
       },
-    });
-    return unwrap(response);
+    }), 'Khong tai duoc regional prices');
   },
 
   getRealtimeMarket: async ({ cropName = 'lua', region, forceRefresh = false } = {}) => {
-    const response = await api.get('/api/dashboard/realtime-market', {
+    return request(() => api.get('/api/dashboard/realtime-market', {
       params: {
         crop_name: cropName,
         region: region || undefined,
         force_refresh: forceRefresh,
       },
-    });
-    return unwrap(response);
+    }), 'Khong tai duoc realtime market');
   },
 
   getNews: async ({ limit = 6, cropName, region, forceRefresh = false } = {}) => {
-    const response = await api.get('/api/dashboard/news', {
+    return request(() => api.get('/api/dashboard/news', {
       params: {
         limit,
         crop_name: cropName || undefined,
         region: region || undefined,
         force_refresh: forceRefresh,
       },
-    });
-    return unwrap(response);
+    }), 'Khong tai duoc dashboard news');
   },
 
   getDataHealth: async ({ cropName = 'lua', region } = {}) => {
-    const response = await api.get('/api/dashboard/data-health', {
+    return request(() => api.get('/api/dashboard/data-health', {
       params: {
         crop_name: cropName,
         region: region || undefined,
       },
-    });
-    return unwrap(response);
+    }), 'Khong tai duoc data health');
   },
 
   refresh: async ({ source = 'all', cropName = 'lua', region } = {}) => {
-    const response = await api.post('/api/dashboard/refresh', null, {
+    return request(() => api.post('/api/dashboard/refresh', null, {
       params: {
         source,
         crop_name: cropName,
         region: region || undefined,
       },
-    });
-    return unwrap(response);
+    }), 'Khong refresh duoc dashboard');
   },
 
   reset: async ({ cropName = 'lua', region } = {}) => {
-    const response = await api.post('/api/dashboard/reset', null, {
+    return request(() => api.post('/api/dashboard/reset', null, {
       params: {
         crop_name: cropName,
         region: region || undefined,
       },
-    });
-    return unwrap(response);
+    }), 'Khong reset duoc dashboard');
   },
 
   getAiRecommendation: async ({ cropName = 'lua', region } = {}) => {
-    const response = await api.get('/api/dashboard/ai-recommendation', {
+    return request(() => api.get('/api/dashboard/ai-recommendation', {
       params: {
         crop_name: cropName,
         region: region || undefined,
       },
-    });
-    return unwrap(response);
+    }), 'Khong tai duoc AI recommendation');
   },
+};
+
+dashboardApi.getDashboardOverview = dashboardApi.getOverview;
+dashboardApi.getDashboardRealtimeStatus = dashboardApi.getRealtimeStatus;
+dashboardApi.getAIInsights = dashboardApi.getAiInsights;
+dashboardApi.getDashboardAIInsights = dashboardApi.getAiInsights;
+dashboardApi.getDashboardRiskSummary = dashboardApi.getRiskSummary;
+dashboardApi.getDashboardActionToday = dashboardApi.getActionToday;
+
+dashboardApi.getDashboardFullData = async (region, { cropName = 'lua' } = {}) => {
+  const results = await Promise.allSettled([
+    dashboardApi.getDashboardOverview(region, { cropName }),
+    dashboardApi.getRealtimeStatus(region, { cropName }),
+    dashboardApi.getAIInsights(region, { cropName }),
+    dashboardApi.getRiskSummary(region, { cropName }),
+    dashboardApi.getActionToday(region, { cropName }),
+  ]);
+  const errors = results
+    .map((result, index) => ({ result, key: ['overview', 'realtimeStatus', 'aiInsights', 'riskSummary', 'actionToday'][index] }))
+    .filter(({ result }) => result.status === 'rejected')
+    .map(({ result, key }) => ({ key, message: getApiErrorMessage(result.reason, `Khong tai duoc ${key}`) }));
+  return {
+    overview: settledValue(results[0], {
+      region,
+      crop_name: cropName,
+      featured_crop: {},
+      weather: {},
+      weather_risk: {},
+      forecast: [],
+      regional_prices: [],
+      news: [],
+      realtime_market: {},
+      alert_center: [],
+      notifications: {},
+      source: 'mock',
+      source_name: 'Dashboard frontend fallback',
+      fallback_used: true,
+    }),
+    realtimeStatus: settledValue(results[1], { api_status: [], source: 'mock', fallback_used: true }),
+    aiInsights: settledValue(results[2], null),
+    riskSummary: settledValue(results[3], {}),
+    actionToday: settledValue(results[4], { actions: [], source: 'mock', fallback_used: true }),
+    errors,
+  };
 };

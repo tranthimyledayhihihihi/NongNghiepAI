@@ -5,6 +5,7 @@ from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
+from app.api.response import api_response
 from app.core.database import get_db
 from app.models.price import MarketPrice
 # Giả định đường dẫn đến model CropType của bạn
@@ -67,6 +68,29 @@ def get_current_price(
         raise HTTPException(status_code=404, detail="crop not found")
 
     display_crop_name = crop.CropName if crop else crop_name.strip()
+    data = pricing_service.get_current_price(
+        db,
+        display_crop_name,
+        resolved_region,
+        include_weather=False,
+    )
+    data.update(
+        {
+            "crop_id": crop.CropID if crop else None,
+            "region_key": location_service.region_key(resolved_region),
+            "price": float(data.get("current_price") or 0),
+            "unit": "VND/kg",
+        }
+    )
+    return api_response(
+        data,
+        source=data.get("source", "database"),
+        source_name=data.get("source_name"),
+        is_mock=data.get("is_mock", False),
+        cache_status=data.get("cache_status", "from_db"),
+        last_updated=data.get("last_updated"),
+        confidence=data.get("confidence", 0.0),
+    )
     base_query = db.query(MarketPrice)
     if crop:
         base_query = base_query.filter(MarketPrice.CropID == crop.CropID)

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.api.response import api_response
 from app.core.database import get_db
 from app.services.market_news_service import market_news_service
 
@@ -14,9 +15,25 @@ async def get_market_news(
     region: str | None = None,
     db: Session = Depends(get_db),
 ):
-    return market_news_service.get_latest(db, limit=limit, crop_name=crop_name, region=region)
+    data = market_news_service.get_market_news(db, limit=limit, crop=crop_name, region=region)
+    return api_response(
+        data,
+        source=data.get("source", "cached"),
+        source_name=data.get("source_name") or "RSS market news cache",
+        is_realtime=data.get("is_realtime", False),
+        is_mock=data.get("is_mock", False),
+        cache_status=data.get("cache_status", "from_db"),
+        confidence=0.7,
+    )
 
 
 @router.post("/refresh")
 async def refresh_market_news():
-    return market_news_service.refresh_news()
+    data = market_news_service.refresh_news()
+    return api_response(
+        data,
+        source="realtime_api" if data.get("status") == "success" else "mock",
+        source_name="RSS market news refresh",
+        is_mock=data.get("status") != "success",
+        confidence=0.7 if data.get("status") == "success" else 0.3,
+    )

@@ -4,10 +4,13 @@ Weather Service - merged Tien (repository + schema API) + Quang (mock data + for
 - Internal: get_forecast, get_harvest_weather_warning
 """
 import random
+import logging
 from datetime import date, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
+from app.core.resilience import ExternalServiceError
 from app.integrations.weather_client import WeatherClient
 from app.repositories.weather_repository import (
     create_weather_data,
@@ -18,6 +21,7 @@ from app.repositories.weather_repository import (
 from app.schemas.weather_schema import WeatherCreateRequest
 
 _weather_client = WeatherClient()
+logger = logging.getLogger(__name__)
 
 # Bảng chuyển đổi tên ASCII → tên tiếng Việt chuẩn lưu trong DB
 _REGION_NORMALIZE = {
@@ -68,6 +72,14 @@ class WeatherService:
     def get_current_weather(self, db: Session, region: str, force_refresh: bool = False) -> dict:
         """Lấy thời tiết hiện tại: Live API (Open-Meteo) → fallback DB → fallback mock."""
         region = _normalize_region(region)
+        live_error: Exception | None = None
+
+        cached_weather = get_latest_weather(db, region)
+        if cached_weather and not force_refresh:
+            cached = self._weather_row_to_current(cached_weather, fallback_used=False)
+            if self._is_weather_fresh(cached.get("last_updated")):
+                cached["cache_status"] = "from_db"
+                return cached
 
         # ── 1. Gọi live API để lấy nhiệt độ thực tế theo giờ ──────────────
         try:
@@ -111,7 +123,7 @@ class WeatherService:
                 "latitude":         live.get("latitude"),
                 "longitude":        live.get("longitude"),
                 "recorded_at":      live.get("source_updated_at") or now,
-                "source":           "Open-Meteo",
+                "source":           "realtime_api",
                 "source_name":      "Open-Meteo",
                 "source_url":       "https://open-meteo.com",
                 "is_realtime":      True,
@@ -119,16 +131,20 @@ class WeatherService:
                 "last_updated":     now,
                 "data_age_minutes": 0,
                 "cache_status":     "live",
+                "fallback_used":     False,
+                "timeout":           False,
                 "agriculture_insights": [],
                 "warnings":         self._analyze_warnings(
                     temp_max or 30, temp_min or 20, rain, hum
                 ),
             }
-        except Exception:
+        except Exception as exc:
+            live_error = exc
+            logger.warning("[weather] Open-Meteo current failed region=%s error=%s", region, exc)
             pass  # API lỗi → thử DB
 
         # ── 2. Fallback: đọc từ DB (crawler đã cào) ────────────────────────
-        weather = get_latest_weather(db, region)
+        weather = cached_weather or get_latest_weather(db, region)
         if weather:
             temp_min = float(weather.TempMin) if weather.TempMin is not None else None
             temp_max = float(weather.TempMax) if weather.TempMax is not None else None
@@ -159,14 +175,17 @@ class WeatherService:
                 "latitude":         float(weather.Latitude) if weather.Latitude is not None else None,
                 "longitude":        float(weather.Longitude) if weather.Longitude is not None else None,
                 "recorded_at":      recorded,
-                "source":           "Open-Meteo",
+                "source":           "cached",
                 "source_name":      weather.SourceName or "Open-Meteo",
                 "source_url":       "https://open-meteo.com",
                 "is_realtime":      False,
                 "is_mock":          False,
                 "last_updated":     recorded,
                 "data_age_minutes": age_min,
-                "cache_status":     "db",
+                "cache_status":     "stale" if live_error else "db",
+                "fallback_used":     live_error is not None,
+                "timeout":           live_error is not None,
+                "message":           "Du lieu realtime dang cham, he thong da dung du lieu thoi tiet du phong." if live_error else None,
                 "agriculture_insights": [],
                 "warnings":         self._analyze_warnings(
                     temp_max or 30, temp_min or 20,
@@ -199,9 +218,72 @@ class WeatherService:
             "last_updated":     datetime.now(),
             "data_age_minutes": 0,
             "cache_status":     "miss",
+            "fallback_used":     True,
+            "timeout":           live_error is not None,
+            "message":           "Du lieu realtime dang cham, he thong da dung du lieu du phong.",
             "agriculture_insights": [],
             "warnings":         [],
         }
+
+    def _weather_row_to_current(self, weather, *, fallback_used: bool) -> dict:
+        temp_min = float(weather.TempMin) if weather.TempMin is not None else None
+        temp_max = float(weather.TempMax) if weather.TempMax is not None else None
+        temp_avg = None
+        if temp_min is not None and temp_max is not None:
+            temp_avg = round((temp_min + temp_max) / 2, 1)
+        elif temp_max is not None:
+            temp_avg = temp_max
+        elif temp_min is not None:
+            temp_avg = temp_min
+
+        recorded = weather.SourceUpdatedAt or weather.CreatedAt or (
+            datetime.combine(weather.RecordDate, datetime.min.time()) if weather.RecordDate else datetime.now()
+        )
+        age_min = int((datetime.now() - recorded).total_seconds() / 60)
+        rainfall = float(weather.Rainfall or 0)
+        humidity = float(weather.Humidity or 70)
+        return {
+            "region": weather.Region,
+            "temperature": temp_avg,
+            "temp_min": temp_min,
+            "temp_max": temp_max,
+            "rainfall": float(weather.Rainfall) if weather.Rainfall is not None else None,
+            "humidity": float(weather.Humidity) if weather.Humidity is not None else None,
+            "condition": weather.WeatherDesc,
+            "wind_speed": float(weather.WindSpeed) if weather.WindSpeed is not None else None,
+            "uv_index": float(weather.UVIndex) if weather.UVIndex is not None else None,
+            "pressure": float(weather.Pressure) if weather.Pressure is not None else None,
+            "weather_code": weather.WeatherCode,
+            "latitude": float(weather.Latitude) if weather.Latitude is not None else None,
+            "longitude": float(weather.Longitude) if weather.Longitude is not None else None,
+            "recorded_at": recorded,
+            "source": "cached",
+            "source_name": weather.SourceName or "Open-Meteo cache",
+            "source_url": "https://open-meteo.com",
+            "is_realtime": False,
+            "is_mock": False,
+            "last_updated": recorded,
+            "data_age_minutes": age_min,
+            "cache_status": "from_db",
+            "fallback_used": fallback_used,
+            "timeout": False,
+            "agriculture_insights": [],
+            "warnings": self._analyze_warnings(temp_max or 30, temp_min or 20, rainfall, humidity),
+        }
+
+    @staticmethod
+    def _is_weather_fresh(updated_at) -> bool:
+        if not updated_at:
+            return False
+        if isinstance(updated_at, str):
+            try:
+                updated_at = datetime.fromisoformat(updated_at.replace("Z", "+00:00")).replace(tzinfo=None)
+            except ValueError:
+                return False
+        try:
+            return (datetime.now() - updated_at).total_seconds() <= settings.WEATHER_CACHE_TTL_SECONDS
+        except TypeError:
+            return False
 
     def create_weather(self, db: Session, request: WeatherCreateRequest) -> dict:
         """Tạo bản ghi thời tiết mới."""
@@ -709,11 +791,18 @@ class WeatherService:
     def get_forecast(self, db: Session, region: str, days: int = 7) -> list[dict]:
         """7-day forecast: realtime API, cached DB fallback, then mock fallback."""
         norm = _normalize_region(region)
+        live_error: Exception | None = None
+        rows = get_weather_forecast(db, norm, days)
+        if rows:
+            cached = self._forecast_rows_to_dict(rows, days, fallback_used=False, timeout=False)
+            if cached and self._is_weather_fresh(cached[0].get("last_updated")):
+                return cached
+
         try:
             live_items = _weather_client.get_forecast(norm, days)
             humidity_hint = None
             try:
-                humidity_hint = self.get_current_weather(db, norm).get("humidity")
+                humidity_hint = float(rows[0].Humidity) if rows and rows[0].Humidity is not None else None
             except Exception:
                 humidity_hint = None
             result = []
@@ -754,41 +843,22 @@ class WeatherService:
                     "is_mock": False,
                     "cache_status": "live",
                     "last_updated": item.get("last_updated") or datetime.now(),
+                    "fallback_used": False,
+                    "timeout": False,
                 })
             if result:
                 return result
-        except Exception:
-            pass
+        except Exception as exc:
+            live_error = exc
+            logger.warning("[weather] Open-Meteo forecast failed region=%s error=%s", region, exc)
 
-        rows = get_weather_forecast(db, norm, days)
         if rows:
-            result = []
-            for w in rows[:days]:
-                temp_max = float(w.TempMax or 30)
-                temp_min = float(w.TempMin or 20)
-                rain = float(w.Rainfall or 0)
-                hum = float(w.Humidity or 70)
-                updated = w.SourceUpdatedAt or w.CreatedAt or datetime.now()
-                result.append({
-                    "date": str(w.RecordDate),
-                    "temperature": round((temp_max + temp_min) / 2, 1),
-                    "temp_min": temp_min,
-                    "temp_max": temp_max,
-                    "humidity": round(hum, 1),
-                    "rainfall": round(rain, 1),
-                    "condition": w.WeatherDesc or "unknown",
-                    "wind_speed": float(w.WindSpeed) if w.WindSpeed is not None else None,
-                    "uv_index": float(w.UVIndex) if w.UVIndex is not None else None,
-                    "weather_code": w.WeatherCode,
-                    "source": "cached",
-                    "source_name": w.SourceName or "Open-Meteo cache",
-                    "is_realtime": False,
-                    "is_mock": False,
-                    "cache_status": "from_db",
-                    "last_updated": updated,
-                    "warnings": self._analyze_warnings(temp_max, temp_min, rain, hum),
-                })
-            return result
+            return self._forecast_rows_to_dict(
+                rows,
+                days,
+                fallback_used=live_error is not None,
+                timeout=live_error is not None,
+            )
 
         base = MOCK_WEATHER.get(norm, MOCK_WEATHER["default"])
         result = []
@@ -812,7 +882,48 @@ class WeatherService:
                 "is_mock": True,
                 "cache_status": "mock",
                 "last_updated": datetime.now(),
+                "fallback_used": True,
+                "timeout": live_error is not None,
                 "warnings": self._analyze_warnings(temp, base["temp_min"] + variation, rain, hum),
+            })
+        return result
+
+    def _forecast_rows_to_dict(
+        self,
+        rows,
+        days: int,
+        *,
+        fallback_used: bool,
+        timeout: bool,
+    ) -> list[dict]:
+        result = []
+        for w in rows[:days]:
+            temp_max = float(w.TempMax or 30)
+            temp_min = float(w.TempMin or 20)
+            rain = float(w.Rainfall or 0)
+            hum = float(w.Humidity or 70)
+            updated = w.SourceUpdatedAt or w.CreatedAt or datetime.now()
+            result.append({
+                "date": str(w.RecordDate),
+                "temperature": round((temp_max + temp_min) / 2, 1),
+                "temp_min": temp_min,
+                "temp_max": temp_max,
+                "humidity": round(hum, 1),
+                "rainfall": round(rain, 1),
+                "condition": w.WeatherDesc or "unknown",
+                "wind_speed": float(w.WindSpeed) if w.WindSpeed is not None else None,
+                "uv_index": float(w.UVIndex) if w.UVIndex is not None else None,
+                "weather_code": w.WeatherCode,
+                "source": "cached",
+                "source_name": w.SourceName or "Open-Meteo cache",
+                "is_realtime": False,
+                "is_mock": False,
+                "cache_status": "stale" if fallback_used else "from_db",
+                "last_updated": updated,
+                "fallback_used": fallback_used,
+                "timeout": timeout,
+                "message": "Du lieu realtime dang cham, he thong da dung du lieu thoi tiet du phong." if fallback_used else None,
+                "warnings": self._analyze_warnings(temp_max, temp_min, rain, hum),
             })
         return result
 
@@ -888,6 +999,16 @@ class WeatherService:
     def generate_alerts(self, _current: dict, forecast: list[dict], crop_name: str | None = None, growth_stage: str | None = None) -> list[dict]:
         """Public wrapper để dashboard_service có thể gọi được."""
         return self._build_alerts(forecast, crop_name=crop_name, growth_stage=growth_stage)
+
+
+    def get_weather_forecast(self, db: Session, region: str, days: int = 7) -> list[dict]:
+        return self.get_forecast(db, region, days)
+
+    def get_weather_risk(self, db: Session, region: str, crop: str | None = None) -> dict:
+        return self.analyze_agriculture_risk(db, region, crop or "crop")
+
+    def get_farming_recommendation(self, db: Session, region: str, crop: str | None = None) -> dict:
+        return self.farming_recommendation(db, region, crop or "crop")
 
 
 weather_service = WeatherService()

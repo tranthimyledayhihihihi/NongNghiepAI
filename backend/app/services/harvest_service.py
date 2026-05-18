@@ -460,20 +460,17 @@ class HarvestService:
     @staticmethod
     def _get_latest_weather(db: Session, region: str) -> Optional[Dict]:
         try:
-            from app.models.weather import WeatherData
+            from app.services.weather_service import weather_service
 
-            weather = (
-                db.query(WeatherData)
-                .filter(WeatherData.Region == region)
-                .order_by(WeatherData.RecordDate.desc())
-                .first()
-            )
-            if not weather:
-                return None
+            weather = weather_service.get_current_weather(db, region)
             return {
-                "temperature": float(weather.TempMax) if weather.TempMax else None,
-                "rainfall": float(weather.Rainfall) if weather.Rainfall else None,
-                "humidity": float(weather.Humidity) if weather.Humidity else None,
+                "temperature": float(weather["temperature"]) if weather.get("temperature") is not None else None,
+                "rainfall": float(weather["rainfall"]) if weather.get("rainfall") is not None else None,
+                "humidity": float(weather["humidity"]) if weather.get("humidity") is not None else None,
+                "source": weather.get("source"),
+                "source_name": weather.get("source_name"),
+                "fetched_at": weather.get("fetched_at") or weather.get("last_updated"),
+                "updated_at": weather.get("updated_at") or weather.get("last_updated"),
             }
         except Exception:
             return None

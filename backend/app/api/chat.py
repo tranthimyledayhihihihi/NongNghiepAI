@@ -1,3 +1,5 @@
+from unicodedata import category, normalize
+
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, model_validator
 from sqlalchemy.orm import Session
@@ -192,6 +194,17 @@ def _detect_region(question: str) -> str:
             return region
     return DEFAULT_PRICE_REGION
 
+
+def _detect_crop(question: str) -> str:
+    from app.services.pricing_service import pricing_service
+
+    normalized_q = normalize("NFD", question.lower())
+    normalized_q = "".join(ch for ch in normalized_q if category(ch) != "Mn")
+    for crop in sorted(pricing_service.crop_base_prices, key=len, reverse=True):
+        if crop in normalized_q:
+            return crop
+    return "lua"
+
 @router.post("", response_model=ChatResponse)
 async def ask_farming_advice(
     request: ChatRequest,
@@ -203,6 +216,32 @@ async def ask_farming_advice(
         context_parts.append(request.context_data)
 
     q = request.question
+
+    # Legacy /api/chat now reuses the same context builder used by /api/ai-chat.
+    try:
+        from app.services.ai_context_service import ai_context_service
+        from app.services.claude_service import claude_service
+
+        context = ai_context_service.build_ai_context(
+            db,
+            user_id=current_user.UserID if current_user else request.user_id,
+            region=_detect_region(q),
+            crop=_detect_crop(q),
+            intent=_detect_topic(q),
+        )
+        if request.context_data:
+            context["legacy_context_data"] = request.context_data
+        result = claude_service.answer_question(
+            db,
+            question=q,
+            user_id=current_user.UserID if current_user else request.user_id,
+            crop_name=context.get("crop_name"),
+            region=context.get("region"),
+            extra_context=context,
+        )
+        return ChatResponse(answer=result.get("answer", "Khong tao duoc cau tra loi."))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Loi khi ket noi AI: {str(e)}") from e
 
     # RAG 1: Bổ sung giá thị trường từ DB nếu câu hỏi liên quan đến giá
     if _question_contains(q, _PRICE_KEYWORDS):
@@ -299,6 +338,48 @@ async def price_qa(
 
     q = request.question
     region = _detect_region(q)
+    crop = _detect_crop(q)
+    try:
+        from app.services.ai_context_service import ai_context_service
+        from app.services.claude_service import claude_service
+        from app.services.pricing_service import pricing_service
+
+        current = pricing_service.get_current_price(db, crop, region, include_weather=False)
+        history = pricing_service.get_price_history(db, crop, region, days=7)
+        context = ai_context_service.build_ai_context(
+            db,
+            user_id=current_user.UserID if current_user else None,
+            region=region,
+            crop=crop,
+            intent="price_query",
+        )
+        result = claude_service.answer_question(
+            db,
+            question=q,
+            user_id=current_user.UserID if current_user else None,
+            crop_name=crop,
+            region=region,
+            extra_context=context,
+        )
+        return PriceQAResponse(
+            answer=result.get("answer", ""),
+            tavily_answer="",
+            sources=context.get("data_sources", []),
+            db_prices=[
+                {
+                    "crop_name": current.get("crop_name"),
+                    "region": current.get("region"),
+                    "price": current.get("current_price"),
+                    "unit": "VND/kg",
+                    "source": current.get("source"),
+                    "source_name": current.get("source_name"),
+                    "date": str(current.get("price_date") or current.get("last_updated")),
+                    "history": history,
+                }
+            ],
+        )
+    except Exception:
+        pass
     _seven_ago = _date.today() - timedelta(days=7)
 
     def _mp_row(mp, name):
@@ -397,7 +478,11 @@ async def price_qa(
     try:
         from app.integrations.tavily_client import ask_price_qa
         import asyncio
-        result = await asyncio.to_thread(ask_price_qa, f"{q} tại {region}", db_context)
+        from app.core.config import settings
+        result = await asyncio.wait_for(
+            asyncio.to_thread(ask_price_qa, f"{q} tại {region}", db_context),
+            timeout=settings.AI_TIMEOUT_SECONDS,
+        )
         tavily_answer = result.get("tavily_answer", "")
         sources = result.get("sources", [])
         full_answer = result.get("answer", "")
@@ -458,6 +543,33 @@ async def ask_agri(
     q = request.question
     topic = _detect_topic(q)
     region = _detect_region(q)
+    try:
+        from app.services.ai_context_service import ai_context_service
+        from app.services.claude_service import claude_service
+
+        context = ai_context_service.build_ai_context(
+            db,
+            user_id=current_user.UserID if current_user else request.user_id,
+            region=region,
+            crop=_detect_crop(q),
+            intent=topic,
+        )
+        result = claude_service.answer_question(
+            db,
+            question=q,
+            user_id=current_user.UserID if current_user else request.user_id,
+            crop_name=context.get("crop_name"),
+            region=context.get("region"),
+            extra_context=context,
+        )
+        return AskResponse(
+            answer=result.get("answer", ""),
+            topic=topic,
+            region=region,
+            sources=context.get("data_sources", []),
+        )
+    except Exception:
+        pass
     _seven_ago = _date.today() - timedelta(days=7)
     ctx_parts: list[str] = []
     sources: list = []
@@ -534,8 +646,12 @@ async def ask_agri(
     if topic in ("weather", "soil_salinity", "soil_acidity", "pest"):
         try:
             import asyncio
+            from app.core.config import settings
             from app.integrations.tavily_client import ask_agri_qa
-            result = await asyncio.to_thread(ask_agri_qa, q, "\n\n".join(ctx_parts))
+            result = await asyncio.wait_for(
+                asyncio.to_thread(ask_agri_qa, q, "\n\n".join(ctx_parts)),
+                timeout=settings.AI_TIMEOUT_SECONDS,
+            )
             if result.get("tavily_answer"):
                 ctx_parts.append(f"## Thông tin từ web:\n{result['tavily_answer']}")
             sources = result.get("sources", [])

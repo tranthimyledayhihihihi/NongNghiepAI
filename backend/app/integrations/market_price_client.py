@@ -6,9 +6,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
 from typing import Any
 
-import httpx
-
 from app.core.config import settings
+from app.core.resilience import build_timeout, resilient_request
 
 
 class MarketPriceClient:
@@ -90,8 +89,14 @@ class MarketPriceClient:
             if crop_filter and not self._matches_crop_filter(crop_name, crop_filter):
                 continue
             url = f"https://stooq.com/q/l/?s={symbol}&f=sd2t2ohlcv&h&e=csv"
-            response = httpx.get(url, timeout=3, headers=headers, follow_redirects=True)
-            response.raise_for_status()
+            response = resilient_request(
+                "GET",
+                url,
+                headers=headers,
+                timeout=build_timeout(total=20, connect=5, read=10),
+                retries=2,
+                service_name="Stooq futures",
+            )
             rows = self._parse_csv(response.text)
             if not rows:
                 continue
@@ -120,8 +125,13 @@ class MarketPriceClient:
 
     def _fetch_usd_vnd_rate(self) -> float:
         try:
-            response = httpx.get(settings.EXCHANGE_RATE_API_URL, timeout=3, follow_redirects=True)
-            response.raise_for_status()
+            response = resilient_request(
+                "GET",
+                settings.EXCHANGE_RATE_API_URL,
+                timeout=build_timeout(total=20, connect=5, read=10),
+                retries=2,
+                service_name="ExchangeRate",
+            )
             payload = response.json()
             rate = payload.get("rates", {}).get("VND")
             if rate:
@@ -131,8 +141,13 @@ class MarketPriceClient:
         return float(settings.USD_VND_FALLBACK_RATE)
 
     def _fetch_source(self, source: dict, crop_filter: str | None = None) -> list[dict]:
-        response = httpx.get(source["url"], timeout=3, follow_redirects=True)
-        response.raise_for_status()
+        response = resilient_request(
+            "GET",
+            source["url"],
+            timeout=build_timeout(total=20, connect=5, read=10),
+            retries=2,
+            service_name=f"PriceSource:{source['name']}",
+        )
         content_type = response.headers.get("content-type", "").lower()
         text = response.text
         if "json" in content_type or source["url"].lower().endswith(".json"):

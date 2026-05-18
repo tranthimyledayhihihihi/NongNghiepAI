@@ -1,89 +1,86 @@
-import api from './api';
+import api, { getApiErrorMessage } from './api';
+import { normalizeApiResponse } from '../utils/apiResponse';
 
-const unwrap = (response) => response.data?.data ?? response.data;
+const unwrap = (response) => normalizeApiResponse(response);
+const request = async (factory, fallback) => {
+  try {
+    return unwrap(await factory());
+  } catch (error) {
+    error.message = getApiErrorMessage(error, fallback);
+    throw error;
+  }
+};
 
 export const notificationsApi = {
   summary: async () => {
-    const response = await api.get('/api/notifications/summary');
-    return unwrap(response);
+    return request(() => api.get('/api/notifications/summary'), 'Khong tai duoc tong quan thong bao');
   },
 
   unreadCount: async () => {
-    const response = await api.get('/api/notifications/unread-count');
-    return unwrap(response);
+    return request(() => api.get('/api/notifications/unread-count'), 'Khong tai duoc so thong bao chua doc');
   },
 
   list: async ({ type, unreadOnly = false, limit = 50, offset = 0 } = {}) => {
-    const response = await api.get('/api/notifications', {
+    return request(() => api.get('/api/notifications', {
       params: {
         type: type || undefined,
         unread_only: unreadOnly,
         limit,
         offset,
       },
-    });
-    return unwrap(response);
+    }), 'Khong tai duoc danh sach thong bao');
   },
 
   detail: async (notificationId) => {
-    const response = await api.get(`/api/notifications/${notificationId}`);
-    return unwrap(response);
+    return request(() => api.get(`/api/notifications/${notificationId}`), 'Khong tai duoc chi tiet thong bao');
   },
 
   deliveries: async (notificationId) => {
-    const response = await api.get(`/api/notifications/${notificationId}/deliveries`);
-    return unwrap(response);
+    return request(() => api.get(`/api/notifications/${notificationId}/deliveries`), 'Khong tai duoc delivery log');
   },
 
   bulk: async ({ action, ids, type, unreadOnly }) => {
-    const response = await api.patch('/api/notifications/bulk', {
+    return request(() => api.patch('/api/notifications/bulk', {
       action,
       ids,
       type,
       unread_only: unreadOnly,
-    });
-    return unwrap(response);
+    }), 'Khong cap nhat duoc thong bao hang loat');
   },
 
   retryDelivery: async (notificationId) => {
-    const response = await api.post(`/api/notifications/${notificationId}/retry-delivery`);
-    return unwrap(response);
+    return request(() => api.post(`/api/notifications/${notificationId}/retry-delivery`), 'Khong gui lai duoc delivery');
   },
 
   markRead: async (notificationId) => {
-    const response = await api.post('/api/notifications/mark-read', {
+    return request(() => api.post('/api/notifications/mark-read', {
       notification_id: notificationId,
-    });
-    return unwrap(response);
+    }), 'Khong danh dau doc duoc thong bao');
   },
 
   markAllRead: async () => {
-    const response = await api.post('/api/notifications/mark-all-read');
-    return unwrap(response);
+    return request(() => api.post('/api/notifications/mark-all-read'), 'Khong danh dau doc tat ca thong bao');
   },
 
   generateFromAlert: async ({ alertId, alertType, title, message, priority, suggestedAction }) => {
-    const response = await api.post('/api/notifications/generate-from-alert', {
+    return request(() => api.post('/api/notifications/generate-from-alert', {
       alert_id: alertId,
       alert_type: alertType,
       title,
       message,
       priority,
       suggested_action: suggestedAction,
-    });
-    return unwrap(response);
+    }), 'Khong tao duoc thong bao tu alert');
   },
 
   priority: async ({ minPriority = 'high' } = {}) => {
-    const response = await api.get('/api/notifications/priority', {
+    return request(() => api.get('/api/notifications/priority', {
       params: { min_priority: minPriority },
-    });
-    return unwrap(response);
+    }), 'Khong tai duoc thong bao uu tien');
   },
 
   remove: async (notificationId) => {
-    const response = await api.delete(`/api/notifications/${notificationId}`);
-    return unwrap(response);
+    return request(() => api.delete(`/api/notifications/${notificationId}`), 'Khong xoa duoc thong bao');
   },
 
   streamUrl: () => {
@@ -91,3 +88,10 @@ export const notificationsApi = {
     return `${api.defaults.baseURL}/api/notifications/stream?token=${encodeURIComponent(token)}`;
   },
 };
+
+notificationsApi.getNotifications = notificationsApi.list;
+notificationsApi.getUnreadCount = notificationsApi.unreadCount;
+notificationsApi.getPriorityNotifications = notificationsApi.priority;
+notificationsApi.markNotificationRead = notificationsApi.markRead;
+notificationsApi.markAllNotificationsRead = notificationsApi.markAllRead;
+notificationsApi.generateNotificationFromAlert = notificationsApi.generateFromAlert;

@@ -81,6 +81,111 @@ class AlertService:
         ]
         return price_alerts + self.list_weather_alerts(db, user)
 
+    def get_active_alerts(
+        self,
+        db: Session,
+        user_id: int | None = None,
+        crop: str | None = None,
+        region: str | None = None,
+    ) -> list[dict]:
+        user = db.query(User).filter(User.UserID == user_id).first() if user_id else None
+        alerts = self.list_price_alerts(db, user)
+        normalized_crop = (crop or "").strip().lower()
+        normalized_region = (region or "").strip().lower()
+        filtered = []
+        for alert in alerts:
+            if normalized_crop and normalized_crop not in str(alert.get("crop_name") or alert.get("crop") or "").lower():
+                continue
+            if normalized_region and normalized_region not in str(alert.get("region") or "").lower():
+                continue
+            filtered.append(
+                {
+                    **alert,
+                    "related_alert_id": alert.get("alert_id"),
+                    "severity": alert.get("severity") or "medium",
+                    "priority": alert.get("priority") or "medium",
+                    "suggested_action": alert.get("recommended_action") or alert.get("recommendation"),
+                    "action_required": (alert.get("severity") or "medium") in {"high", "urgent"},
+                    "source": alert.get("source") or "database",
+                    "source_name": alert.get("source_name") or "Alert rules DB",
+                    "confidence": alert.get("confidence", 0.7),
+                }
+            )
+        return filtered
+
+    def evaluate_alert_rules(self, db: Session, context: dict, user: User | None = None) -> list[dict]:
+        triggered = self.check_and_trigger_alerts(db, user)
+        triggered.extend(self.check_and_trigger_weather_alerts(db, user))
+        return triggered
+
+    def auto_generate_alerts(self, db: Session, context: dict, user: User | None = None) -> dict:
+        region = context.get("region") or (user.Region if user and user.Region else "Ha Noi")
+        crop_name = context.get("crop_name") or context.get("crop") or "lua"
+        weather_risk = weather_service.get_weather_risk(db, region, crop_name)
+        risk_level = weather_risk.get("risk_level", "low")
+        alerts = [
+            {
+                "alert_type": "weather",
+                "title": f"Weather risk {risk_level} in {region}",
+                "message": "Review weather risk before irrigation, spraying or harvest.",
+                "severity": risk_level,
+                "priority": "high" if risk_level == "high" else "medium",
+                "suggested_action": "; ".join(weather_risk.get("reasons", [])[:2]),
+                "action_required": risk_level == "high",
+                "crop_name": crop_name,
+                "region": region,
+                "source": "ai_generated" if not weather_risk.get("is_mock") else "mock",
+                "source_name": "Alert auto-generation rules",
+                "confidence": weather_risk.get("confidence", 0.0),
+            }
+        ]
+        return {
+            "alerts": alerts,
+            "total": len(alerts),
+            "source": alerts[0]["source"],
+            "source_name": "Alert auto-generation rules",
+            "confidence": alerts[0]["confidence"],
+            "is_mock": weather_risk.get("is_mock", False),
+        }
+
+    def send_alert(self, db: Session, alert_id: int, channels: list[str], user: User | None = None) -> dict:
+        alert = self.get_price_alert(db, alert_id)
+        if alert is None:
+            return {"alert_id": alert_id, "sent": 0, "failed": 0, "deliveries": [], "source": "database"}
+        deliveries = []
+        for channel in channels or ["app"]:
+            result = notification_service.send(
+                channel=channel,
+                receiver=alert.get("receiver") or (user.Email if user and channel == "email" else None),
+                subject=alert.get("title") or f"Alert {alert_id}",
+                message=alert.get("message") or "AgriAI alert",
+            ) if channel != "app" else {"channel": "app", "status": "stored", "message_id": None, "error": None}
+            deliveries.append(result)
+        return {
+            "alert_id": alert_id,
+            "deliveries": deliveries,
+            "sent": sum(1 for item in deliveries if item.get("status") in {"sent", "stored", "mock_sent"}),
+            "failed": sum(1 for item in deliveries if item.get("status") in {"failed", "error"}),
+            "source": "database",
+            "source_name": "Alert send dispatcher",
+            "confidence": 0.7,
+        }
+
+    def create_notification_from_alert(self, db: Session, alert: dict, user: User) -> dict:
+        return notification_center_service.create_notification(
+            db,
+            NotificationCreate(
+                user_id=user.UserID,
+                type=alert.get("alert_type") or "alert",
+                title=alert.get("title") or "AgriAI alert",
+                message=alert.get("message") or alert.get("suggested_action") or "Alert requires review.",
+                priority=alert.get("priority") or alert.get("severity") or "medium",
+                channel="app",
+                related_entity_type="alert",
+                related_entity_id=alert.get("alert_id") or alert.get("related_alert_id"),
+            ),
+        )
+
     def get_price_alert(self, db: Session, alert_id: int) -> dict | None:
         alert = get_alert_by_id(db, alert_id)
         if not alert:
@@ -1039,6 +1144,15 @@ class AlertService:
             "message": message,
             "created_at": alert.CreatedAt,
             "last_triggered_at": alert.LastTriggered,
+            "related_alert_id": alert.AlertID,
+            "priority": "high" if alert.Severity == "high" else "medium",
+            "suggested_action": alert.Recommendation,
+            "action_required": alert.Severity == "high",
+            "source": "database",
+            "source_name": "WeatherAlert DB",
+            "fetched_at": datetime.now(),
+            "updated_at": getattr(alert, "UpdatedAt", None) or alert.CreatedAt,
+            "confidence": 0.7,
         }
 
     def _recent_history(self, db: Session, crop_id: int | None, crop_name: str, region: str) -> list[float]:
@@ -1126,6 +1240,15 @@ class AlertService:
             "message": message,
             "created_at": alert.CreatedAt,
             "last_triggered_at": alert.LastTriggered,
+            "related_alert_id": alert.AlertID,
+            "priority": "medium",
+            "suggested_action": "Theo doi gia va tao ke hoach ban theo nhieu dot.",
+            "action_required": False,
+            "source": "database",
+            "source_name": "PriceAlert DB",
+            "fetched_at": datetime.now(),
+            "updated_at": getattr(alert, "UpdatedAt", None) or alert.CreatedAt,
+            "confidence": 0.7,
         }
 
 

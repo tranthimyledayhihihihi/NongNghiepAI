@@ -22,30 +22,14 @@ class NewsAnalysisRequest(BaseModel):
 
 
 def _analyze_news_payload(payload: NewsAnalysisRequest) -> dict:
-    text = f"{payload.title} {payload.summary}".lower()
-    crops = [crop for crop in ["lua", "gao", "ca phe", "ho tieu", "sau rieng", "thanh long", "rau", "ca chua"] if crop in text]
-    if payload.crop:
-        crops.append(payload.crop)
-    regions = [region for region in ["Ha Noi", "TP.HCM", "Da Nang", "Can Tho", "Lam Dong", "Dak Lak"] if region.lower() in text]
-    if payload.region:
-        regions.append(payload.region)
-    negative_words = ["giam", "thua", "dich", "bao", "han", "rut", "cam", "khung hoang"]
-    positive_words = ["tang", "xuat khau", "don hang", "duoc gia", "co hoi", "ky ket"]
-    score = sum(word in text for word in positive_words) - sum(word in text for word in negative_words)
-    impact = "positive" if score > 0 else "negative" if score < 0 else "neutral"
+    impact = market_news_service.analyze_news_impact(payload.model_dump())
     return {
         "news_title": payload.title,
-        "affected_crops": sorted(set(crops)),
-        "affected_regions": sorted(set(regions)),
-        "impact": impact,
-        "impact_score": 0.68 if impact != "neutral" else 0.5,
-        "price_effect": "likely_increase" if impact == "positive" else "likely_decrease" if impact == "negative" else "stable",
+        "affected_crops": [payload.crop] if payload.crop else [],
+        "affected_regions": [payload.region] if payload.region else [],
         "summary": payload.summary or payload.title,
         "recommendation": "Theo doi them va tao canh bao gia neu tin nay lien quan den cay trong chinh.",
-        "source": "mock",
-        "source_name": "Rule-based market news analyzer",
-        "is_mock": True,
-        "confidence": 0.58,
+        **impact,
     }
 
 
@@ -69,11 +53,11 @@ async def get_market_news(
     region: str | None = None,
     db: Session = Depends(get_db),
 ):
-    data = market_news_service.get_latest(db, limit=limit, crop_name=crop, region=region)
+    data = market_news_service.get_market_news(db, limit=limit, crop=crop, region=region)
     return api_response(
         data,
-        source="realtime_api" if data.get("is_realtime") else "database",
-        source_name="RSS market news cache",
+        source=data.get("source", "cached"),
+        source_name=data.get("source_name", "RSS market news cache"),
         is_realtime=data.get("is_realtime", False),
         is_mock=data.get("is_mock", False),
         cache_status=data.get("cache_status", "from_db"),
@@ -117,20 +101,7 @@ async def get_market_trends(
     region: str = Query(default="Ha Noi"),
     db: Session = Depends(get_db),
 ):
-    price = pricing_service.build_pricing_engine(db, crop_name=crop, region=region)
-    data = {
-        "crop": crop,
-        "crop_name": crop,
-        "region": region,
-        "trend": price.get("trend"),
-        "confidence": price.get("confidence", 0.0),
-        "evidence": price.get("reasons", []),
-        "forecast": price.get("forecast", []),
-        "source": price.get("source"),
-        "source_name": "Market trend engine",
-        "is_mock": price.get("is_mock", False),
-        "cache_status": price.get("cache_status", "computed"),
-    }
+    data = market_news_service.get_market_trends(db, crop=crop, region=region)
     return api_response(
         data,
         source="ai_generated" if not data["is_mock"] else "mock",
@@ -147,23 +118,7 @@ async def get_market_opportunities(
     region: str = Query(default="Ha Noi"),
     db: Session = Depends(get_db),
 ):
-    trend = pricing_service.build_pricing_engine(db, crop_name=crop, region=region)
-    data = {
-        "opportunities": [
-            {
-                "title": "Batch selling opportunity",
-                "crop": crop,
-                "region": region,
-                "reason": trend.get("recommendation"),
-                "expected_price": trend.get("suggested_price"),
-                "confidence": trend.get("confidence", 0.0),
-            }
-        ],
-        "source": trend.get("source"),
-        "source_name": "AI Market Intelligence",
-        "is_mock": trend.get("is_mock", False),
-        "confidence": trend.get("confidence", 0.0),
-    }
+    data = market_news_service.get_market_opportunities(db, crop=crop, region=region)
     return api_response(
         data,
         source="ai_generated" if not data["is_mock"] else "mock",
@@ -179,23 +134,7 @@ async def get_market_risks(
     region: str = Query(default="Ha Noi"),
     db: Session = Depends(get_db),
 ):
-    trend = pricing_service.build_pricing_engine(db, crop_name=crop, region=region)
-    risk = "high" if trend.get("trend") == "decreasing" else "medium" if trend.get("is_mock") else "low"
-    data = {
-        "risks": [
-            {
-                "title": "Price volatility",
-                "severity": risk,
-                "crop": crop,
-                "region": region,
-                "recommendation": "Create price alert and avoid selling all stock at one time.",
-            }
-        ],
-        "source": trend.get("source"),
-        "source_name": "AI Market Risk Engine",
-        "is_mock": trend.get("is_mock", False),
-        "confidence": trend.get("confidence", 0.0),
-    }
+    data = market_news_service.get_market_risks(db, crop=crop, region=region)
     return api_response(
         data,
         source="ai_generated" if not data["is_mock"] else "mock",

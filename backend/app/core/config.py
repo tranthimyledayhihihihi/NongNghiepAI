@@ -23,14 +23,23 @@ class Settings(BaseSettings):
     AI_PROVIDER: str = "claude"
     AI_API_KEY: str = ""
     AI_MODEL_NAME: str = "claude-3-5-sonnet-latest"
-    AI_TIMEOUT_SECONDS: float = 20.0
+    AI_TIMEOUT_SECONDS: float = 45.0
+    EXTERNAL_CONNECT_TIMEOUT_SECONDS: float = 5.0
+    EXTERNAL_READ_TIMEOUT_SECONDS: float = 15.0
+    EXTERNAL_WRITE_TIMEOUT_SECONDS: float = 10.0
+    EXTERNAL_POOL_TIMEOUT_SECONDS: float = 5.0
+    EXTERNAL_TOTAL_TIMEOUT_SECONDS: float = 20.0
+    EXTERNAL_RETRY_COUNT: int = 2
+    EXTERNAL_BACKOFF_SECONDS: float = 0.4
     WEATHER_API_KEY: str = ""
     WEATHER_PROVIDER: str = "open-meteo"
     WEATHER_API_BASE_URL: str = ""
     OPEN_METEO_BASE_URL: str = "https://api.open-meteo.com"
     WEATHER_CACHE_TTL_SECONDS: int = 1800
-    WEATHER_TIMEOUT_SECONDS: float = 4.0
-    WEATHER_RETRY_COUNT: int = 1
+    WEATHER_TIMEOUT_SECONDS: float = 20.0
+    WEATHER_CONNECT_TIMEOUT_SECONDS: float = 5.0
+    WEATHER_READ_TIMEOUT_SECONDS: float = 12.0
+    WEATHER_RETRY_COUNT: int = 2
     REGION_COORDINATES_JSON: str = json.dumps(
         {
             "Ha Noi": {"latitude": 21.0285, "longitude": 105.8542},

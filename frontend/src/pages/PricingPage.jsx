@@ -77,16 +77,26 @@ const PricingPage = () => {
     setError(null);
 
     try {
-      const [priceData, forecastData, historyData, engineData] = await Promise.all([
+      const results = await Promise.allSettled([
         pricingApi.getCurrentPrice(cropName, region),
         pricingApi.getPriceForecast(cropName, region, days),
         pricingApi.getPriceHistory(cropName, region, 30),
         pricingApi.getPricingEngine(cropName, region, 100, 'grade_1', days),
       ]);
-      setCurrentPrice(priceData);
-      setForecast(forecastData);
-      setHistory(historyData);
-      setEngine(engineData);
+      const [priceData, forecastData, historyData, engineData] = results.map((item) => (
+        item.status === 'fulfilled' ? item.value : null
+      ));
+      if (priceData) setCurrentPrice(priceData);
+      if (forecastData) setForecast(forecastData);
+      if (historyData) setHistory(historyData);
+      if (engineData) setEngine(engineData);
+      const failed = results.filter((item) => item.status === 'rejected');
+      if (failed.length === results.length) {
+        throw failed[0].reason;
+      }
+      if (failed.length) {
+        setError('Mot so khoi gia phan hoi cham, cac khoi con lai dang dung du lieu san co.');
+      }
     } catch (err) {
       setError(getApiErrorMessage(err, 'Không thể tải dữ liệu giá'));
     } finally {
@@ -331,7 +341,10 @@ const PricingPage = () => {
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {history.history.slice(-6).map((item) => (
               <div key={item.date} className="rounded-lg border border-gray-200 p-3">
-                <p className="text-sm text-gray-500">{new Date(item.date).toLocaleDateString('vi-VN')}</p>
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm text-gray-500">{new Date(item.date).toLocaleDateString('vi-VN')}</p>
+                  <DataSourceBadge data={item} compact />
+                </div>
                 <p className="mt-1 text-lg font-bold text-gray-900">{formatCurrency(item.avg_price)}</p>
               </div>
             ))}

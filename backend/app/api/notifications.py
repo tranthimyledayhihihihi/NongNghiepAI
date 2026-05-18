@@ -23,7 +23,7 @@ async def get_notifications_summary(
     current_user: User = Depends(get_current_user),
 ):
     data = notification_center_service.summary(db, current_user)
-    return api_response(data)
+    return api_response(data, source="database", source_name="Notifications DB", confidence=0.7)
 
 
 @router.get("/stream")
@@ -76,7 +76,7 @@ async def list_my_notifications(
         limit=limit,
         offset=offset,
     )
-    return api_response(data)
+    return api_response(data, source="database", source_name="Notifications DB", confidence=0.7)
 
 
 class BulkNotificationRequest(BaseModel):
@@ -133,9 +133,9 @@ async def get_unread_count(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    data = notification_center_service.summary(db, current_user)
+    data = notification_center_service.get_unread_notification_count(db, current_user)
     return api_response(
-        {"unread_count": data.get("unread", 0), "summary": data},
+        data,
         source="database",
         source_name="Notifications DB",
         confidence=0.7,
@@ -186,19 +186,8 @@ async def get_priority_notifications(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    priority_order = {"low": 0, "medium": 1, "high": 2, "urgent": 3}
-    listed = notification_center_service.list_notifications(db, current_user, limit=100)
-    threshold = priority_order.get(min_priority, 2)
-    items = [
-        item for item in listed.get("notifications", [])
-        if priority_order.get(item.get("priority", "low"), 0) >= threshold
-    ]
-    return api_response(
-        {"notifications": items, "total": len(items)},
-        source="database",
-        source_name="Notifications priority view",
-        confidence=0.7,
-    )
+    data = notification_center_service.get_priority_notifications(db, current_user, min_priority)
+    return api_response(data, source="database", source_name=data.get("source_name"), confidence=0.7)
 
 
 class TestNotificationRequest(BaseModel):
