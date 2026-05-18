@@ -5,6 +5,14 @@ from sqlalchemy.orm import Session
 
 from app.integrations.claude_client import ai_client
 from app.models.conversation import AIConversation
+from app.services.ai_intent_service import (
+    ANALYSIS_INTENTS,
+    GENERAL_CAPABILITY_REPLY,
+    GREETING_REPLY,
+    classify_user_intent,
+    db_topic_for_intent,
+    is_capability_question,
+)
 from app.services.pricing_service import pricing_service
 from app.services.weather_service import weather_service
 
@@ -21,7 +29,46 @@ class ClaudeService:
         session_id: str | None = None,
         extra_context: dict | None = None,
     ) -> dict:
-        built_context = {} if extra_context else self._build_context(db, crop_name=crop_name, region=region, user_id=user_id)
+        intent = classify_user_intent(question)
+        if intent == "greeting" or (intent == "general_question" and is_capability_question(question)):
+            answer = GREETING_REPLY if intent == "greeting" else GENERAL_CAPABILITY_REPLY
+            completion = {
+                "answer": answer,
+                "provider": "local",
+                "model": "intent-router-v1",
+                "token_usage": None,
+                "is_mock": False,
+                "error": None,
+                "timeout": False,
+            }
+            context = {"intent": intent}
+            self._save_conversation(db, user_id, session_id, question, completion, context, crop_name)
+            return {
+                "answer": answer,
+                "provider": "local",
+                "model": "intent-router-v1",
+                "token_usage": None,
+                "context": context,
+                "is_mock": False,
+                "error": None,
+                "timeout": False,
+                "created_at": datetime.now(),
+            }
+
+        if extra_context:
+            built_context = {}
+        elif intent in ANALYSIS_INTENTS:
+            from app.services.ai_context_service import ai_context_service
+
+            built_context = ai_context_service.build_ai_context(
+                db,
+                user_id=user_id,
+                crop=crop_name,
+                region=region,
+                intent=intent,
+            )
+        else:
+            built_context = {"intent": intent, "region": region, "crop_name": crop_name}
         context = dict(extra_context or {})
         for key, value in built_context.items():
             context.setdefault(key, value)
@@ -29,9 +76,11 @@ class ClaudeService:
             context.update({key: value for key, value in extra_context.items() if key not in {"weather_error", "pricing_error"}})
             context["tools_used"] = extra_context.get("tools_used", [])
         system_prompt = (
-            "You are AgriBot for a Vietnamese agriculture support system. "
-            "Answer in Vietnamese, be practical, cite the provided system context, "
-            "and clearly say when data is missing or demo fallback is used."
+            "Bạn là Trợ lý AI nông nghiệp của hệ thống NongNghiepAI. "
+            "Trả lời đúng trọng tâm câu hỏi, ngắn gọn, thực tế cho nông dân. "
+            "Chỉ dùng dữ liệu trong context; không bịa số liệu giá, thời tiết, sản lượng, rủi ro hoặc ngày thu hoạch. "
+            "Nếu thiếu dữ liệu, hãy nói rõ “Hiện chưa có đủ dữ liệu để phân tích chính xác”. "
+            "Không hiển thị metadata nội bộ như Database, API, AI Generated, timestamp, engine."
         )
         user_prompt = f"Context JSON:\n{json.dumps(context, ensure_ascii=False, default=str)}\n\nQuestion: {question}"
         try:
@@ -120,22 +169,24 @@ class ClaudeService:
     @staticmethod
     def _fallback_answer(question: str, context: dict, error: str) -> str:
         parts = [
-            "Hệ thống chưa gọi được AI provider nên đây là câu trả lời fallback dựa trên dữ liệu nội bộ.",
-            f"Lý do provider: {error}",
+            "Hiện chưa có đủ dữ liệu để phân tích chính xác.",
         ]
         pricing = context.get("pricing")
         if pricing:
+            price_value = pricing.get("current_price") or pricing.get("market_price")
+            price_text = f"{float(price_value):,.0f} VND/kg" if price_value is not None else "chưa có số liệu giá"
             parts.append(
                 f"Giá hiện tại {pricing.get('crop_name')} tại {pricing.get('region')} là "
-                f"{pricing.get('current_price'):,.0f} VND/kg, nguồn {pricing.get('source_name')}."
+                f"{price_text}."
             )
         weather = context.get("weather")
         if weather:
             parts.append(
                 f"Thời tiết {weather.get('region')}: {weather.get('temperature')}C, "
-                f"mưa {weather.get('rainfall')}mm, nguồn {weather.get('source_name')}."
+                f"mưa {weather.get('rainfall')}mm."
             )
-        parts.append("Hãy cấu hình CLAUDE_API_KEY hoặc AI_PROVIDER=openai + AI_API_KEY để có câu trả lời AI thật.")
+        if not pricing and not weather:
+            parts.append("Bạn vui lòng cung cấp thêm cây trồng, khu vực hoặc mùa vụ cần xem.")
         return "\n".join(parts)
 
     @staticmethod
@@ -160,7 +211,7 @@ class ClaudeService:
                 SessionID=session_id,
                 UserMessage=question,
                 AIResponse=completion["answer"],
-                Topic="agriculture",
+                Topic=db_topic_for_intent(context.get("intent")),
                 RelatedCropID=related_crop_id,
                 ContextSnapshot=json.dumps(context, ensure_ascii=False, default=str),
                 Provider=completion.get("provider"),

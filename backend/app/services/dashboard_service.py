@@ -10,10 +10,10 @@ from app.core.database import SessionLocal
 from app.core.redis_client import redis_client
 from app.integrations.weather_client import WeatherClient
 from app.models.crop import Crop
-from app.models.harvest import HarvestSchedule
 from app.models.market_news import MarketNews
 from app.models.price import MarketPrice
 from app.models.quality import QualityCheck
+from app.models.season import Season
 from app.models.user import User
 from app.models.weather import WeatherData, WeatherObservation
 from app.repositories.common import ensure_crop
@@ -150,12 +150,12 @@ class DashboardService:
             )
 
         try:
-            schedules_query = db.query(HarvestSchedule)
+            seasons_query = db.query(Season)
             quality_query = db.query(QualityCheck)
             if user_id:
-                schedules_query = schedules_query.filter(HarvestSchedule.UserID == user_id)
+                seasons_query = seasons_query.filter(Season.UserID == user_id)
                 quality_query = quality_query.filter(QualityCheck.UserID == user_id)
-            active_seasons = schedules_query.filter(HarvestSchedule.ActualHarvestDate.is_(None)).count()
+            active_seasons = seasons_query.filter(Season.Status.in_(["active", "harvesting"])).count()
             quality_checks = quality_query.count()
             unread_notifications = int(notification_summary.get("unread", 0))
         except SQLAlchemyError:

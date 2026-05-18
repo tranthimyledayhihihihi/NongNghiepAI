@@ -1,7 +1,10 @@
+from datetime import date, timedelta
+
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.security import get_password_hash
+from app.models.season import Season
 from app.models.user import User
 from app.repositories.market_repository import seed_default_market_channels
 
@@ -117,5 +120,65 @@ def seed_market_channels(session_factory) -> None:
     db = session_factory()
     try:
         seed_default_market_channels(db)
+    finally:
+        db.close()
+
+
+def seed_demo_seasons(session_factory) -> None:
+    db = session_factory()
+    try:
+        if db.query(Season).count() > 0:
+            return
+
+        demo_user = db.query(User).filter(func.lower(User.Email) == "nguyenvanan@gmail.com").first()
+        user_id = demo_user.UserID if demo_user else None
+        today = date.today()
+        seeds = [
+            Season(
+                UserID=user_id,
+                CropName="Lúa",
+                Region="Hà Nội",
+                FarmName="Ruộng Đông",
+                Area=2.4,
+                AreaUnit="ha",
+                StartDate=today - timedelta(days=35),
+                ExpectedHarvestDate=today + timedelta(days=65),
+                Status="active",
+                HealthStatus="good",
+                Note="Theo dõi sâu cuốn lá sau mưa.",
+            ),
+            Season(
+                UserID=user_id,
+                CropName="Cà phê",
+                Region="Đà Lạt",
+                FarmName="Vườn đồi số 2",
+                Area=1.2,
+                AreaUnit="ha",
+                StartDate=today - timedelta(days=120),
+                ExpectedHarvestDate=today + timedelta(days=10),
+                Status="harvesting",
+                HealthStatus="warning",
+                Note="Chuẩn bị nhân công thu hái đợt đầu.",
+            ),
+            Season(
+                UserID=user_id,
+                CropName="Sầu riêng",
+                Region="Tiền Giang",
+                FarmName="Vườn Ba Thành",
+                Area=0.8,
+                AreaUnit="ha",
+                StartDate=today - timedelta(days=240),
+                ExpectedHarvestDate=today + timedelta(days=30),
+                Status="active",
+                HealthStatus="risk",
+                Note="Cần kiểm tra thoát nước và nấm bệnh.",
+            ),
+        ]
+        db.add_all(seeds)
+        db.commit()
+        _seed_logger.info("[Seed] Demo seasons seeded OK.")
+    except SQLAlchemyError as exc:
+        _seed_logger.warning("[Seed] seed_demo_seasons failed: %s", exc)
+        db.rollback()
     finally:
         db.close()

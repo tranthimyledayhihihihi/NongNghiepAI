@@ -7,6 +7,15 @@ from app.integrations.gemini_client import GeminiClient
 from app.core.database import get_db
 from app.api.auth import get_optional_current_user, get_current_user
 from app.models.user import User
+from app.services.ai_intent_service import (
+    GENERAL_CAPABILITY_REPLY,
+    GREETING_REPLY,
+    classify_user_intent,
+    db_topic_for_intent,
+    extract_crop_from_message,
+    extract_region_from_message,
+    is_capability_question,
+)
 
 router = APIRouter(prefix="/api/chat", tags=["AI Chatbot"])
 
@@ -21,7 +30,7 @@ def _save_conversation(db: Session, user_id: int | None, question: str, answer: 
             UserMessage=question,
             AIResponse=answer,
             Provider="gemini",
-            Topic=topic,
+            Topic=db_topic_for_intent(topic),
         ))
         db.commit()
     except Exception:
@@ -216,6 +225,13 @@ async def ask_farming_advice(
         context_parts.append(request.context_data)
 
     q = request.question
+    intent = classify_user_intent(q)
+    if intent == "greeting":
+        _save_conversation(db, current_user.UserID if current_user else None, q, GREETING_REPLY, intent)
+        return ChatResponse(answer=GREETING_REPLY)
+    if intent == "general_question" and is_capability_question(q):
+        _save_conversation(db, current_user.UserID if current_user else None, q, GENERAL_CAPABILITY_REPLY, intent)
+        return ChatResponse(answer=GENERAL_CAPABILITY_REPLY)
 
     # Legacy /api/chat now reuses the same context builder used by /api/ai-chat.
     try:
@@ -225,9 +241,9 @@ async def ask_farming_advice(
         context = ai_context_service.build_ai_context(
             db,
             user_id=current_user.UserID if current_user else request.user_id,
-            region=_detect_region(q),
-            crop=_detect_crop(q),
-            intent=_detect_topic(q),
+            region=extract_region_from_message(q) or _detect_region(q),
+            crop=extract_crop_from_message(q) or _detect_crop(q),
+            intent=intent,
         )
         if request.context_data:
             context["legacy_context_data"] = request.context_data
@@ -541,8 +557,14 @@ async def ask_agri(
     from app.models.price import MarketPrice as _MP, PriceHistory as _PH
 
     q = request.question
-    topic = _detect_topic(q)
-    region = _detect_region(q)
+    intent = classify_user_intent(q)
+    region = extract_region_from_message(q) or _detect_region(q)
+    if intent == "greeting":
+        return AskResponse(answer=GREETING_REPLY, topic=intent, region=region, sources=[])
+    if intent == "general_question" and is_capability_question(q):
+        return AskResponse(answer=GENERAL_CAPABILITY_REPLY, topic=intent, region=region, sources=[])
+    fallback_topic = _detect_topic(q)
+    topic = intent if intent != "general_question" else fallback_topic
     try:
         from app.services.ai_context_service import ai_context_service
         from app.services.claude_service import claude_service
@@ -551,7 +573,7 @@ async def ask_agri(
             db,
             user_id=current_user.UserID if current_user else request.user_id,
             region=region,
-            crop=_detect_crop(q),
+            crop=extract_crop_from_message(q) or _detect_crop(q),
             intent=topic,
         )
         result = claude_service.answer_question(
@@ -569,7 +591,7 @@ async def ask_agri(
             sources=context.get("data_sources", []),
         )
     except Exception:
-        pass
+        topic = fallback_topic
     _seven_ago = _date.today() - timedelta(days=7)
     ctx_parts: list[str] = []
     sources: list = []

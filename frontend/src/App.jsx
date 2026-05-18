@@ -30,6 +30,7 @@ const ProfilePage = lazy(() => import('./pages/ProfilePage'));
 const QualityCheckPage = lazy(() => import('./pages/QualityCheckPage'));
 const QualityPage = lazy(() => import('./pages/QualityPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const SeasonManagementPage = lazy(() => import('./pages/SeasonManagementPage'));
 const SubscriptionPricingPage = lazy(() => import('./pages/SubscriptionPricingPage'));
 
 const pageFallback = (
@@ -66,6 +67,7 @@ const appRoutes = [
   '/reports',
   '/ai-chat',
   '/notifications',
+  '/season-management',
   '/settings',
   '/profile',
 ];
@@ -118,6 +120,7 @@ const AppShell = ({ sidebarOpen, setSidebarOpen }) => (
 
               <Route path="/ai-chat" element={<AIChatPage />} />
               <Route path="/notifications" element={<NotificationsPage />} />
+              <Route path="/season-management" element={<SeasonManagementPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="*" element={<NotFoundPage publicLayout={false} />} />

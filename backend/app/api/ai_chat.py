@@ -1,7 +1,6 @@
 import asyncio
 import json
 import os
-import unicodedata
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -20,6 +19,17 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.models.user import User
 from app.services.ai_context_service import ai_context_service
+from app.services.ai_intent_service import (
+    ANALYSIS_INTENTS,
+    GENERAL_CAPABILITY_REPLY,
+    GREETING_REPLY,
+    classify_user_intent,
+    db_topic_for_intent,
+    extract_crop_from_message,
+    extract_region_from_message,
+    is_capability_question,
+    normalize_intent,
+)
 
 router = APIRouter(prefix="/api/ai-chat", tags=["ai-chat"])
 
@@ -42,19 +52,7 @@ class AIChatMessageRequest(BaseModel):
 
 
 def _detect_intent(message: str) -> str:
-    text = unicodedata.normalize("NFD", message.lower())
-    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
-    if any(word in text for word in ["tuoi", "mua", "thoi tiet", "phun", "gio", "do am"]):
-        return "weather_advice"
-    if any(word in text for word in ["gia", "ban", "thi truong"]):
-        return "price_query"
-    if any(word in text for word in ["thu hoach", "mua vu"]):
-        return "harvest_advice"
-    if any(word in text for word in ["chat luong", "loai may", "anh", "nong san cua toi"]):
-        return "quality_check"
-    if "canh bao" in text or "alert" in text:
-        return "alert_summary"
-    return "general"
+    return classify_user_intent(message)
 
 
 def _build_reasons(context: dict, result: dict) -> list[str]:
@@ -64,22 +62,22 @@ def _build_reasons(context: dict, result: dict) -> list[str]:
     market = (context.get("market") or {}).get("trends") or context.get("market_trends") or {}
     if weather:
         reasons.append(
-            f"Weather source {weather.get('source_name', 'backend')}: {weather.get('temperature')}C, rain {weather.get('rainfall')}mm."
+            f"Thời tiết hiện có: {weather.get('temperature')}C, lượng mưa {weather.get('rainfall')}mm."
         )
     if pricing:
         reasons.append(
-            f"Price source {pricing.get('source_name', 'backend')}: market price {pricing.get('market_price') or pricing.get('current_price')} VND/kg."
+            f"Giá hiện tại: {pricing.get('market_price') or pricing.get('current_price')} VND/kg."
         )
     if market:
         reasons.append(
-            f"Market trend engine: trend {market.get('trend', 'stable')} with confidence {market.get('confidence', 0)}."
+            f"Xu hướng thị trường: {market.get('trend', 'ổn định')}."
         )
     if context.get("quality_history"):
-        reasons.append("Recent quality records from QualityRecords DB were included.")
+        reasons.append("Có lịch sử kiểm tra chất lượng gần đây.")
     if context.get("harvest_status"):
-        reasons.append("Active harvest schedules from HarvestSchedule DB were included.")
+        reasons.append("Có lịch mùa vụ/thu hoạch đang theo dõi.")
     if result.get("is_mock"):
-        reasons.append("AI provider unavailable, so rule-based fallback generated the answer.")
+        reasons.append("Câu trả lời được tạo bằng fallback nội bộ.")
     return reasons[:6]
 
 
@@ -99,14 +97,14 @@ def _build_recommendations(context: dict, result: dict) -> list[str]:
         if item.get("recommendation"):
             recommendations.append(item["recommendation"])
     if not recommendations:
-        recommendations.append("Review weather, price, quality, and alerts before taking action today.")
+        recommendations.append("Cung cấp thêm cây trồng, khu vực hoặc mùa vụ để phân tích chính xác hơn.")
     return recommendations[:6]
 
 
 def _default_context(db: Session, user: User | None, request: AIChatMessageRequest) -> dict:
-    region = request.region or (user.Region if user and user.Region else "Ha Noi")
-    crop = request.resolved_crop or "lua"
     intent = _detect_intent(request.message)
+    region = request.region or extract_region_from_message(request.message) or (user.Region if user and user.Region else "Ha Noi")
+    crop = request.resolved_crop or extract_crop_from_message(request.message) or "lua"
     return ai_context_service.build_ai_context(
         db,
         user_id=user.UserID if user else None,
@@ -131,26 +129,142 @@ def _safe_json(data: Any) -> str:
     return json.dumps(data, ensure_ascii=False, default=str)
 
 
-def _build_gemini_prompt(request: AIChatMessageRequest, context: dict) -> tuple[str, str]:
-    crop = request.resolved_crop or context.get("crop_name") or "chua xac dinh"
-    region = request.region or context.get("region") or "chua xac dinh"
-    user_context = _safe_json(request.context)
-    backend_context = json.dumps(context, ensure_ascii=False, default=str)
+_INTERNAL_CONTEXT_KEYS = {
+    "source",
+    "source_name",
+    "source_url",
+    "meta",
+    "cache_status",
+    "is_mock",
+    "fallback_used",
+    "timeout",
+    "data_sources",
+    "tools_used",
+    "provider",
+    "model",
+    "engine",
+    "error",
+    "context_error",
+    "generated_at",
+    "updated_at",
+    "fetched_at",
+    "last_updated",
+}
 
-    system_instruction = (
-        "You are AgriBot AI for a Vietnamese agriculture app. "
-        "Answer in Vietnamese, be practical, concise, and specific. "
-        "Use the provided crop, region, user context, and backend context when relevant. "
-        "If data is missing, say what is missing and give safe next steps. "
-        "Do not claim to inspect images unless image data was provided."
+
+def _is_unreliable_context(value: dict) -> bool:
+    source = str(value.get("source") or "").lower()
+    cache_status = str(value.get("cache_status") or "").lower()
+    return bool(
+        value.get("is_mock")
+        or value.get("fallback_used")
+        or source in {"mock", "fallback", "demo"}
+        or cache_status in {"mock", "miss"}
     )
+
+
+def _sanitize_context_for_prompt(value: Any) -> Any:
+    if isinstance(value, dict):
+        if _is_unreliable_context(value):
+            return {
+                "data_available": False,
+                "message": "Hiện chưa có đủ dữ liệu để phân tích chính xác",
+            }
+        cleaned: dict[str, Any] = {}
+        for key, child in value.items():
+            if key in _INTERNAL_CONTEXT_KEYS:
+                continue
+            sanitized = _sanitize_context_for_prompt(child)
+            if sanitized in ({}, [], None, ""):
+                continue
+            cleaned[key] = sanitized
+        return cleaned
+    if isinstance(value, list):
+        cleaned_items = []
+        for child in value:
+            sanitized = _sanitize_context_for_prompt(child)
+            if sanitized not in ({}, [], None, ""):
+                cleaned_items.append(sanitized)
+        return cleaned_items
+    return value
+
+
+def _intent_format_instruction(intent: str) -> str:
+    formats = {
+        "price_analysis": (
+            "- Giá hiện tại\n"
+            "- Xu hướng\n"
+            "- So sánh nếu có\n"
+            "- Khuyến nghị bán/giữ hàng\n"
+            "- Mức độ tin cậy nếu backend có dữ liệu"
+        ),
+        "weather_analysis": (
+            "- Thời tiết hiện tại/dự báo\n"
+            "- Ảnh hưởng đến cây trồng\n"
+            "- Rủi ro\n"
+            "- Khuyến nghị tưới/phun/thu hoạch"
+        ),
+        "harvest_analysis": (
+            "- Mùa vụ đang theo dõi\n"
+            "- Giai đoạn hiện tại\n"
+            "- Ngày dự kiến thu hoạch\n"
+            "- Việc cần làm tiếp theo"
+        ),
+        "quality_analysis": (
+            "- Tình trạng/chất lượng hiện tại\n"
+            "- Nhận xét chính\n"
+            "- Rủi ro sâu bệnh hoặc lỗi chất lượng nếu có\n"
+            "- Khuyến nghị xử lý tiếp theo"
+        ),
+        "alert_analysis": (
+            "- Cảnh báo hiện có\n"
+            "- Mức độ rủi ro\n"
+            "- Nguyên nhân chính nếu có dữ liệu\n"
+            "- Việc cần chú ý ngay"
+        ),
+        "full_farm_analysis": (
+            "# Tổng quan hôm nay\n"
+            "# Điểm đáng chú ý\n"
+            "# Rủi ro\n"
+            "# Việc nên làm ngay"
+        ),
+    }
+    return formats.get(
+        intent,
+        "Trả lời trực tiếp câu hỏi. Không tự phân tích giá, thời tiết, mùa vụ, chất lượng hoặc cảnh báo nếu người dùng chưa yêu cầu.",
+    )
+
+
+def _build_gemini_prompt(request: AIChatMessageRequest, context: dict) -> tuple[str, str]:
+    intent = normalize_intent(context.get("intent") or classify_user_intent(request.message))
+    crop = request.resolved_crop or context.get("crop_name") or "chưa xác định"
+    region = request.region or context.get("region") or "chưa xác định"
+    user_context = _safe_json(request.context)
+    sanitized_context = _sanitize_context_for_prompt(context)
+    backend_context = json.dumps(sanitized_context, ensure_ascii=False, default=str)
+
+    system_instruction = """Bạn là Trợ lý AI nông nghiệp của hệ thống NongNghiepAI.
+Nhiệm vụ của bạn là hỗ trợ nông dân phân tích giá nông sản, thời tiết, mùa vụ, chất lượng nông sản và cảnh báo rủi ro.
+
+Nguyên tắc bắt buộc:
+1. Trả lời đúng trọng tâm câu hỏi của người dùng.
+2. Không tự động phân tích dữ liệu nếu người dùng chỉ chào hỏi hoặc hỏi xã giao.
+3. Chỉ sử dụng dữ liệu được backend cung cấp trong context.
+4. Không bịa số liệu giá, thời tiết, sản lượng, rủi ro hoặc ngày thu hoạch.
+5. Nếu thiếu dữ liệu, hãy nói rõ “Hiện chưa có đủ dữ liệu để phân tích chính xác”.
+6. Khi phân tích, phải nêu: Tình hình hiện tại, Nhận xét chính, Rủi ro nếu có, Khuyến nghị hành động.
+7. Câu trả lời phải ngắn gọn, thực tế, dễ hiểu cho nông dân.
+8. Không lặp lại quá nhiều thông tin kỹ thuật.
+9. Không hiển thị metadata nội bộ như Database, API, AI Generated, timestamp, engine."""
     prompt = (
-        f"Crop: {crop}\n"
-        f"Region: {region}\n"
-        f"User context: {user_context or 'None'}\n\n"
-        f"Backend context JSON:\n{backend_context}\n\n"
-        f"User message:\n{request.message}\n\n"
-        "Reply with actionable agriculture advice."
+        f"Intent đã phân loại: {intent}\n"
+        f"Cây trồng: {crop}\n"
+        f"Khu vực: {region}\n"
+        f"Ngữ cảnh người dùng gửi thêm: {user_context or 'Không có'}\n\n"
+        f"Context backend đã lọc theo intent:\n{backend_context or '{}'}\n\n"
+        f"Định dạng trả lời cần dùng:\n{_intent_format_instruction(intent)}\n\n"
+        f"Câu hỏi người dùng:\n{request.message}\n\n"
+        "Hãy trả lời đúng intent trên. Nếu context không có dữ liệu cần thiết, nói thiếu dữ liệu và hỏi thêm thông tin cần thiết."
     )
     return system_instruction, prompt
 
@@ -213,6 +327,7 @@ def _save_gemini_conversation(
     crop_name: str | None,
     context: dict,
     model_name: str,
+    provider: str = "gemini",
 ) -> None:
     try:
         from app.models.conversation import AIConversation
@@ -232,10 +347,10 @@ def _save_gemini_conversation(
             SessionID=session_id,
             UserMessage=question,
             AIResponse=reply,
-            Topic=topic,
+            Topic=db_topic_for_intent(topic),
             RelatedCropID=related_crop_id,
             ContextSnapshot=json.dumps(context, ensure_ascii=False, default=str),
-            Provider="gemini",
+            Provider=provider,
             ModelName=model_name,
             TokenUsage=None,
         ))
@@ -244,30 +359,132 @@ def _save_gemini_conversation(
         db.rollback()
 
 
+def _success_payload(
+    *,
+    reply: str,
+    intent: str,
+    crop: str | None,
+    region: str | None,
+    model_name: str,
+    provider: str,
+    context: dict | None = None,
+    confidence: float = 0.82,
+) -> dict:
+    created_at = datetime.now()
+    context = context or {}
+    data = {
+        "reply": reply,
+        "response": reply,
+        "message": reply,
+        "answer": reply,
+        "provider": provider,
+        "model": model_name,
+        "created_at": created_at.isoformat(),
+        "intent": intent,
+        "crop": crop,
+        "crop_name": crop,
+        "region": region,
+        "data_sources": context.get("data_sources", []),
+        "reasons": [],
+        "recommendations": [],
+        "suggested_actions": [],
+        "confidence": confidence,
+    }
+    if provider == "gemini":
+        data["source"] = "gemini"
+        data["source_name"] = "Google Gemini"
+    return {
+        "success": True,
+        "reply": reply,
+        "source": data.get("source"),
+        "data": data,
+    }
+
+
 @router.post("/message")
 async def ai_chat_message(
     request: AIChatMessageRequest,
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_current_user),
 ):
-    intent = _detect_intent(request.message)
-    region = request.region or (current_user.Region if current_user and current_user.Region else "Ha Noi")
-    crop = request.resolved_crop or "lua"
+    intent = classify_user_intent(request.message)
+    region = request.region or extract_region_from_message(request.message) or (
+        current_user.Region if current_user and current_user.Region else None
+    )
+    crop = request.resolved_crop or extract_crop_from_message(request.message)
 
-    try:
-        context = ai_context_service.build_ai_context(
+    if intent == "greeting":
+        context = {"intent": intent, "data_sources": []}
+        _save_gemini_conversation(
             db,
             user_id=current_user.UserID if current_user else None,
-            region=region,
-            crop=crop,
-            intent=intent,
+            session_id=request.session_id,
+            question=request.message,
+            reply=GREETING_REPLY,
+            topic=intent,
+            crop_name=crop,
+            context=context,
+            model_name="intent-router-v1",
+            provider="local",
         )
-    except Exception as exc:
+        return _success_payload(
+            reply=GREETING_REPLY,
+            intent=intent,
+            crop=crop,
+            region=region,
+            model_name="intent-router-v1",
+            provider="local",
+            context=context,
+            confidence=1.0,
+        )
+
+    if intent == "general_question" and is_capability_question(request.message):
+        context = {"intent": intent, "data_sources": []}
+        _save_gemini_conversation(
+            db,
+            user_id=current_user.UserID if current_user else None,
+            session_id=request.session_id,
+            question=request.message,
+            reply=GENERAL_CAPABILITY_REPLY,
+            topic=intent,
+            crop_name=crop,
+            context=context,
+            model_name="intent-router-v1",
+            provider="local",
+        )
+        return _success_payload(
+            reply=GENERAL_CAPABILITY_REPLY,
+            intent=intent,
+            crop=crop,
+            region=region,
+            model_name="intent-router-v1",
+            provider="local",
+            context=context,
+            confidence=1.0,
+        )
+
+    if intent in ANALYSIS_INTENTS:
+        try:
+            context = ai_context_service.build_ai_context(
+                db,
+                user_id=current_user.UserID if current_user else None,
+                region=region or "Ha Noi",
+                crop=crop or "lua",
+                intent=intent,
+            )
+        except Exception as exc:
+            context = {
+                "intent": intent,
+                "region": region or "Ha Noi",
+                "crop_name": crop or "lua",
+                "context_error": str(exc),
+                "data_sources": [],
+            }
+    else:
         context = {
             "intent": intent,
             "region": region,
             "crop_name": crop,
-            "context_error": str(exc),
             "data_sources": [],
         }
 
@@ -314,30 +531,22 @@ async def ai_chat_message(
             },
         )
 
-    created_at = datetime.now()
     result = {"answer": reply, "is_mock": False}
-    recommendations = _build_recommendations(context, result)
-    reasons = _build_reasons(context, result)
-    data = {
-        "reply": reply,
-        "response": reply,
-        "message": reply,
-        "answer": reply,
-        "source": "gemini",
-        "source_name": "Google Gemini",
-        "provider": "gemini",
-        "model": model_name,
-        "created_at": created_at.isoformat(),
-        "intent": context.get("intent", intent),
-        "crop": crop,
-        "crop_name": crop,
-        "region": region,
-        "data_sources": context.get("data_sources", []),
-        "reasons": reasons,
-        "recommendations": recommendations,
-        "suggested_actions": recommendations,
-        "confidence": 0.82,
-    }
+    recommendations = _build_recommendations(context, result) if intent in ANALYSIS_INTENTS else []
+    reasons = _build_reasons(context, result) if intent in ANALYSIS_INTENTS else []
+    response_payload = _success_payload(
+        reply=reply,
+        intent=context.get("intent", intent),
+        crop=crop or context.get("crop_name"),
+        region=region or context.get("region"),
+        model_name=model_name,
+        provider="gemini",
+        context=context,
+        confidence=0.82,
+    )
+    response_payload["data"]["reasons"] = reasons
+    response_payload["data"]["recommendations"] = recommendations
+    response_payload["data"]["suggested_actions"] = recommendations
     _save_gemini_conversation(
         db,
         user_id=current_user.UserID if current_user else None,
@@ -345,16 +554,11 @@ async def ai_chat_message(
         question=request.message,
         reply=reply,
         topic=context.get("intent", intent),
-        crop_name=crop,
+        crop_name=crop or context.get("crop_name"),
         context=context,
         model_name=model_name,
     )
-    return {
-        "success": True,
-        "reply": reply,
-        "source": "gemini",
-        "data": data,
-    }
+    return response_payload
 
 
 @router.post("/message-with-context")

@@ -1,11 +1,9 @@
 import {
   Bot,
   Clock,
-  Database,
   Image as ImageIcon,
   Leaf,
   Menu,
-  MoreVertical,
   Paperclip,
   Plus,
   RefreshCw,
@@ -17,7 +15,6 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import DataSourceBadge from '../components/DataSourceBadge';
 import { useAuth } from '../contexts/AuthContext';
 import { aiApi } from '../services/aiApi';
 
@@ -62,13 +59,8 @@ const starterMessages = [
   {
     id: 'welcome',
     type: 'bot',
-    content: 'Chao ban, toi la AgriBot AI. Hay hoi ve gia, thoi tiet, tin thi truong, canh bao hoac lich thu hoach de toi lay context tu backend.',
+    content: 'Chào bạn 👋 Mình có thể hỗ trợ phân tích giá nông sản, thời tiết, mùa vụ, chất lượng và cảnh báo rủi ro. Bạn muốn mình xem phần nào hôm nay?',
     timestamp: initialMessages[0]?.timestamp || new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-    source: {
-      source: 'database',
-      source_name: 'AI context service',
-      confidence: 0.7,
-    },
   },
 ];
 
@@ -239,21 +231,8 @@ const AIChatPage = () => {
     content: extractAiReply(data) ||
       'Tôi đã nhận được thông tin. Bạn nên bổ sung khu vực canh tác, tuổi cây, ảnh cận cảnh và lịch bón phân gần nhất để tôi phân tích chính xác hơn.',
     timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-    source: data ? {
-      source: data.source,
-      source_name: data.source_name || data.provider,
-      is_mock: data.is_mock,
-      fallback_used: data.fallback_used || data.is_mock,
-      timeout: data.timeout,
-      error: data.error,
-      confidence: data.confidence,
-      fetched_at: data.fetched_at,
-    } : null,
-    analysis: data?.reasons?.length || data?.recommendations?.length ? {
-      diagnosis: data.intent || 'AI farming assistant',
-      details: data.reasons || [],
-      recommendations: data.recommendations || [],
-    } : null,
+    source: null,
+    analysis: null,
   });
 
   const handleSendMessage = async () => {
@@ -275,10 +254,6 @@ const AIChatPage = () => {
     try {
       const data = await aiApi.chat({
         question: trimmedMessage,
-        crop: 'ca chua',
-        region: 'Ha Noi',
-        context: 'Nguoi dung dang chat tu trang AI Chat cua frontend NongNghiepAI.',
-        userId: 1,
         sessionId: 'frontend-session',
       });
       setMessages((current) => [...current, createBotResponse(data)]);
@@ -356,14 +331,6 @@ const AIChatPage = () => {
           )}
         </div>
       </div>
-
-      {/* Storage info badge */}
-      {isAuthenticated && (
-        <div className="mb-3 flex items-center gap-1.5 rounded-lg bg-gray-50 px-2.5 py-2 text-xs text-gray-500 border border-gray-100">
-          <Database className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-          <span>Lưu trong <strong>SQL Server</strong> · bảng <code className="bg-gray-200 px-1 rounded text-gray-600">AIConversations</code></span>
-        </div>
-      )}
 
       {/* Confirm clear dialog */}
       {confirmClear && (
@@ -576,12 +543,6 @@ const AIChatPage = () => {
                     ) : (
                       <p>{message.content}</p>
                     )}
-                    {message.source && (
-                      <div className="mt-3">
-                        <DataSourceBadge data={message.source} />
-                      </div>
-                    )}
-
                     {message.analysis && (
                       <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4 text-left">
                         <div className="text-xs font-semibold uppercase tracking-wide text-green-700">
@@ -615,7 +576,7 @@ const AIChatPage = () => {
             <div className="flex items-start gap-3">
               <MessageAvatar type="bot" />
               <div className="rounded-lg border border-gray-200 bg-white p-4">
-                <div className="mb-2 text-sm text-gray-600">AI dang phan tich...</div>
+                <div className="mb-2 text-sm text-gray-600">AI đang trả lời...</div>
                 <div className="flex gap-2">
                   <span className="h-2 w-2 animate-bounce rounded-full bg-gray-400" />
                   <span className="h-2 w-2 animate-bounce rounded-full bg-gray-400 [animation-delay:0.15s]" />

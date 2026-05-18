@@ -9,6 +9,7 @@ from .market_news import MarketNews
 from .notification import Notification, NotificationDelivery
 from .price import MarketPrice, PriceForecastResult, PriceHistory, PricingRequest
 from .quality import QualityCheck, QualityRecord
+from .season import Season
 from .settings import NotificationPreference, UserSettings
 from .user import User
 from .weather import (
@@ -48,6 +49,7 @@ __all__ = [
     "QualityCheck",
     "QualityRecord",
     "RegionalPriceSnapshot",
+    "Season",
     "User",
     "UserSettings",
     "CropWeatherRule",

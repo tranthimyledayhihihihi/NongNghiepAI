@@ -318,7 +318,7 @@ def get_db():
 def init_db():
     """Create database tables for the imported SQLAlchemy models."""
     import app.models  # noqa: F401
-    from app.core.seed import seed_demo_users, seed_market_channels
+    from app.core.seed import seed_demo_seasons, seed_demo_users, seed_market_channels
 
     try:
         legacy_users_table = _migrate_legacy_sqlite_users()
@@ -326,6 +326,7 @@ def init_db():
         _apply_lightweight_schema_upgrades()
         _copy_legacy_sqlite_users(legacy_users_table)
         seed_demo_users(SessionLocal)
+        seed_demo_seasons(SessionLocal)
         seed_market_channels(SessionLocal)
     except SQLAlchemyError:
         if settings.ENVIRONMENT.lower() == "production" or active_database_url.startswith("sqlite"):
@@ -336,4 +337,5 @@ def init_db():
         _apply_lightweight_schema_upgrades()
         _copy_legacy_sqlite_users(legacy_users_table)
         seed_demo_users(SessionLocal)
+        seed_demo_seasons(SessionLocal)
         seed_market_channels(SessionLocal)

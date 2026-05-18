@@ -13,14 +13,17 @@ const request = async (factory, fallback) => {
 export const aiApi = {
   chat: async ({ question, crop, cropName, region, context, sessionId }) => {
     const selectedCrop = crop || cropName;
-    return request(() => api.post('/api/ai-chat/message', {
+    const payload = {
       message: question,
-      crop: selectedCrop,
-      crop_name: selectedCrop,
-      region,
-      context,
       session_id: sessionId,
-    }, withApiTimeout('ai')), 'Khong goi duoc AI chat');
+    };
+    if (selectedCrop) {
+      payload.crop = selectedCrop;
+      payload.crop_name = selectedCrop;
+    }
+    if (region) payload.region = region;
+    if (context) payload.context = context;
+    return request(() => api.post('/api/ai-chat/message', payload, withApiTimeout('ai')), 'Khong goi duoc AI chat');
   },
 
   getHistory: async (limit = 20) => {

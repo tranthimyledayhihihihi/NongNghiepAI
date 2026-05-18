@@ -6,7 +6,6 @@ import {
   Bell,
   CloudRain,
   Droplets,
-  ExternalLink,
   Gauge,
   Globe2,
   MapPin,
@@ -19,29 +18,17 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import DataSourceBadge from '../components/DataSourceBadge';
 import { InlineLoading, PageError } from '../components/StatusState';
 import { useAuth } from '../contexts/AuthContext';
 import { getApiErrorMessage, settledValue } from '../services/api';
 import { dashboardApi } from '../services/dashboardApi';
+import { seasonApi } from '../services/seasonApi';
 import { weatherApi } from '../services/weatherApi';
 
 const formatNumber = (value, digits = 0) => {
   const number = Number(value);
   if (!Number.isFinite(number)) return 'N/A';
   return number.toLocaleString('vi-VN', { maximumFractionDigits: digits });
-};
-
-const formatDateTime = (value) => {
-  if (!value) return 'Chưa có';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 };
 
 const formatDate = (value) => {
@@ -167,9 +154,11 @@ const Dashboard = () => {
       const results = await Promise.allSettled([
         dashboardApi.getDashboardFullData(region, { cropName }),
         weatherApi.getCurrentWeather(region),
+        seasonApi.getSeasonSummary(),
       ]);
       const dashboardData = settledValue(results[0], null);
       const freshWeather = settledValue(results[1], null);
+      const seasonSummary = settledValue(results[2], null);
       if (!dashboardData) {
         throw results[0].reason;
       }
@@ -178,8 +167,6 @@ const Dashboard = () => {
       }
       const { overview, realtimeStatus, aiInsights, riskSummary, actionToday } = dashboardData;
 
-      // Merge fresh weather data from the same API the ForecastPage uses
-      // so both pages display consistent weather information
       const mergedWeatherRisk = {
         ...(overview?.weather_risk || {}),
         ...(riskSummary || {}),
@@ -193,6 +180,8 @@ const Dashboard = () => {
 
       setSummary({
         ...overview,
+        active_seasons: seasonSummary?.active_seasons ?? overview?.active_seasons,
+        season_summary: seasonSummary,
         ai_recommendation: aiInsights || overview?.ai_recommendation,
         weather_risk: mergedWeatherRisk,
         realtime_status: realtimeStatus,
@@ -223,6 +212,7 @@ const Dashboard = () => {
   const alerts = summary?.alert_center || [];
   const apiStatus = summary?.realtime_status?.api_status || [];
   const actionToday = summary?.action_today || {};
+  const activeSeasonCount = Number(summary?.season_summary?.active_seasons ?? summary?.active_seasons ?? 0);
 
   const forecastHigh = useMemo(() => {
     if (!forecast.length) return null;
@@ -233,7 +223,7 @@ const Dashboard = () => {
   }, [forecast]);
 
   if (loading && !summary) {
-    return <InlineLoading text="Dang tai dashboard tu cac endpoint moi..." />;
+    return <InlineLoading text="Đang tải dashboard từ các endpoint mới..." />;
   }
 
   if (error && !summary) {
@@ -262,34 +252,30 @@ const Dashboard = () => {
       )}
 
       <Panel>
-        <PanelHeader icon={Gauge} title="API Status">
-          <DataSourceBadge data={summary?.realtime_status || { source: 'database', source_name: 'API health rules', confidence: 0.7 }} />
-        </PanelHeader>
+        <PanelHeader icon={Gauge} title="API Status" />
         <div className="grid gap-3 md:grid-cols-5">
           {apiStatus.length ? (
             apiStatus.map((item) => (
               <div key={item.name} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3">
                 <div className="text-sm font-semibold text-slate-950">{item.name}</div>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
-                    item.status === 'ok' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                  }`}>
+                <div className="mt-2">
+                  <span
+                    className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                      item.status === 'ok' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                    }`}
+                  >
                     {item.status}
                   </span>
-                  <DataSourceBadge data={summary?.realtime_status || { source: 'database', source_name: 'API health rules', confidence: 0.7 }} />
                 </div>
               </div>
             ))
           ) : (
-            <EmptyState text="Chua co trang thai API." />
+            <EmptyState text="Chưa có trạng thái API." />
           )}
         </div>
         {actionToday.actions?.length > 0 && (
           <div className="mt-4 rounded-md border border-indigo-100 bg-indigo-50 p-4">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <div className="text-sm font-semibold text-indigo-950">Action Today</div>
-              <DataSourceBadge data={actionToday} />
-            </div>
+            <div className="mb-2 text-sm font-semibold text-indigo-950">Action Today</div>
             <div className="grid gap-2 md:grid-cols-3">
               {actionToday.actions.slice(0, 3).map((item) => (
                 <div key={item} className="rounded-md bg-white/80 px-3 py-2 text-sm leading-6 text-indigo-900">
@@ -302,56 +288,54 @@ const Dashboard = () => {
       </Panel>
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-        <Panel>
-          <PanelHeader icon={Sprout} title="Harvest Status">
-            <DataSourceBadge data={{ source: 'database', source_name: 'HarvestSchedule DB', confidence: 0.7, updated_at: summary?.generated_at }} />
-          </PanelHeader>
-          <div className="text-3xl font-bold text-slate-950">{formatNumber(summary?.active_seasons)}</div>
-          <p className="mt-2 text-sm text-slate-600">mua vu dang theo doi</p>
-          <p className="mt-3 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-            Recommendation: kiem tra lich thu hoach va rui ro thoi tiet truoc khi chot ngay cat.
-          </p>
-        </Panel>
+        <Link to="/season-management" className="block focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2">
+          <Panel className="h-full transition hover:border-emerald-300 hover:shadow-md">
+            <PanelHeader icon={Sprout} title="Harvest Status" />
+            <div className="text-3xl font-bold text-slate-950">{formatNumber(activeSeasonCount)}</div>
+            <p className="mt-2 text-sm text-slate-600">Mùa vụ đang theo dõi</p>
+            <p className="mt-3 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+              {activeSeasonCount > 0
+                ? 'Recommendation: kiểm tra lịch thu hoạch và rủi ro thời tiết trước khi chốt ngày cắt.'
+                : 'Chưa có mùa vụ nào đang theo dõi'}
+            </p>
+            <span className="mt-4 inline-flex items-center gap-2 rounded-md border border-emerald-700 px-4 py-2 text-sm font-semibold text-emerald-800">
+              {activeSeasonCount > 0 ? 'Quản lý' : 'Thêm mùa vụ đầu tiên'}
+              <ArrowRight className="h-4 w-4" />
+            </span>
+          </Panel>
+        </Link>
 
         <Panel>
-          <PanelHeader icon={Gauge} title="Quality Summary">
-            <DataSourceBadge data={{ source: 'database', source_name: 'QualityRecords DB', confidence: 0.7, updated_at: summary?.generated_at }} />
-          </PanelHeader>
+          <PanelHeader icon={Gauge} title="Quality Summary" />
           <div className="text-3xl font-bold text-slate-950">{formatNumber(summary?.quality_checks)}</div>
-          <p className="mt-2 text-sm text-slate-600">lan kiem dinh chat luong</p>
+          <p className="mt-2 text-sm text-slate-600">Lần kiểm định chất lượng</p>
           <p className="mt-3 rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-800">
-            Recommendation: uu tien lo hang co confidence cao khi dua vao pricing/market.
+            Recommendation: ưu tiên lô hàng có confidence cao khi đưa vào pricing/market.
           </p>
         </Panel>
 
         <Panel>
           <PanelHeader icon={AlertTriangle} title="Risk Summary">
-            <div className="flex flex-wrap items-center gap-2">
-              <RiskBadge level={weatherRisk.risk_level} />
-              <DataSourceBadge data={weatherRisk} />
-            </div>
+            <RiskBadge level={weatherRisk.risk_level} />
           </PanelHeader>
           <div className="text-3xl font-bold text-slate-950">{formatNumber(weatherRisk.risk_score)}</div>
-          <p className="mt-2 text-sm text-slate-600">risk score cho {displayRegion(weatherRisk.region || region)}</p>
+          <p className="mt-2 text-sm text-slate-600">Risk score cho {displayRegion(weatherRisk.region || region)}</p>
           <div className="mt-3 space-y-2">
             {(weatherRisk.alerts || []).slice(0, 2).map((item, index) => (
               <div key={`${item.title || item.alert_type || 'risk'}-${index}`} className="rounded-md border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                 <div className="flex items-center justify-between gap-2">
                   <span>{item.title || item.message || item.alert_type}</span>
-                  <DataSourceBadge data={item.source ? item : weatherRisk} />
                 </div>
               </div>
             ))}
-            {!(weatherRisk.alerts || []).length && <EmptyState text="Chua co risk row." />}
+            {!(weatherRisk.alerts || []).length && <EmptyState text="Chưa có risk row." />}
           </div>
         </Panel>
       </div>
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
         <Panel>
-          <PanelHeader icon={TrendingUp} title="Market Price">
-            <DataSourceBadge data={featured} />
-          </PanelHeader>
+          <PanelHeader icon={TrendingUp} title="Market Price" />
 
           <div className="space-y-4">
             <div>
@@ -380,16 +364,6 @@ const Dashboard = () => {
               </div>
             </div>
 
-            <div className="rounded-md border border-slate-200 px-3 py-2 text-xs text-slate-600">
-              <div className="font-semibold text-slate-800">Nguồn: {featured.source_name || 'Chưa rõ'}</div>
-              <div>Cập nhật: {formatDateTime(featured.last_updated)}</div>
-              {featured.source_url && (
-                <a href={featured.source_url} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-emerald-700">
-                  Mở nguồn <ExternalLink className="h-3 w-3" />
-                </a>
-              )}
-            </div>
-
             <Link
               to="/alerts"
               className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-emerald-700 px-4 py-2.5 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50"
@@ -402,10 +376,7 @@ const Dashboard = () => {
 
         <Panel>
           <PanelHeader icon={CloudRain} title="Weather Realtime">
-            <div className="flex items-center gap-2">
-              <RiskBadge level={weatherRisk.risk_level} />
-              <DataSourceBadge data={weatherRisk} />
-            </div>
+            <RiskBadge level={weatherRisk.risk_level} />
           </PanelHeader>
 
           <div className="grid grid-cols-2 gap-3">
@@ -451,16 +422,12 @@ const Dashboard = () => {
             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
               {alerts.length} cảnh báo
             </span>
-            <DataSourceBadge data={{ source: 'database', source_name: 'Alert rules DB', confidence: 0.7 }} />
           </PanelHeader>
           <div className="space-y-3">
             {alerts.length ? (
               alerts.slice(0, 4).map((alert, index) => (
                 <div key={`${alert.alert_type}-${index}`} className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="text-sm font-semibold text-amber-900">{alert.title || alert.alert_type}</div>
-                    <DataSourceBadge data={alert.source ? alert : { ...alert, source: 'ai_generated', source_name: 'Weather risk alert engine' }} />
-                  </div>
+                  <div className="text-sm font-semibold text-amber-900">{alert.title || alert.alert_type}</div>
                   <div className="mt-1 text-xs text-amber-800">{alert.message || alert.recommendation}</div>
                 </div>
               ))
@@ -473,9 +440,7 @@ const Dashboard = () => {
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         <Panel>
-          <PanelHeader icon={Sparkles} title="AI Today">
-            <DataSourceBadge data={summary?.ai_recommendation || {}} />
-          </PanelHeader>
+          <PanelHeader icon={Sparkles} title="AI Today" />
           <div className="space-y-3">
             <h3 className="text-xl font-bold text-slate-950">{summary?.ai_recommendation?.title || 'Đang tổng hợp'}</h3>
             <p className="text-sm leading-6 text-slate-600">{summary?.ai_recommendation?.description || 'Chưa có khuyến nghị.'}</p>
@@ -497,7 +462,6 @@ const Dashboard = () => {
         <Panel>
           <PanelHeader icon={TrendingUp} title="Dự báo giá 7 ngày">
             {forecastHigh && <span className="text-xs font-medium text-slate-500">Đỉnh: {formatNumber(forecastHigh.forecast_price || forecastHigh.predicted_price)}</span>}
-            <DataSourceBadge data={{ source: 'ai_generated', source_name: 'Pricing forecast engine', confidence: 0.62 }} />
           </PanelHeader>
           <div className="space-y-2">
             {forecast.length ? (
@@ -506,9 +470,6 @@ const Dashboard = () => {
                   <div>
                     <div className="text-sm font-semibold text-slate-900">{formatDate(item.date)}</div>
                     <div className="text-xs text-slate-500">{item.confidence === 'high' ? 'Tin cậy cao' : 'Tin cậy trung bình'}</div>
-                    <div className="mt-1">
-                      <DataSourceBadge data={item.source ? item : { ...item, source: 'ai_generated', source_name: 'Pricing forecast engine', confidence: item.confidence === 'high' ? 0.72 : 0.6 }} />
-                    </div>
                   </div>
                   <div className="flex items-center gap-2 text-right">
                     {trendIcon(item.trend)}
@@ -530,13 +491,7 @@ const Dashboard = () => {
             {regionalPrices.length ? (
               regionalPrices.map((item) => (
                 <div key={item.region} className="rounded-md border border-slate-200 px-3 py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="font-semibold text-slate-950">{displayRegion(item.region)}</div>
-                      <div className="text-xs text-slate-500">{item.source_name || 'database'}</div>
-                    </div>
-                    <DataSourceBadge data={item} />
-                  </div>
+                  <div className="font-semibold text-slate-950">{displayRegion(item.region)}</div>
                   <div className="mt-3 text-2xl font-bold text-slate-950">
                     {formatNumber(item.price)} <span className="text-sm font-medium text-slate-500">{item.unit || 'VND/kg'}</span>
                   </div>
@@ -549,9 +504,7 @@ const Dashboard = () => {
         </Panel>
 
         <Panel>
-          <PanelHeader icon={Newspaper} title="Tin thị trường">
-            <DataSourceBadge data={{ source: 'realtime_api', source_name: 'RSS market news cache', confidence: 0.7 }} />
-          </PanelHeader>
+          <PanelHeader icon={Newspaper} title="Tin thị trường" />
           <div className="space-y-3">
             {news.length ? (
               news.slice(0, 6).map((item) => (
@@ -566,10 +519,6 @@ const Dashboard = () => {
                     <div className="line-clamp-2 text-sm font-semibold text-slate-950">{item.title}</div>
                     <SentimentBadge value={item.sentiment} />
                   </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                    <span>{item.source_name || 'RSS'} - {formatDateTime(item.published_at)}</span>
-                    <DataSourceBadge data={item.source ? item : { ...item, source: 'realtime_api', source_name: item.source_name || 'RSS market news cache', confidence: 0.7 }} />
-                  </div>
                 </a>
               ))
             ) : (
@@ -580,19 +529,13 @@ const Dashboard = () => {
       </div>
 
       <Panel>
-        <PanelHeader icon={Globe2} title="Tham chiếu thị trường quốc tế">
-          <DataSourceBadge data={realtimeMarket.exchange_rate || {}} />
-        </PanelHeader>
+        <PanelHeader icon={Globe2} title="Tham chiếu thị trường quốc tế" />
         <div className="grid gap-3 md:grid-cols-3">
           {(realtimeMarket.global_references || []).length ? (
             realtimeMarket.global_references.map((item) => (
               <div key={`${item.crop_name}-${item.source_url}`} className="rounded-md border border-slate-200 px-3 py-3">
                 <div className="text-sm font-semibold text-slate-950">{item.crop_name || item.crop_id}</div>
                 <div className="mt-2 text-xl font-bold text-slate-950">{formatNumber(item.price)} VND/kg</div>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <div className="text-xs text-slate-500">{item.source_name}</div>
-                  <DataSourceBadge data={item} compact />
-                </div>
               </div>
             ))
           ) : (

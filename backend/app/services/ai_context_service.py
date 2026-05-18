@@ -1,9 +1,8 @@
-from datetime import datetime
-
 from sqlalchemy.orm import Session
 
 from app.services.agri_data_aggregator_service import agri_data_aggregator_service
 from app.services.data_source_service import data_source_service
+from app.services.ai_intent_service import normalize_intent
 
 
 class AIContextService:
@@ -18,12 +17,16 @@ class AIContextService:
     ) -> dict:
         selected_region = (region or "Ha Noi").strip() or "Ha Noi"
         selected_crop = (crop or "lua").strip().lower() or "lua"
-        selected_intent = intent or "general"
-        needs_all = selected_intent == "general"
-        needs_weather = needs_all or selected_intent in {"weather_advice", "harvest_advice", "alert_summary"}
-        needs_pricing = needs_all or selected_intent in {"price_query", "harvest_advice", "quality_check"}
-        needs_market = needs_all or selected_intent == "price_query"
-        needs_alerts = needs_all or selected_intent in {"weather_advice", "alert_summary", "harvest_advice"}
+        selected_intent = normalize_intent(intent)
+
+        needs_all = selected_intent == "full_farm_analysis"
+        needs_weather = selected_intent in {"weather_analysis", "alert_analysis"} or needs_all
+        needs_pricing = selected_intent == "price_analysis" or needs_all
+        needs_market = selected_intent == "price_analysis" or needs_all
+        needs_alerts = selected_intent == "alert_analysis" or needs_all
+        needs_quality = selected_intent == "quality_analysis" or needs_all
+        needs_harvest = selected_intent == "harvest_analysis" or needs_all
+        needs_settings = needs_all
 
         weather_bundle = self._safe(
             lambda: agri_data_aggregator_service.get_weather_bundle(db, region=selected_region, crop=selected_crop),
@@ -47,19 +50,20 @@ class AIContextService:
             "alerts",
         ) if needs_alerts else {}
 
-        quality_history = agri_data_aggregator_service.get_quality_history(db, user_id) if needs_all or selected_intent == "quality_check" else []
-        harvest_status = agri_data_aggregator_service.get_harvest_status(db, user_id) if needs_all or selected_intent == "harvest_advice" else {}
-        settings = agri_data_aggregator_service.get_user_settings(db, user_id) if needs_all else {}
+        quality_history = agri_data_aggregator_service.get_quality_history(db, user_id) if needs_quality else []
+        harvest_status = agri_data_aggregator_service.get_harvest_status(db, user_id) if needs_harvest else {}
+        settings = agri_data_aggregator_service.get_user_settings(db, user_id) if needs_settings else {}
+        include_weather_details = selected_intent == "weather_analysis" or needs_all
 
         context = {
             "intent": selected_intent,
             "region": selected_region,
             "crop_name": selected_crop,
             "crop": selected_crop,
-            "weather": weather_bundle.get("current", {}),
+            "weather": weather_bundle.get("current", {}) if include_weather_details else {},
             "weather_risk": weather_bundle.get("risk", {}),
-            "weather_forecast": weather_bundle.get("forecast", []),
-            "farming_recommendation": weather_bundle.get("recommendation", {}),
+            "weather_forecast": weather_bundle.get("forecast", []) if include_weather_details else [],
+            "farming_recommendation": weather_bundle.get("recommendation", {}) if include_weather_details else {},
             "pricing": pricing_bundle.get("current", {}),
             "price_history": pricing_bundle.get("history", []),
             "price_forecast": pricing_bundle.get("forecast", {}),
@@ -75,17 +79,24 @@ class AIContextService:
             "alerts": alert_bundle.get("alerts", []),
             "notifications": alert_bundle.get("notifications", {}),
             "settings": settings,
-            "generated_at": datetime.now(),
         }
         context["data_sources"] = data_source_service.collect_data_sources(context)
-        context["tools_used"] = [
-            "weather_service",
-            "pricing_service",
-            "market_news_service",
-            "alert_service",
-            "notification_center_service",
-            "settings_service",
-        ]
+        tools_used = []
+        if needs_weather:
+            tools_used.append("weather_service")
+        if needs_pricing:
+            tools_used.append("pricing_service")
+        if needs_market:
+            tools_used.append("market_news_service")
+        if needs_alerts:
+            tools_used.extend(["alert_service", "notification_center_service"])
+        if needs_quality:
+            tools_used.append("quality_service")
+        if needs_harvest:
+            tools_used.append("harvest_service")
+        if needs_settings:
+            tools_used.append("settings_service")
+        context["tools_used"] = tools_used
         return context
 
     @staticmethod
