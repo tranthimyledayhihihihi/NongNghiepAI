@@ -9,7 +9,7 @@ import {
   Settings,
   Sprout,
   TrendingUp,
-  X,
+  X
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 
@@ -46,9 +46,8 @@ const Sidebar = ({ open, setOpen }) => {
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-30 w-64 transform border-r border-gray-200 bg-white transition-transform duration-300 ease-in-out lg:static lg:inset-0 lg:translate-x-0 ${
-          open ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        className={`fixed inset-y-0 left-0 z-30 w-64 transform border-r border-gray-200 bg-white transition-transform duration-300 ease-in-out lg:static lg:inset-0 lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'
+          }`}
       >
         <div className="flex h-full flex-col">
           <div className="flex h-16 items-center justify-between border-b border-gray-200 px-6">
@@ -80,9 +79,8 @@ const Sidebar = ({ open, setOpen }) => {
                   key={item.name}
                   to={item.href}
                   onClick={() => setOpen(false)}
-                  className={`flex items-center rounded-lg px-4 py-3 text-sm font-medium transition-colors ${
-                    active ? 'bg-emerald-50 text-emerald-700' : 'text-gray-700 hover:bg-gray-50'
-                  }`}
+                  className={`flex items-center rounded-lg px-4 py-3 text-sm font-medium transition-colors ${active ? 'bg-emerald-50 text-emerald-700' : 'text-gray-700 hover:bg-gray-50'
+                    }`}
                 >
                   <Icon className={`mr-3 h-5 w-5 ${active ? 'text-emerald-600' : 'text-gray-400'}`} />
                   {item.name}

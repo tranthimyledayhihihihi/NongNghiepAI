@@ -1,5 +1,6 @@
 import { Bell, HelpCircle, LogOut, Menu, Settings, User } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
+import logo from '../assets/agri-ai-logo-header.png';
 import { useAuth } from '../contexts/AuthContext';
 
 const Navbar = ({ setSidebarOpen }) => {
@@ -14,15 +15,24 @@ const Navbar = ({ setSidebarOpen }) => {
   return (
     <header className="sticky top-0 z-10 border-b border-gray-200 bg-white">
       <div className="flex h-16 items-center justify-between px-4 md:px-6">
-        <div className="flex flex-1 items-center">
+        <div className="flex flex-1 items-center gap-3">
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
-            className="mr-4 rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 lg:hidden"
+            className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 lg:hidden"
             aria-label="Mở menu"
           >
             <Menu className="h-6 w-6" />
           </button>
+          <Link to="/dashboard" className="flex items-center gap-3">
+            <img src={logo} alt="AgriAI Icon" className="h-10 w-auto" />
+            <div className="hidden sm:flex sm:flex-col">
+              <span className="text-lg font-bold text-gray-900">
+                Agri<span className="text-emerald-600">AI</span>
+              </span>
+              <span className="text-xs font-medium text-gray-500">Nông nghiệp thông minh</span>
+            </div>
+          </Link>
         </div>
 
         <div className="flex items-center gap-2 md:gap-3">
