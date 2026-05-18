@@ -1,16 +1,27 @@
 import { Bell, HelpCircle, LogOut, Menu, Settings, User } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
-import logo from '../assets/agri-ai-logo-header.png';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { navigation } from './Sidebar';
 
 const Navbar = ({ setSidebarOpen }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { logout, user, isAuthenticated } = useAuth();
 
   const handleLogout = () => {
     logout();
     navigate('/login', { replace: true });
   };
+
+  // Find current page name from navigation
+  const currentPage = navigation.find((item) =>
+    item.match.some((path) =>
+      path === item.href ? location.pathname === path : location.pathname.startsWith(path)
+    )
+  );
+
+  const pageTitle = currentPage ? currentPage.name : 'AgriAI';
+  const PageIcon = currentPage?.icon;
 
   return (
     <header className="sticky top-0 z-10 border-b border-gray-200 bg-white">
@@ -24,15 +35,10 @@ const Navbar = ({ setSidebarOpen }) => {
           >
             <Menu className="h-6 w-6" />
           </button>
-          <Link to="/dashboard" className="flex items-center gap-3">
-            <img src={logo} alt="AgriAI Icon" className="h-10 w-auto" />
-            <div className="hidden sm:flex sm:flex-col">
-              <span className="text-lg font-bold text-gray-900">
-                Agri<span className="text-emerald-600">AI</span>
-              </span>
-              <span className="text-xs font-medium text-gray-500">Nông nghiệp thông minh</span>
-            </div>
-          </Link>
+          <div className="flex items-center gap-2">
+            {PageIcon && <PageIcon className="h-5 w-5 text-emerald-600" />}
+            <h1 className="text-lg font-bold text-gray-900">{pageTitle}</h1>
+          </div>
         </div>
 
         <div className="flex items-center gap-2 md:gap-3">
