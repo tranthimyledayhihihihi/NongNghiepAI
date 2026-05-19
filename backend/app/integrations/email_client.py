@@ -11,9 +11,9 @@ class EmailClient:
         if not settings.SMTP_HOST or not settings.SMTP_USER or not settings.SMTP_PASSWORD:
             return {
                 "receiver": receiver,
-                "status": "mock_sent",
-                "message_id": f"mock-email-{uuid4()}",
-                "error": "SMTP is not configured",
+                "status": "failed",
+                "message_id": None,
+                "error": "SMTP chưa được cấu hình",
             }
 
         try:

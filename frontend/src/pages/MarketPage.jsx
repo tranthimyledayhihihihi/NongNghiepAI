@@ -1,4 +1,4 @@
-import { AlertCircle, Globe, RefreshCw, Search, ShoppingCart, TrendingUp } from 'lucide-react';
+import { Globe, RefreshCw, Search, ShoppingCart, TrendingUp } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import DataSourceBadge from '../components/DataSourceBadge';
 import { getApiErrorMessage } from '../services/api';
@@ -26,8 +26,8 @@ const initialFormData = {
 const formatMoney = (value) => `${Number(value || 0).toLocaleString('vi-VN')} đ/kg`;
 
 const MarketPage = () => {
-  const [channels, setChannels] = useState(fallbackChannels);
-  const [channelSource, setChannelSource] = useState({ is_mock: true, source: 'fallback' });
+  const [channels, setChannels] = useState([]);
+  const [channelSource, setChannelSource] = useState({ is_mock: false, source: 'database' });
   const [formData, setFormData] = useState(initialFormData);
   const [analysis, setAnalysis] = useState(null);
   const [marketPrice, setMarketPrice] = useState(null);
@@ -58,9 +58,13 @@ const MarketPage = () => {
           setChannels(data.channels);
           setChannelSource(data);
         }
-      } catch {
-        setChannels(fallbackChannels);
-        setChannelSource({ is_mock: true, source: 'fallback' });
+      } catch (err) {
+        setChannels([]);
+        setChannelSource({
+          is_mock: false,
+          source: 'realtime_api',
+          error: getApiErrorMessage(err, 'Không thể tải kênh bán hàng.'),
+        });
       }
     };
     loadChannels();
@@ -99,25 +103,10 @@ const MarketPage = () => {
       setAnalysis(analysisData);
       setMarketPrice(priceData);
       setNews(newsData?.news || []);
-      if (newsData?.source === 'mock') {
-        setNewsError('Tin thị trường đang dùng dữ liệu lưu sẵn hoặc mô phỏng.');
-      }
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Không thể phân tích thị trường'));
-      try {
-        setNewsLoading(true);
-        const legacyNews = await marketNewsApi.getLegacyLatest(4);
-        setNews((legacyNews.news || []).map((item) => ({
-          ...item,
-          source: 'legacy',
-          source_name: item.source_name || 'Tin thị trường đã lưu',
-          confidence: item.confidence ?? 0.45,
-        })));
-      } catch {
-        setNews([]);
-      } finally {
-        setNewsLoading(false);
-      }
+      setError(getApiErrorMessage(err, 'Không thể phân tích thị trường realtime.'));
+      setNews([]);
+      setNewsError('Không thể tải tin tức thị trường realtime.');
     } finally {
       setLoading(false);
     }
@@ -144,7 +133,7 @@ const MarketPage = () => {
       });
       setMarketPrice(refreshed);
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Không làm mới được giá'));
+      setError(getApiErrorMessage(err, 'Không thể tải giá realtime.'));
     } finally {
       setRefreshingPrice(false);
     }
@@ -241,6 +230,17 @@ const MarketPage = () => {
               {loading ? 'Đang phân tích...' : 'Phân tích thị trường'}
             </button>
           </div>
+          <div className="flex items-end">
+            <button
+              type="button"
+              onClick={handleRefreshPrice}
+              disabled={refreshingPrice || !canAnalyze}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-700 bg-emerald-50 px-4 py-2.5 font-semibold text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <RefreshCw className="h-5 w-5" />
+              {refreshingPrice ? 'Đang làm mới...' : 'Làm mới giá'}
+            </button>
+          </div>
         </form>
       </section>
 
@@ -267,6 +267,36 @@ const MarketPage = () => {
             <p className="text-sm text-gray-600">Độ tin cậy</p>
             <p className="mt-2 text-2xl font-bold text-gray-900">{((analysis.confidence_score || 0) * 100).toFixed(0)}%</p>
             <p className="mt-2 text-sm text-gray-600">{volatility.summary}</p>
+          </div>
+        </section>
+      )}
+
+      {analysis && (
+        <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+            <p className="text-sm text-gray-600">Giá nội địa</p>
+            <p className="mt-2 text-2xl font-bold text-gray-900">
+              {formatMoney(analysis.local_price?.price ?? analysis.current_price)}
+            </p>
+            <p className="mt-1 text-xs text-gray-500">{analysis.local_price?.source_name || analysis.source_name || 'MarketPrices DB'}</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+            <p className="text-sm text-gray-600">Giá quốc tế tham chiếu</p>
+            {analysis.global_reference ? (
+              <>
+                <p className="mt-2 text-2xl font-bold text-gray-900">
+                  {Number(analysis.global_reference.price || 0).toLocaleString('vi-VN')} {analysis.global_reference.unit || 'USD/ton'}
+                </p>
+                <p className="mt-1 text-xs text-gray-500">{analysis.global_reference.source_name || 'Twelve Data'}</p>
+              </>
+            ) : (
+              <p className="mt-2 text-sm text-gray-500">Chưa có dữ liệu tham chiếu quốc tế.</p>
+            )}
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+            <p className="text-sm text-gray-600">Tin tức tác động</p>
+            <p className="mt-2 text-xl font-bold text-gray-900">{translateUiText(analysis.news_impact?.level || 'neutral')}</p>
+            <p className="mt-2 text-sm text-gray-600">{translateUiText(analysis.news_impact?.summary || 'Chưa có tin tác động phù hợp.')}</p>
           </div>
         </section>
       )}

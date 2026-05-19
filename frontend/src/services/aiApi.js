@@ -1,12 +1,11 @@
 import api, { getApiErrorMessage, withApiTimeout } from './api';
-import { normalizeApiResponse } from '../utils/apiResponse';
+import { normalizeApiError, normalizeApiResponse } from '../utils/apiResponse';
 
 const request = async (factory, fallback) => {
   try {
     return normalizeApiResponse(await factory());
   } catch (error) {
-    error.message = getApiErrorMessage(error, fallback);
-    throw error;
+    throw normalizeApiError({ ...error, message: getApiErrorMessage(error, fallback) });
   }
 };
 
@@ -23,18 +22,18 @@ export const aiApi = {
     }
     if (region) payload.region = region;
     if (context) payload.context = context;
-    return request(() => api.post('/api/ai-chat/message', payload, withApiTimeout('ai')), 'Khong goi duoc AI chat');
+    return request(() => api.post('/api/ai-chat/message', payload, withApiTimeout('ai')), 'Không thể kết nối trợ lý AI. Vui lòng thử lại sau.');
   },
 
   getHistory: async (limit = 20) => {
-    return request(() => api.get(`/api/ai-chat/history?limit=${limit}`), 'Khong tai duoc lich su chat');
+    return request(() => api.get(`/api/ai-chat/history?limit=${limit}`), 'Không tải được lịch sử chat');
   },
 
   deleteMessage: async (convId) => {
-    return request(() => api.delete(`/api/chat/history/${convId}`), 'Khong xoa duoc tin chat');
+    return request(() => api.delete(`/api/chat/history/${convId}`), 'Không xóa được tin chat');
   },
 
   clearHistory: async () => {
-    return request(() => api.delete('/api/chat/history'), 'Khong xoa duoc lich su chat');
+    return request(() => api.delete('/api/chat/history'), 'Không xóa được lịch sử chat');
   },
 };

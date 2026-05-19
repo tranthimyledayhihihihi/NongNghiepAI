@@ -185,12 +185,25 @@ class WeatherService:
                 "cache_status":     "stale" if live_error else "db",
                 "fallback_used":     live_error is not None,
                 "timeout":           live_error is not None,
-                "message":           "Du lieu realtime dang cham, he thong da dung du lieu thoi tiet du phong." if live_error else None,
+                "message":           "Dữ liệu realtime đang chậm. Đang hiển thị dữ liệu cache gần nhất." if live_error else None,
                 "agriculture_insights": [],
                 "warnings":         self._analyze_warnings(
                     temp_max or 30, temp_min or 20,
                     float(weather.Rainfall or 0), float(weather.Humidity or 70)
                 ),
+            }
+
+        if self._realtime_only():
+            return {
+                "_api_error": True,
+                "error_code": "REALTIME_API_FAILED",
+                "error_message": "Không thể tải dữ liệu thời tiết realtime.",
+                "region": region,
+                "source": "realtime_api",
+                "is_realtime": False,
+                "is_mock": False,
+                "cache_status": "miss",
+                "live_error": str(live_error) if live_error else None,
             }
 
         # ── 3. Fallback mock khi không có gì ───────────────────────────────
@@ -220,10 +233,14 @@ class WeatherService:
             "cache_status":     "miss",
             "fallback_used":     True,
             "timeout":           live_error is not None,
-            "message":           "Du lieu realtime dang cham, he thong da dung du lieu du phong.",
+            "message":           "Dữ liệu realtime đang chậm. Hệ thống sẽ hiển thị dữ liệu cache nếu có.",
             "agriculture_insights": [],
             "warnings":         [],
         }
+
+    @staticmethod
+    def _realtime_only() -> bool:
+        return bool(settings.USE_REALTIME_ONLY) and not bool(settings.ALLOW_MOCK_DATA or settings.ALLOW_SAMPLE_DATA)
 
     def _weather_row_to_current(self, weather, *, fallback_used: bool) -> dict:
         temp_min = float(weather.TempMin) if weather.TempMin is not None else None
@@ -393,6 +410,8 @@ class WeatherService:
             return _weather_client.get_hourly_forecast(norm, hours)
         except Exception:
             current = self.get_current_weather(db, norm)
+            if current.get("_api_error"):
+                return []
             return self._build_hourly(current)[:hours]
 
     def get_harvest_weather_warning(self, db: Session, region: str) -> str | None:
@@ -451,6 +470,8 @@ class WeatherService:
         include_hourly: bool = True,
     ) -> dict:
         current = self.get_current_weather(db, region)
+        if current.get("_api_error"):
+            return current
 
         # Forecast 7 ngày
         db_forecast = get_weather_forecast(db, _normalize_region(region), days)
@@ -547,6 +568,9 @@ class WeatherService:
                 })
 
         # Pad với mock khi DB có ít hơn days ngày
+        if self._realtime_only():
+            return result
+
         if len(result) < days:
             base = MOCK_WEATHER.get(region, MOCK_WEATHER["default"])
             last_date = date.fromisoformat(result[-1]["date"]) if result else date.today() - timedelta(days=1)
@@ -860,6 +884,9 @@ class WeatherService:
                 timeout=live_error is not None,
             )
 
+        if self._realtime_only():
+            return []
+
         base = MOCK_WEATHER.get(norm, MOCK_WEATHER["default"])
         result = []
         for i in range(1, days + 1):
@@ -922,13 +949,15 @@ class WeatherService:
                 "last_updated": updated,
                 "fallback_used": fallback_used,
                 "timeout": timeout,
-                "message": "Du lieu realtime dang cham, he thong da dung du lieu thoi tiet du phong." if fallback_used else None,
+                "message": "Dữ liệu realtime đang chậm. Đang hiển thị dữ liệu cache gần nhất." if fallback_used else None,
                 "warnings": self._analyze_warnings(temp_max, temp_min, rain, hum),
             })
         return result
 
     def analyze_agriculture_risk(self, db: Session, region: str, crop_name: str) -> dict:
         current = self.get_current_weather(db, region)
+        if current.get("_api_error"):
+            return current
         forecast = self.get_forecast(db, region, 7)
         alerts = self.generate_alerts(current, forecast, crop_name=crop_name)
         temp = float(current.get("temperature") or current.get("temp_max") or 0)
@@ -970,6 +999,8 @@ class WeatherService:
 
     def farming_recommendation(self, db: Session, region: str, crop_name: str) -> dict:
         current = self.get_current_weather(db, region)
+        if current.get("_api_error"):
+            return current
         forecast = self.get_forecast(db, region, 7)
         hourly = self.get_hourly_forecast(db, region, 24)
         recommendations = self.build_activity_recommendations(current, forecast, hourly, crop_name=crop_name)

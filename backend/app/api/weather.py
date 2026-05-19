@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.api.response import api_response
+from app.api.response import api_response, error_response
 from app.core.database import get_db
 from app.schemas.weather_schema import (
     WeatherActivityRecommendation,
@@ -50,6 +50,8 @@ async def refresh_current_weather(region: str, db: Session = Depends(get_db)):
 @router.get("/forecast/{region}")
 async def get_weather_forecast(region: str, days: int = 7, db: Session = Depends(get_db)):
     forecast = weather_service.get_forecast(db, region, days)
+    if not forecast:
+        return error_response("Không thể tải dữ liệu thời tiết realtime.")
     is_mock = bool(forecast) and all(item.get("is_mock") for item in forecast)
     is_realtime = any(item.get("is_realtime") for item in forecast)
     fallback_used = any(item.get("fallback_used") for item in forecast)
@@ -78,6 +80,8 @@ async def get_weather_forecast(region: str, days: int = 7, db: Session = Depends
 @router.get("/hourly/{region}")
 async def get_hourly_weather_forecast(region: str, hours: int = 24, db: Session = Depends(get_db)):
     forecast = weather_service.get_hourly_forecast(db, region, hours)
+    if not forecast:
+        return error_response("Không thể tải dữ liệu thời tiết realtime.")
     data = {
         "region": region,
         "hours": hours,
@@ -85,7 +89,7 @@ async def get_hourly_weather_forecast(region: str, hours: int = 24, db: Session 
     }
     return api_response(
         data,
-        source="realtime_api" if any(item.get("is_realtime") for item in forecast) else "mock",
+        source="realtime_api" if any(item.get("is_realtime") for item in forecast) else "cache",
         source_name=(forecast[0].get("source_name") if forecast else "Open-Meteo"),
         is_realtime=any(item.get("is_realtime") for item in forecast),
         is_mock=not any(not item.get("is_mock") for item in forecast),

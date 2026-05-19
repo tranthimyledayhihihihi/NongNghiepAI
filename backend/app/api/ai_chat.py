@@ -28,6 +28,7 @@ from app.services.ai_intent_service import (
     extract_crop_from_message,
     extract_region_from_message,
     is_capability_question,
+    normalize_user_text,
     normalize_intent,
 )
 
@@ -112,6 +113,68 @@ def _default_context(db: Session, user: User | None, request: AIChatMessageReque
         crop=crop,
         intent=intent,
     )
+
+
+def _should_answer_market_locally(message: str, intent: str) -> bool:
+    text = normalize_user_text(message)
+    market_words = (
+        "gia",
+        "thi truong",
+        "co nen ban",
+        "nen ban",
+        "giu hang",
+        "tin tuc",
+        "tin thi truong",
+        "phan tich thi truong",
+    )
+    return intent == "price_analysis" and any(word in text for word in market_words)
+
+
+def _format_vnd(value: Any) -> str:
+    try:
+        return f"{float(value):,.0f}".replace(",", ".")
+    except Exception:
+        return "N/A"
+
+
+def _local_market_reply(context: dict, message: str) -> str:
+    crop = context.get("crop_name") or "nông sản"
+    region = context.get("region") or "khu vực này"
+    pricing = context.get("pricing") or {}
+    analysis = context.get("market_analysis") or context.get("pricing_analysis") or {}
+    market = context.get("market") or {}
+    news_items = market.get("news") or analysis.get("related_news") or []
+    wants_news = "tin" in normalize_user_text(message)
+
+    has_real_price = bool(pricing) and not pricing.get("is_mock") and pricing.get("source_type") != "mock"
+    if not has_real_price:
+        return (
+            f"Hiện chưa có dữ liệu thị trường thực tế cho {crop} tại {region}. "
+            "Mình sẽ không tự bịa giá. Bạn có thể cấu hình APIFarmer/Twelve Data hoặc cập nhật dữ liệu MarketPrices DB rồi hỏi lại."
+        )
+
+    lines = [
+        f"Giá {crop} tại {region}: {_format_vnd(pricing.get('current_price') or pricing.get('market_price'))} {pricing.get('unit') or 'VNĐ/kg'}.",
+        f"Nguồn: {pricing.get('source_name') or 'MarketPrices DB'}; độ tin cậy khoảng {round(float(pricing.get('confidence_score') or pricing.get('confidence') or 0) * 100)}%.",
+    ]
+    global_reference = pricing.get("global_reference") or analysis.get("global_reference")
+    if global_reference:
+        lines.append(
+            f"Tham chiếu quốc tế: {global_reference.get('price')} {global_reference.get('unit') or 'USD/ton'} từ {global_reference.get('source_name') or 'Twelve Data'}."
+        )
+    recommendation = analysis.get("recommendation") or pricing.get("recommendation")
+    if isinstance(recommendation, dict):
+        lines.append(f"Khuyến nghị: {recommendation.get('title') or recommendation.get('action')}. {recommendation.get('reason') or ''}".strip())
+    elif recommendation:
+        lines.append(f"Khuyến nghị: {recommendation}")
+    if wants_news:
+        if news_items:
+            lines.append("Tin thị trường liên quan:")
+            for item in news_items[:3]:
+                lines.append(f"- {item.get('title')} ({item.get('source_name') or 'nguồn tin thị trường'})")
+        else:
+            lines.append("Chưa có tin tức thị trường thực tế phù hợp trong cache cho nông sản/khu vực này.")
+    return "\n".join(lines)
 
 
 def _get_google_api_key() -> str | None:
@@ -568,6 +631,35 @@ async def ai_chat_message(
             "data_sources": [],
         }
 
+    if _should_answer_market_locally(request.message, intent):
+        reply = _local_market_reply(context, request.message)
+        _save_gemini_conversation(
+            db,
+            user_id=current_user.UserID if current_user else None,
+            session_id=request.session_id,
+            question=request.message,
+            reply=reply,
+            topic=context.get("intent", intent),
+            crop_name=crop or context.get("crop_name"),
+            context=context,
+            model_name="market-data-router-v1",
+            provider="local",
+        )
+        response_payload = _success_payload(
+            reply=reply,
+            intent=context.get("intent", intent),
+            crop=crop or context.get("crop_name"),
+            region=region or context.get("region"),
+            model_name="market-data-router-v1",
+            provider="local",
+            context=context,
+            confidence=0.86,
+        )
+        response_payload["data"]["reasons"] = _build_reasons(context, {"is_mock": False})
+        response_payload["data"]["recommendations"] = _build_recommendations(context, {"is_mock": False})
+        response_payload["data"]["suggested_actions"] = response_payload["data"]["recommendations"]
+        return response_payload
+
     try:
         reply, model_name = await _call_gemini(request, context)
     except RuntimeError as exc:
@@ -576,40 +668,68 @@ async def ai_chat_message(
                 status_code=500,
                 content={
                     "success": False,
-                    "source": "gemini",
-                    "error": "missing_google_api_key",
-                    "message": "Backend chua cau hinh GOOGLE_API_KEY trong backend/.env.",
+                    "data": None,
+                    "source": "realtime_api",
+                    "is_realtime": False,
+                    "is_cache": False,
+                    "is_mock": False,
+                    "warning": None,
+                    "error": {
+                        "code": "AI_API_KEY_MISSING",
+                        "message": "Không thể kết nối trợ lý AI. Vui lòng cấu hình GOOGLE_API_KEY trong backend/.env.",
+                    },
                 },
             )
         return JSONResponse(
-            status_code=502,
-            content={
-                "success": False,
-                "source": "gemini",
-                "error": "gemini_error",
-                "message": f"Gemini khong tra ve cau tra loi hop le: {exc}",
-            },
-        )
+                status_code=502,
+                content={
+                    "success": False,
+                    "data": None,
+                    "source": "realtime_api",
+                    "is_realtime": False,
+                    "is_cache": False,
+                    "is_mock": False,
+                    "warning": None,
+                    "error": {
+                        "code": "AI_API_FAILED",
+                        "message": f"Gemini không trả về câu trả lời hợp lệ: {exc}",
+                    },
+                },
+            )
     except asyncio.TimeoutError:
         return JSONResponse(
-            status_code=504,
-            content={
-                "success": False,
-                "source": "gemini",
-                "error": "gemini_timeout",
-                "message": f"Gemini API timeout sau {settings.AI_TIMEOUT_SECONDS:g} giay.",
-            },
-        )
+                status_code=504,
+                content={
+                    "success": False,
+                    "data": None,
+                    "source": "realtime_api",
+                    "is_realtime": False,
+                    "is_cache": False,
+                    "is_mock": False,
+                    "warning": None,
+                    "error": {
+                        "code": "AI_API_TIMEOUT",
+                        "message": f"Gemini API timeout sau {settings.AI_TIMEOUT_SECONDS:g} giây.",
+                    },
+                },
+            )
     except Exception as exc:
         return JSONResponse(
-            status_code=502,
-            content={
-                "success": False,
-                "source": "gemini",
-                "error": "gemini_error",
-                "message": f"Gemini API dang loi: {exc}",
-            },
-        )
+                status_code=502,
+                content={
+                    "success": False,
+                    "data": None,
+                    "source": "realtime_api",
+                    "is_realtime": False,
+                    "is_cache": False,
+                    "is_mock": False,
+                    "warning": None,
+                    "error": {
+                        "code": "AI_API_FAILED",
+                        "message": f"Gemini API đang lỗi: {exc}",
+                    },
+                },
+            )
 
     result = {"answer": reply, "is_mock": False}
     recommendations = _build_recommendations(context, result) if intent in ANALYSIS_INTENTS else []

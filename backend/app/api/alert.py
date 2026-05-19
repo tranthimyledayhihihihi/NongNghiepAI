@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.auth import get_optional_current_user
-from app.api.response import api_response
+from app.api.response import api_response, error_response
 from app.core.database import get_db
 from app.models.user import User
 from app.schemas.alert_schema import (
@@ -288,31 +288,20 @@ async def smart_alert_auto_generate(
 
 @alerts_router.post("/send")
 async def smart_alert_send(request: SmartAlertRequest):
-    data = {
-        "alert_type": request.alert_type,
-        "send_channels": request.send_channels,
-        "status": "stored" if "app" in request.send_channels else "mock_sent",
-        "message": request.message or "Alert queued for delivery.",
-        "source": "mock",
-        "source_name": "Notification provider fallback",
-        "is_mock": True,
-        "confidence": 0.5,
-    }
-    return api_response(data, source="mock", source_name=data["source_name"], is_mock=True, confidence=0.5)
+    return error_response(
+        "Không thể gửi cảnh báo realtime vì kênh gửi chưa được cấu hình.",
+        code="REALTIME_API_FAILED",
+        source="realtime_api",
+    )
 
 
 @alerts_router.post("/test-channel")
 async def smart_alert_test_channel(request: TestChannelRequest):
-    data = {
-        "channel": request.channel,
-        "receiver": request.receiver,
-        "status": "stored" if request.channel == "app" else "mock_sent",
-        "source": "mock",
-        "source_name": "Notification channel test fallback",
-        "is_mock": True,
-        "confidence": 0.5,
-    }
-    return api_response(data, source="mock", source_name=data["source_name"], is_mock=True, confidence=0.5)
+    return error_response(
+        "Không thể kiểm tra kênh thông báo realtime vì kênh gửi chưa được cấu hình.",
+        code="REALTIME_API_FAILED",
+        source="realtime_api",
+    )
 
 
 @weather_alert_router.post("/create")

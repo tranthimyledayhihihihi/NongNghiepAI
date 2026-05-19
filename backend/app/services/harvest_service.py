@@ -4,6 +4,7 @@ from unicodedata import category, normalize
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.repositories.harvest_repository import (
     create_harvest_forecast,
     get_harvest_forecast_history,
@@ -65,6 +66,10 @@ class HarvestService:
         "san":        270,  # Sắn/Mì: 8-12 tháng tùy giống
         "che":       1095,  # Chè (trà): 3-4 năm từ cây giống đến thu búp đầu tiên
     }
+
+    @staticmethod
+    def _realtime_only() -> bool:
+        return bool(settings.USE_REALTIME_ONLY) and not bool(settings.ALLOW_MOCK_DATA or settings.ALLOW_SAMPLE_DATA)
 
     # Mô tả giai đoạn sinh trưởng cho các loại cây phổ biến
     _growth_stages = {
@@ -143,6 +148,13 @@ class HarvestService:
                 predictor = None
 
         if not predictor:
+            if self._realtime_only():
+                return {
+                    "_api_error": True,
+                    "error_code": "REALTIME_API_FAILED",
+                    "error_message": "Không thể tải dự báo thu hoạch realtime. Vui lòng thử lại sau.",
+                    "source": "realtime_api",
+                }
             growth_days = self._growth_days_for(crop_name)
             expected_date = planting_date + timedelta(days=growth_days)
             warning = self._warning_for(expected_date)
@@ -217,6 +229,8 @@ class HarvestService:
             planting_date=planting_day,
         )
         result = self.forecast_harvest(db, request, user_id=user_id)
+        if result.get("_api_error"):
+            return result
         return {
             **result,
             "predicted_harvest_date": result["expected_harvest_date"],
@@ -322,6 +336,8 @@ class HarvestService:
 
     def optimize(self, db: Session, request: HarvestForecastRequest, user_id: int | None = None) -> dict:
         forecast = self.forecast_harvest(db, request, user_id=user_id)
+        if forecast.get("_api_error"):
+            return forecast
         try:
             from app.services.pricing_service import pricing_service
             pricing = pricing_service.build_pricing_engine(
@@ -382,6 +398,13 @@ class HarvestService:
         except Exception:
             schedule = None
         if not schedule:
+            if self._realtime_only():
+                return {
+                    "_api_error": True,
+                    "error_code": "REALTIME_API_FAILED",
+                    "error_message": "Không thể tải rủi ro mùa vụ realtime. Vui lòng thử lại sau.",
+                    "source": "realtime_api",
+                }
             return {
                 "season_id": season_id,
                 "risk_level": "medium",

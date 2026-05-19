@@ -9,6 +9,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.repositories.common import to_api_grade
 from app.repositories.quality_repository import (
     create_quality_check,
@@ -45,6 +46,13 @@ class QualityService:
         # 1. Đọc ảnh và gọi Gemini Vision
         analyzer = self._get_detector()
         if analyzer is None:
+            if self._realtime_only():
+                return {
+                    "_api_error": True,
+                    "error_code": "REALTIME_API_FAILED",
+                    "error_message": "Không thể kết nối AI kiểm định chất lượng. Vui lòng thử lại sau.",
+                    "source": "realtime_api",
+                }
             grade, confidence, defects = self._mock_grade(image_path)
             vision_result = {
                 "detected_crop": crop_name or "unknown",
@@ -66,6 +74,13 @@ class QualityService:
                     detector_result = analyzer.analyze_image(image_path, crop_name)
                     vision_result = self._vision_from_detector_result(detector_result, crop_name)
             except Exception as e:
+                if self._realtime_only():
+                    return {
+                        "_api_error": True,
+                        "error_code": "REALTIME_API_FAILED",
+                        "error_message": "Không thể kết nối AI kiểm định chất lượng. Vui lòng thử lại sau.",
+                        "source": "realtime_api",
+                    }
                 vision_result = {
                     "detected_crop": "không xác định",
                     "is_produce": False,
@@ -84,6 +99,13 @@ class QualityService:
         defects = vision_result.get("defects", [])
         color_assessment = vision_result.get("color_assessment", "")
         reasoning = vision_result.get("reasoning", "")
+        if self._realtime_only() and float(confidence or 0) <= 0:
+            return {
+                "_api_error": True,
+                "error_code": "REALTIME_API_FAILED",
+                "error_message": "Không thể kết nối AI kiểm định chất lượng. Vui lòng thử lại sau.",
+                "source": "realtime_api",
+            }
         disease_detected = bool(defects)
         damage_level = self._damage_level(grade)
 
@@ -92,6 +114,8 @@ class QualityService:
 
         # 2. Lấy giá thực từ DB/Tavily theo grade
         price_info = self._fetch_real_price(db, effective_crop, region, grade)
+        if price_info.get("_api_error"):
+            return price_info
 
         final_min       = price_info["min"]
         final_max       = price_info["max"]
@@ -181,6 +205,10 @@ class QualityService:
     # ------------------------------------------------------------------ #
     # Helpers
     # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _realtime_only() -> bool:
+        return bool(settings.USE_REALTIME_ONLY) and not bool(settings.ALLOW_MOCK_DATA or settings.ALLOW_SAMPLE_DATA)
 
     @staticmethod
     def _get_detector():
@@ -316,7 +344,22 @@ class QualityService:
                 if nums:
                     base_price = float(nums[0].replace(".", ""))
             except Exception:
+                if self._realtime_only():
+                    return {
+                        "_api_error": True,
+                        "error_code": "REALTIME_API_FAILED",
+                        "error_message": "Không thể tải giá realtime cho kiểm định chất lượng.",
+                        "source": "realtime_api",
+                    }
                 base_price = 20_000  # fallback tuyệt đối
+
+        if base_price is None and self._realtime_only():
+            return {
+                "_api_error": True,
+                "error_code": "REALTIME_API_FAILED",
+                "error_message": "Không thể tải giá realtime cho kiểm định chất lượng.",
+                "source": "realtime_api",
+            }
 
         base_price = base_price or 20_000
 

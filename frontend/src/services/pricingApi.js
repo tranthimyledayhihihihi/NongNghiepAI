@@ -6,26 +6,26 @@ const unwrap = (response) => normalizeApiResponse(response);
 
 const request = async (factory) => unwrap(await factory());
 
-const resolveQuery = (input, region, qualityGrade = 'grade_1') => {
+const resolveQuery = (input, region, qualityGrade = 'grade_1', forceRefresh = false) => {
   if (typeof input === 'object' && input !== null) {
     return {
       crop_name: normalizePriceInput(input.cropName ?? input.crop_name),
       region: normalizePriceInput(input.region ?? region),
       quality_grade: input.qualityGrade ?? input.quality_grade ?? qualityGrade,
-      force_refresh: Boolean(input.forceRefresh ?? input.force_refresh),
+      force_refresh: Boolean(input.forceRefresh ?? input.force_refresh ?? forceRefresh),
     };
   }
   const query = buildPriceQuery({ cropName: input, region });
   return {
     ...query,
     quality_grade: qualityGrade,
-    force_refresh: false,
+    force_refresh: Boolean(forceRefresh),
   };
 };
 
 export const pricingApi = {
-  getCurrentPrice: async (cropNameOrQuery, region, qualityGrade = 'grade_1') => {
-    const query = resolveQuery(cropNameOrQuery, region, qualityGrade);
+  getCurrentPrice: async (cropNameOrQuery, region, qualityGrade = 'grade_1', forceRefresh = false) => {
+    const query = resolveQuery(cropNameOrQuery, region, qualityGrade, forceRefresh);
     const response = await api.get('/api/pricing/current', {
       params: query,
     });

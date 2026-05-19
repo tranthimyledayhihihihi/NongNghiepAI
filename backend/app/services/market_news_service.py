@@ -2,9 +2,12 @@ from datetime import datetime, timedelta, timezone
 import re
 import unicodedata
 
+from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.redis_client import redis_client
+from app.integrations.apifarmer_client import apifarmer_client
 from app.integrations.rss_client import rss_client
+from app.integrations.twelvedata_client import twelvedata_client
 from app.repositories.ingestion_repository import finish_ingestion_log, start_ingestion_log
 from app.repositories.market_news_repository import list_market_news, upsert_market_news
 from app.services.pricing_service import pricing_service
@@ -50,9 +53,14 @@ class MarketNewsService:
 
     def refresh_news(self) -> dict:
         db = SessionLocal()
-        log = start_ingestion_log(db, "refresh_market_news", "rss")
+        log = start_ingestion_log(db, "refresh_market_news", "market_news_aggregator")
         try:
-            fetched_records = rss_client.fetch_market_news()
+            fetched_records = []
+            if settings.ENABLE_MARKET_NEWS:
+                fetched_records.extend(apifarmer_client.search_market_news(limit=30))
+                fetched_records.extend(twelvedata_client.search_market_news(limit=20))
+            if not fetched_records:
+                fetched_records.extend(rss_client.fetch_market_news())
             records = self._filter_relevant_news(fetched_records, since=self._recent_since())
             result = upsert_market_news(db, records)
             self._clear_latest_cache()
@@ -67,6 +75,9 @@ class MarketNewsService:
                 "status": "success",
                 "records_fetched": len(fetched_records),
                 "records_filtered": len(records),
+                "source": "realtime" if fetched_records else "database",
+                "source_name": "APIFarmer/Twelve Data/RSS market news aggregator",
+                "fetched_at": datetime.utcnow().isoformat(),
                 **result,
             }
         except Exception as exc:
@@ -91,8 +102,27 @@ class MarketNewsService:
             list_market_news(db, limit=fetch_limit, crop_name=crop_name, region=region, since=since),
             since=since,
         )
+        if not rows and settings.ENABLE_MARKET_NEWS:
+            refresh_result = self.refresh_news()
+            if refresh_result.get("status") == "success":
+                db.expire_all()
+                rows = self._filter_relevant_news(
+                    list_market_news(db, limit=fetch_limit, crop_name=crop_name, region=region, since=since),
+                    since=since,
+                )
         if not rows and (crop_name or region):
             rows = self._filter_relevant_news(list_market_news(db, limit=fetch_limit, since=since), since=since)
+        if not rows and self._realtime_only():
+            return {
+                "_api_error": True,
+                "error_code": "REALTIME_API_FAILED",
+                "error_message": "Không thể tải tin tức thị trường realtime. Vui lòng thử lại sau.",
+                "source": "realtime_api",
+                "is_realtime": False,
+                "is_mock": False,
+                "cache_status": "miss",
+                "news": [],
+            }
         if not rows:
             return {
                 "news": self._fallback_news(limit, crop_name=crop_name, region=region),
@@ -103,21 +133,30 @@ class MarketNewsService:
                 "window_days": self.LATEST_WINDOW_DAYS,
                 "cache_status": "mock",
                 "fallback_used": True,
-                "message": "Tin thi truong realtime/cache chua san sang, he thong dang hien thi du lieu du phong.",
+                "message": "Tin thị trường realtime/cache chưa sẵn sàng.",
             }
 
         response = {
             "news": [self._to_dict(row) for row in rows[:limit]],
             "source": "cached",
-            "source_name": "RSS market news cache",
-            "is_realtime": False,
+            "source_name": rows[0].SourceName if rows and rows[0].SourceName else "Market news cache",
+            "is_realtime": any(bool(getattr(row, "IsRealtime", False)) for row in rows[:limit]),
             "is_mock": False,
             "window_days": self.LATEST_WINDOW_DAYS,
             "cache_status": "from_db",
+            "metadata": {
+                "source_type": "realtime" if any(bool(getattr(row, "IsRealtime", False)) for row in rows[:limit]) else "database",
+                "fetched_at": datetime.utcnow().isoformat(),
+                "cache_status": "fresh",
+            },
         }
         if cache_key:
-            redis_client.set(cache_key, response, expire=1800)
+            redis_client.set(cache_key, response, expire=int(settings.NEWS_CACHE_TTL_MINUTES or 120) * 60)
         return response
+
+    @staticmethod
+    def _realtime_only() -> bool:
+        return bool(settings.USE_REALTIME_ONLY) and not bool(settings.ALLOW_MOCK_DATA or settings.ALLOW_SAMPLE_DATA)
 
     @staticmethod
     def _fallback_news(limit: int, crop_name: str | None = None, region: str | None = None) -> list[dict]:
@@ -149,7 +188,7 @@ class MarketNewsService:
                     ),
                     (
                         "Khuyen nghi ban theo dot de giam rui ro",
-                        "Khi tin thi truong realtime cham, he thong uu tien du lieu du phong va lich su gia noi bo.",
+                        "Khi tin thị trường realtime chậm, hệ thống chỉ hiển thị cache hợp lệ nếu có.",
                     ),
                     (
                         "Kiem tra chat luong va thoi tiet truoc khi chot don",
@@ -262,21 +301,43 @@ class MarketNewsService:
 
     @staticmethod
     def _to_dict(row) -> dict:
+        crop_tags = MarketNewsService._as_list(row.CropTags)
+        region_tags = MarketNewsService._as_list(row.RegionTags) or ([row.Region] if row.Region else [])
+        impact_score = row.ImpactScore if row.ImpactScore is not None else 0.5
         return {
             "news_id": row.NewsID,
             "title": MarketNewsService._repair_mojibake(row.Title),
             "summary": MarketNewsService._repair_mojibake(row.Summary),
+            "content": MarketNewsService._repair_mojibake(row.Content),
+            "url": row.URL or row.SourceURL,
             "source_name": MarketNewsService._repair_mojibake(row.SourceName),
             "source_url": row.SourceURL,
             "published_at": row.PublishedAt.isoformat() if row.PublishedAt else None,
+            "fetched_at": (row.FetchedAt or row.CreatedAt or datetime.utcnow()).isoformat(),
             "region": row.Region,
+            "crop_tags": crop_tags,
+            "region_tags": region_tags,
+            "affected_crops": crop_tags,
+            "affected_regions": region_tags,
             "sentiment": row.Sentiment,
             "impact": row.Sentiment or "neutral",
-            "source": "cached",
-            "fetched_at": datetime.utcnow().isoformat(),
+            "impact_level": row.ImpactLevel or MarketNewsService._impact_level(impact_score),
+            "impact_score": impact_score,
+            "price_effect": "likely_increase" if row.Sentiment == "positive" else "likely_decrease" if row.Sentiment == "negative" else "stable",
+            "source": "realtime_api" if row.IsRealtime else "cached",
             "updated_at": row.PublishedAt.isoformat() if row.PublishedAt else None,
-            "confidence": 0.7,
+            "confidence": 0.76 if row.IsRealtime else 0.7,
+            "is_realtime": bool(row.IsRealtime),
+            "is_mock": False,
         }
+
+    @staticmethod
+    def _as_list(value) -> list:
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str) and value.strip():
+            return [part.strip() for part in value.strip("[]").replace('"', "").split(",") if part.strip()]
+        return []
 
     def get_market_news(self, db, crop: str | None = None, region: str | None = None, limit: int = 10) -> dict:
         return self.get_latest(db, limit=limit, crop_name=crop, region=region)
@@ -296,6 +357,14 @@ class MarketNewsService:
             "confidence": 0.58,
             "updated_at": datetime.utcnow().isoformat(),
         }
+
+    @staticmethod
+    def _impact_level(score: float) -> str:
+        if score >= 0.75:
+            return "high"
+        if score >= 0.55:
+            return "medium"
+        return "low"
 
     def get_market_trends(self, db, crop: str | None = None, region: str | None = None) -> dict:
         selected_crop = crop or "lua"

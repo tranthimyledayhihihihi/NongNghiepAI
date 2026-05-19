@@ -4,6 +4,7 @@ from sqlalchemy import desc, func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.notification import Notification, NotificationDelivery
 from app.models.user import User
 from app.schemas.notification_schema import NotificationCreate
@@ -265,7 +266,7 @@ class NotificationCenterService:
         deliveries = [
             delivery
             for delivery in self._deliveries(db, notification_id)
-            if delivery.Channel != "app" and delivery.Status in {"failed", "pending", "error", "mock_sent", "missing_token"}
+            if delivery.Channel != "app" and delivery.Status in {"failed", "pending", "error", "missing_token"}
         ]
         results = []
         for delivery in deliveries:
@@ -317,6 +318,8 @@ class NotificationCenterService:
             return None
 
     def _seed_welcome_notifications(self, db: Session, user: User) -> None:
+        if settings.USE_REALTIME_ONLY and not (settings.ALLOW_MOCK_DATA or settings.ALLOW_SAMPLE_DATA):
+            return
         exists = (
             db.query(Notification.NotificationID)
             .filter(Notification.UserID == user.UserID)

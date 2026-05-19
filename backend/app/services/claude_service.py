@@ -87,12 +87,12 @@ class ClaudeService:
             completion = ai_client.complete([{"role": "user", "content": user_prompt}], system_prompt=system_prompt)
         except Exception as exc:
             completion = {
-                "answer": self._fallback_answer(question, context, str(exc)),
-                "provider": "rule_based_fallback",
-                "model": "local-context-v1",
+                "answer": "",
+                "provider": "claude",
+                "model": "claude",
                 "token_usage": None,
-                "is_mock": True,
-                "error": str(exc),
+                "is_mock": False,
+                "error": "Không thể kết nối trợ lý AI. Vui lòng thử lại sau.",
                 "timeout": "timeout" in str(exc).lower(),
             }
 

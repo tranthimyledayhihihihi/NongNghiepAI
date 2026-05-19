@@ -1,6 +1,7 @@
 import api from './api';
+import { normalizeApiResponse } from '../utils/apiResponse';
 
-const unwrap = (response) => response.data?.data ?? response.data;
+const unwrap = (response) => normalizeApiResponse(response);
 
 export const reportsApi = {
   getSummary: async (limit = 100) => {

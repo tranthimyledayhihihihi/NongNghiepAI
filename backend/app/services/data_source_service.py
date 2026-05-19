@@ -23,13 +23,13 @@ class DataSourceService:
 
         if raw in {"legacy", "old_api", "deprecated"}:
             return SOURCE_LEGACY
-        if is_mock or raw in {"mock", "demo", "fallback"} or cache_status in {"mock", "miss"}:
+        if is_mock or raw in {"mock", "demo"} or cache_status == "mock":
             return SOURCE_MOCK
         if raw in {"ai", "ai_generated", "rule_based_ai", "explainable_rule_ai"}:
             return SOURCE_AI
         if is_realtime or raw in {"realtime", "realtime_api", "open-meteo", "rss"} or cache_status in {"live", "realtime", "refreshed"}:
             return SOURCE_REALTIME
-        if raw in {"cached", "cache"} or cache_status in {"cached", "hit", "from_cache", "stale"}:
+        if raw in {"cached", "cache", "fallback"} or cache_status in {"cached", "hit", "from_cache", "stale"}:
             return SOURCE_CACHED
         if raw in {"database", "db", "market_db"} or cache_status in {"db", "from_db", "db_fresh"}:
             return SOURCE_DATABASE

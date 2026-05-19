@@ -57,11 +57,11 @@ const statusLabel = (status) => ({
   pending_verification: 'Thiếu người nhận',
   missing_token: 'Thiếu mã cấu hình',
   not_configured: 'Chưa cấu hình',
-  mock: 'Chế độ thử',
+  mock: 'Chưa có realtime',
   failed_last_test: 'Lỗi lần thử',
   sent: 'Đã gửi',
   stored: 'Đã lưu',
-  mock_sent: 'Đã giả lập',
+  mock_sent: 'Chưa gửi realtime',
   failed: 'Thất bại',
 }[status] || 'Không rõ');
 
@@ -237,7 +237,7 @@ const SettingsPage = () => {
     setTestState({ channel, status: 'loading', message: '' });
     try {
       const result = await settingsApi.testNotificationChannel({ channel, receiver: receiverMap[channel] });
-      const ok = ['sent', 'stored', 'mock_sent'].includes(result?.status);
+      const ok = ['sent', 'stored'].includes(result?.status);
       setTestState({
         channel,
         status: ok ? 'ok' : 'error',

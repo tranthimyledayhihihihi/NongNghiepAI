@@ -11,9 +11,9 @@ class SmsClient:
         if not settings.ESMS_API_KEY or not settings.ESMS_SECRET_KEY:
             return {
                 "receiver": phone,
-                "status": "mock_sent",
-                "message_id": f"mock-sms-{uuid4()}",
-                "error": "ESMS_API_KEY / ESMS_SECRET_KEY chưa cấu hình",
+                "status": "failed",
+                "message_id": None,
+                "error": "ESMS_API_KEY / ESMS_SECRET_KEY chưa được cấu hình",
             }
         try:
             payload = {

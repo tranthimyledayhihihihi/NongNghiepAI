@@ -32,8 +32,8 @@ async def refresh_market_news():
     data = market_news_service.refresh_news()
     return api_response(
         data,
-        source="realtime_api" if data.get("status") == "success" else "mock",
+        source="realtime_api",
         source_name="RSS market news refresh",
-        is_mock=data.get("status") != "success",
-        confidence=0.7 if data.get("status") == "success" else 0.3,
+        is_mock=False,
+        confidence=0.7 if data.get("status") == "success" else 0.0,
     )

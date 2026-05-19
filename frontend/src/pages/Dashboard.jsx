@@ -24,6 +24,7 @@ import { getApiErrorMessage, settledValue } from '../services/api';
 import { dashboardApi } from '../services/dashboardApi';
 import { seasonApi } from '../services/seasonApi';
 import { weatherApi } from '../services/weatherApi';
+import { dedupeMessages } from '../utils/apiResponse';
 import { statusLabel, translateUiText } from '../utils/vietnameseText';
 
 const formatNumber = (value, digits = 0) => {
@@ -174,12 +175,13 @@ const Dashboard = () => {
         throw results[0].reason;
       }
       if (dashboardData.errors?.length) {
-        setError(dashboardData.errors.map((item) => item.message).join(' | '));
+        setError(dedupeMessages(dashboardData.errors.map((item) => item.message)).join(' | '));
       }
       const { overview, realtimeStatus, aiInsights, riskSummary, actionToday } = dashboardData;
+      const safeOverview = overview || {};
 
       const mergedWeatherRisk = {
-        ...(overview?.weather_risk || {}),
+        ...(safeOverview.weather_risk || {}),
         ...(riskSummary || {}),
       };
       if (freshWeather) {
@@ -190,10 +192,10 @@ const Dashboard = () => {
       }
 
       setSummary({
-        ...overview,
-        active_seasons: seasonSummary?.active_seasons ?? overview?.active_seasons,
+        ...safeOverview,
+        active_seasons: seasonSummary?.active_seasons ?? safeOverview.active_seasons,
         season_summary: seasonSummary,
-        ai_recommendation: aiInsights || overview?.ai_recommendation,
+        ai_recommendation: aiInsights || safeOverview.ai_recommendation,
         weather_risk: mergedWeatherRisk,
         realtime_status: realtimeStatus,
         action_today: actionToday,
@@ -358,6 +360,10 @@ const Dashboard = () => {
               <div className="mt-3 flex items-end gap-2">
                 <span className="text-4xl font-bold text-slate-950">{formatNumber(featured.price)}</span>
                 <span className="pb-1 text-sm font-medium text-slate-500">{featured.unit || 'VND/kg'}</span>
+              </div>
+              <div className="mt-2 text-xs text-slate-500">
+                Nguồn: {featured.source_name || 'MarketPrices DB'}
+                {featured.last_updated ? ` · Cập nhật ${new Date(featured.last_updated).toLocaleString('vi-VN')}` : ''}
               </div>
             </div>
 
@@ -529,6 +535,9 @@ const Dashboard = () => {
                   <div className="flex items-start justify-between gap-2">
                     <div className="line-clamp-2 text-sm font-semibold text-slate-950">{translateUiText(item.title)}</div>
                     <SentimentBadge value={item.sentiment} />
+                  </div>
+                  <div className="mt-2 text-xs text-slate-500">
+                    {(item.crop_tags || item.affected_crops || []).slice(0, 2).join(', ') || 'Nông sản'} · {translateUiText(item.impact_level || item.impact || 'neutral')}
                   </div>
                 </a>
               ))

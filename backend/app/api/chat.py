@@ -255,7 +255,7 @@ async def ask_farming_advice(
             region=context.get("region"),
             extra_context=context,
         )
-        return ChatResponse(answer=result.get("answer", "Khong tao duoc cau tra loi."))
+        return ChatResponse(answer=result.get("answer", "Không thể tạo câu trả lời."))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Loi khi ket noi AI: {str(e)}") from e
 

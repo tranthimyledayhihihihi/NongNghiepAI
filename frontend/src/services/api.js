@@ -1,6 +1,7 @@
 import axios from 'axios';
+import { normalizeApiError } from '../utils/apiResponse';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:5000';
 
 export const API_TIMEOUTS = {
   default: Number(import.meta.env.VITE_API_TIMEOUT_MS || 18000),
@@ -39,11 +40,20 @@ api.interceptors.request.use(
 );
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    if (response?.data?.success === false) {
+      const normalized = normalizeApiError({ response });
+      const error = new Error(normalized.error.message);
+      error.normalized = normalized;
+      error.response = response;
+      return Promise.reject(error);
+    }
+    return response;
+  },
   (error) => {
     if (isApiTimeoutError(error)) {
       error.isTimeout = true;
-      error.friendlyMessage = 'Du lieu realtime dang cham. He thong se dung cache/du lieu du phong neu co.';
+      error.friendlyMessage = 'Dữ liệu realtime đang chậm. Hệ thống sẽ hiển thị dữ liệu cache nếu có.';
     }
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
@@ -55,10 +65,12 @@ api.interceptors.response.use(
 
 export default api;
 
-export const getApiErrorMessage = (error, fallback = 'Khong the ket noi API') => {
+export const getApiErrorMessage = (error, fallback = 'Không thể kết nối API') => {
+  if (error?.normalized?.error?.message) return error.normalized.error.message;
+  if (error?.success === false && error?.error?.message) return error.error.message;
   if (error?.friendlyMessage) return error.friendlyMessage;
   if (isApiTimeoutError(error)) {
-    return 'Du lieu realtime dang cham. Vui long thu lai, cac khoi co cache se tiep tuc hien thi du lieu du phong.';
+    return 'Dữ liệu realtime đang chậm. Hệ thống sẽ hiển thị dữ liệu cache nếu có.';
   }
   const detail = error?.response?.data?.detail;
   if (Array.isArray(detail)) {

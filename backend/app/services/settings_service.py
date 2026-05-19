@@ -132,7 +132,7 @@ class SettingsService:
             "sms": self._channel_status(
                 enabled=bool(settings.SmsChannel),
                 configured=bool(app_settings.ESMS_API_KEY and app_settings.ESMS_SECRET_KEY),
-                missing_status="mock",
+                missing_status="not_configured",
                 latest=sms_latest,
                 receiver=user.PhoneNumber,
             ),

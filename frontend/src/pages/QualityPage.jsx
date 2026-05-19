@@ -129,10 +129,12 @@ const QualityPage = () => {
     if (!selectedFile) { setError('Vui lòng chọn ảnh'); return; }
     setLoading(true);
     setError(null);
+    setResult(null);
     try {
       const data = await qualityApi.checkWithPrice(selectedFile, '', region);
       setResult(data);
     } catch (err) {
+      setResult(null);
       setError(getApiErrorMessage(err, 'Lỗi khi kiểm tra chất lượng'));
     } finally {
       setLoading(false);

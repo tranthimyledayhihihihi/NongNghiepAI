@@ -41,6 +41,7 @@ const HarvestPage = () => {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setResult(null);
 
     try {
       const data = await harvestApi.optimizeHarvest(
@@ -50,6 +51,7 @@ const HarvestPage = () => {
       );
       setResult(data);
     } catch (err) {
+      setResult(null);
       setError(getApiErrorMessage(err, 'Không thể dự báo thu hoạch'));
     } finally {
       setLoading(false);

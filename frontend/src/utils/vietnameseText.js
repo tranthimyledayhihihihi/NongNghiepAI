@@ -5,7 +5,7 @@ const BATCH_SELLING = text('Batch', 'selling', 'opportunity');
 const SELL_SMALL_BATCHES = text('Sell', 'in', 'small', 'batches', 'and', 'enable', 'a', 'price', 'alert.');
 const CREATE_PRICE_ALERT = text('Create', 'price', 'alert', 'and', 'avoid', 'selling', 'all', 'stock', 'at', 'one', 'time.');
 const PRICE_VOLATILITY = text('Price', 'volatility');
-const MARKET_PRICE_PRICING_SOURCE = text('Market', 'price', 'from', 'Pricing', 'fallback');
+const MARKET_PRICE_PRICING_SOURCE = text('Market', 'price', 'from', 'Pricing', 'cache');
 const CONFIGURED_FALLBACK = code('configured', 'or', 'fallback');
 const CONFIGURED_MOCK = code('configured', 'or', 'mock');
 const ACTION_TODAY = text('Action', 'Today');
@@ -16,7 +16,7 @@ const EXACT_TRANSLATIONS = {
   [SELL_SMALL_BATCHES]: 'Nên bán theo từng đợt nhỏ và bật cảnh báo giá.',
   [CREATE_PRICE_ALERT]: 'Nên tạo cảnh báo giá và tránh bán hết hàng cùng một lúc.',
   [PRICE_VOLATILITY]: 'Biến động giá',
-  [MARKET_PRICE_PRICING_SOURCE]: 'Giá thị trường từ dữ liệu dự phòng',
+  [MARKET_PRICE_PRICING_SOURCE]: 'Giá thị trường từ dữ liệu cache',
   Recommendation: 'Khuyến nghị',
   recommendation: 'Khuyến nghị',
   Confidence: 'Độ tin cậy',
@@ -25,11 +25,11 @@ const EXACT_TRANSLATIONS = {
   ok: 'Hoạt động',
   [CONFIGURED_FALLBACK]: 'Đã cấu hình / dự phòng',
   [CONFIGURED_MOCK]: 'Đã cấu hình / mô phỏng',
-  fallback: 'dữ liệu dự phòng',
+  fallback: 'dữ liệu cache',
   mock: 'dữ liệu mô phỏng',
   sent: 'Đã gửi',
   stored: 'Đã lưu',
-  mock_sent: 'Đã ghi nhận thử',
+  mock_sent: 'Chưa gửi realtime',
   failed: 'Thất bại',
   error: 'Lỗi',
   pending: 'Đang chờ',
@@ -58,9 +58,9 @@ const PHRASE_TRANSLATIONS = [
   [SELL_SMALL_BATCHES, 'Nên bán theo từng đợt nhỏ và bật cảnh báo giá.'],
   [CREATE_PRICE_ALERT, 'Nên tạo cảnh báo giá và tránh bán hết hàng cùng một lúc.'],
   [PRICE_VOLATILITY, 'Biến động giá'],
-  [MARKET_PRICE_PRICING_SOURCE, 'Giá thị trường từ dữ liệu dự phòng'],
+  [MARKET_PRICE_PRICING_SOURCE, 'Giá thị trường từ dữ liệu cache'],
   ['Market price', 'Giá thị trường'],
-  ['Pricing fallback', 'dữ liệu giá dự phòng'],
+  ['Pricing fallback', 'dữ liệu giá cache'],
   ['Recommendation:', 'Khuyến nghị:'],
   ['recommendation:', 'Khuyến nghị:'],
   ['recommendation', 'khuyến nghị'],
@@ -71,7 +71,7 @@ const PHRASE_TRANSLATIONS = [
   ['stable', 'Ổn định'],
   [CONFIGURED_FALLBACK, 'Đã cấu hình / dự phòng'],
   [CONFIGURED_MOCK, 'Đã cấu hình / mô phỏng'],
-  ['fallback', 'dữ liệu dự phòng'],
+  ['fallback', 'dữ liệu cache'],
   ['mock', 'dữ liệu mô phỏng'],
   ['simulation', 'dữ liệu mô phỏng'],
   ['AI Generated', 'Dữ liệu do AI tạo'],

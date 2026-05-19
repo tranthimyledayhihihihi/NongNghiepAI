@@ -382,9 +382,10 @@ const ForecastPage = () => {
         farming_recommendation: farmingRecommendation,
       });
       if (riskResult.status === 'rejected' || recommendationResult.status === 'rejected') {
-        setError('Mot so khoi khuyen nghi phan hoi cham, du bao chinh van dang hien thi.');
+        setError('Một số khối khuyến nghị phản hồi chậm, dự báo chính vẫn đang hiển thị nếu có cache hợp lệ.');
       }
     } catch (err) {
+      setData(null);
       setError(getApiErrorMessage(err, 'Không thể tải dữ liệu thời tiết nông vụ'));
     } finally {
       setLoading(false);

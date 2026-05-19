@@ -11,7 +11,7 @@ const formatNumber = (value) => Number(value || 0).toLocaleString('vi-VN', { max
 const formatDate = (value) => (value ? new Date(value).toLocaleString('vi-VN') : 'Chưa kích hoạt');
 
 const statusClass = (status) => {
-  if (['sent', 'stored', 'mock_sent'].includes(status)) return 'bg-green-100 text-green-800';
+  if (['sent', 'stored'].includes(status)) return 'bg-green-100 text-green-800';
   if (['failed', 'error'].includes(status)) return 'bg-red-100 text-red-700';
   if (['pending'].includes(status)) return 'bg-amber-100 text-amber-800';
   return 'bg-gray-100 text-gray-600';
@@ -27,7 +27,7 @@ const channelLabel = (channel) => ({
 const statusLabel = (status) => ({
   sent: 'đã gửi',
   stored: 'đã lưu',
-  mock_sent: 'đã ghi nhận thử',
+  mock_sent: 'chưa gửi realtime',
   failed: 'lỗi gửi',
   error: 'lỗi gửi',
   pending: 'đang chờ',

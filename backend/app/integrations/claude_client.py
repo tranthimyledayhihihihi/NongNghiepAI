@@ -19,7 +19,7 @@ class ClaudeClient:
         )
         self.model = settings.AI_MODEL_NAME or "claude-3-haiku-20240307"
         if not api_key:
-            logger.warning("Claude API key is not set. Claude AI will use fallback answers.")
+            logger.warning("Claude API key is not set. Claude AI is disabled.")
             self.client = None
             self.sync_client = None
             return
@@ -29,7 +29,7 @@ class ClaudeClient:
 
     async def get_farming_advice(self, question: str, context_data: str = "") -> str:
         if not self.client:
-            return self._fallback_text(question, "Claude API key chua duoc cau hinh.")
+            raise RuntimeError("Không thể kết nối trợ lý AI. Vui lòng thử lại sau.")
 
         prompt = (
             "Ban la mot chuyen gia nong nghiep AI.\n\n"
@@ -50,14 +50,14 @@ class ClaudeClient:
             return response.content[0].text
         except asyncio.TimeoutError:
             logger.warning("[Claude] farming advice timed out after %.1fs", settings.AI_TIMEOUT_SECONDS)
-            return self._fallback_text(question, "AI phan hoi cham/timeout.")
+            raise RuntimeError("Không thể kết nối trợ lý AI. Vui lòng thử lại sau.")
         except Exception as exc:
             logger.error("Claude API error: %s", exc)
-            return self._fallback_text(question, str(exc))
+            raise RuntimeError("Không thể kết nối trợ lý AI. Vui lòng thử lại sau.") from exc
 
     def complete(self, messages: list[dict], system_prompt: str = "", max_tokens: int = 1024) -> dict:
         if not self.sync_client:
-            return self._fallback_completion("Claude API key chua duoc cau hinh.")
+            return self._error_completion("Claude API key chưa được cấu hình.")
 
         try:
             response = self.sync_client.messages.create(
@@ -80,31 +80,19 @@ class ClaudeClient:
         except Exception as exc:
             message = str(exc)
             logger.warning("[Claude] complete failed: %s", message)
-            return self._fallback_completion(message)
+            return self._error_completion("Không thể kết nối trợ lý AI. Vui lòng thử lại sau.")
 
-    @staticmethod
-    def _fallback_text(question: str, reason: str) -> str:
-        return (
-            "AI dang phan hoi cham nen he thong tra loi bang che do du phong. "
-            f"Cau hoi: '{question}'. Ly do: {reason}. "
-            "Hay kiem tra du lieu thoi tiet, gia va canh bao trong dashboard roi thu lai sau."
-        )
-
-    @staticmethod
-    def _fallback_completion(reason: str) -> dict:
+    def _error_completion(self, reason: str) -> dict:
         timeout = "timeout" in reason.lower() or "timed out" in reason.lower()
-        answer = (
-            "AI dang phan tich cham, he thong da dung cau tra loi du phong tu du lieu noi bo. "
-            "Vui long xem them the thoi tiet, gia thi truong va canh bao tren dashboard; ban co the gui lai cau hoi sau it phut."
-        )
         return {
-            "answer": answer,
-            "provider": "rule_based_fallback",
-            "model": "local-context-v1",
+            "answer": "",
+            "provider": "claude",
+            "model": self.model if hasattr(self, "model") else "claude",
             "token_usage": None,
-            "is_mock": True,
+            "is_mock": False,
             "error": reason,
             "timeout": timeout,
+            "status": "failed",
         }
 
 

@@ -95,7 +95,7 @@ const PricingPage = () => {
     setError(null);
 
     try {
-      const [priceData, forecastData, historyData, engineData] = await Promise.all([
+      const results = await Promise.allSettled([
         forceRefresh
           ? pricingApi.refreshCurrentPrice(buildPriceQuery({ cropName: normalizedSearch.crop_name, region: normalizedSearch.region }))
           : pricingApi.getCurrentPrice({
@@ -114,12 +114,19 @@ const PricingPage = () => {
         ),
       ]);
 
-      setCurrentPrice(priceData);
-      setForecast(forecastData);
-      setHistory(historyData);
-      setEngine(engineData);
+      if (results[0].status === 'rejected') {
+        throw results[0].reason;
+      }
+      setCurrentPrice(results[0].value);
+      setForecast(results[1].status === 'fulfilled' ? results[1].value : null);
+      setHistory(results[2].status === 'fulfilled' ? results[2].value : null);
+      setEngine(results[3].status === 'fulfilled' ? results[3].value : null);
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Không thể tải dữ liệu giá'));
+      setCurrentPrice(null);
+      setForecast(null);
+      setHistory(null);
+      setEngine(null);
+      setError(getApiErrorMessage(err, 'Không thể tải giá realtime.'));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -187,7 +194,6 @@ const PricingPage = () => {
   };
 
   const trend = trendMeta[currentPrice?.trend || currentPrice?.price_trend] || trendMeta.stable;
-  const historyHasMock = Boolean(history?.history?.some((item) => item.is_mock));
   const sourceNotice = currentPrice?.is_mock
     ? 'Dữ liệu này là mô phỏng, chưa phải giá thị trường thực tế.'
     : 'Dữ liệu giá lấy từ nguồn thực tế hoặc cơ sở dữ liệu nội bộ.';
@@ -288,12 +294,13 @@ const PricingPage = () => {
           <span>Nguồn dữ liệu: {sourceNameLabel(currentPrice.source_name)}</span>
           <span>Loại nguồn: {currentPrice.source_type || currentPrice.source || 'database'}</span>
           {currentPrice.last_updated && <span>Cập nhật: {new Date(currentPrice.last_updated).toLocaleString('vi-VN')}</span>}
+          <span>Độ tin cậy: {Math.round(Number(currentPrice.confidence_score ?? currentPrice.confidence ?? 0) * 100)}%</span>
           {currentPrice.is_mock && <span className="font-medium text-amber-700">{sourceNotice}</span>}
         </div>
       )}
 
       {currentPrice && (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
             <p className="text-sm text-gray-600">Giá hiện tại</p>
             <p className="mt-2 text-3xl font-bold text-gray-900">{formatCurrency(currentPrice.current_price)}</p>
@@ -310,6 +317,20 @@ const PricingPage = () => {
           <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
             <p className="text-sm text-gray-600">Phân loại</p>
             <p className="mt-2 text-2xl font-bold text-gray-900">{QUALITY_LABELS[currentPrice.quality_grade] || currentPrice.quality_grade}</p>
+          </div>
+
+          <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+            <p className="text-sm text-gray-600">Tham chiếu quốc tế</p>
+            {currentPrice.global_reference ? (
+              <>
+                <p className="mt-2 text-2xl font-bold text-gray-900">
+                  {Number(currentPrice.global_reference.price || 0).toLocaleString('vi-VN')} {currentPrice.global_reference.unit || 'USD/ton'}
+                </p>
+                <p className="mt-1 text-xs text-gray-500">{currentPrice.global_reference.source_name || 'Twelve Data'}</p>
+              </>
+            ) : (
+              <p className="mt-2 text-sm text-gray-500">Chưa có tham chiếu quốc tế cho nông sản này.</p>
+            )}
           </div>
         </div>
       )}
@@ -369,12 +390,6 @@ const PricingPage = () => {
 
       {history?.history?.length > 0 && (
         <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-          {historyHasMock && (
-            <div className="mb-3 flex flex-wrap items-center gap-3 text-sm text-amber-700">
-              <DataSourceBadge data={{ is_mock: true }} />
-              <span>Biểu đồ lịch sử đang dùng dữ liệu mô phỏng.</span>
-            </div>
-          )}
           <h2 className="text-lg font-semibold text-gray-900">Lịch sử giá gần đây</h2>
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {history.history.slice(-6).map((item) => (

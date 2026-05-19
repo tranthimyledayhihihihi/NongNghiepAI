@@ -69,8 +69,9 @@ const normalizeNotification = (item) => ({
 });
 
 const deliveryClass = (status) => {
-  if (['sent', 'stored', 'mock_sent'].includes(status)) return 'bg-green-100 text-green-800';
+  if (['sent', 'stored'].includes(status)) return 'bg-green-100 text-green-800';
   if (['failed', 'error'].includes(status)) return 'bg-red-100 text-red-700';
+  if (status === 'mock_sent') return 'bg-red-100 text-red-700';
   if (status === 'pending') return 'bg-amber-100 text-amber-800';
   return 'bg-gray-100 text-gray-700';
 };

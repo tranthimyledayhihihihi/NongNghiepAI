@@ -99,7 +99,14 @@ class DashboardService:
         regional_price_data = self._safe_dashboard_call(
             "regional_prices",
             lambda: self.get_regional_prices(db, crop_name=selected_crop),
-            {"regions": [], "source": "mock", "source_name": "Regional price fallback", "is_mock": True},
+            {
+                "regions": [],
+                "source": "realtime_api",
+                "source_name": "Regional price service",
+                "is_mock": False,
+                "error": "Không thể tải giá theo khu vực realtime.",
+                "cache_status": "miss",
+            },
             module_status,
         )
         regional_prices = regional_price_data.get("regions", [])
@@ -121,7 +128,7 @@ class DashboardService:
             [],
             module_status,
         )
-        if not active_alerts:
+        if not active_alerts and not self._realtime_only():
             generated_alerts = self._safe_dashboard_call(
                 "auto_alerts",
                 lambda: alert_service.auto_generate_alerts(
@@ -285,6 +292,21 @@ class DashboardService:
         selected_region = self._clean_region(region)
         history = pricing_service.get_price_history(db, selected_crop, selected_region, max(days, 7))
         recent = history[-days:] if history else []
+        if not recent and self._realtime_only():
+            return {
+                "crop_name": selected_crop,
+                "region": selected_region,
+                "history": [],
+                "forecast": [],
+                "trend": None,
+                "is_mock": False,
+                "source": "realtime_api",
+                "source_name": "Pricing forecast engine",
+                "confidence": 0.0,
+                "updated_at": datetime.now(),
+                "error": "Không thể tải dữ liệu giá realtime.",
+                "cache_status": "miss",
+            }
         base_price = recent[-1]["avg_price"] if recent else pricing_service.get_current_price(db, selected_crop, selected_region)["current_price"]
         trend = pricing_service.analyze_price_trend(db, selected_crop, selected_region)
         forecast = []
@@ -513,10 +535,10 @@ class DashboardService:
                     "fallback_used": True,
                     "timeout": "timeout" in str(exc).lower(),
                     "error": str(exc),
-                    "source": value.get("source", "mock"),
-                    "source_name": value.get("source_name", f"{name} fallback"),
-                    "is_mock": value.get("is_mock", True),
-                    "cache_status": value.get("cache_status", "mock"),
+                    "source": value.get("source", "realtime_api"),
+                    "source_name": value.get("source_name", f"{name} unavailable"),
+                    "is_mock": value.get("is_mock", False),
+                    "cache_status": value.get("cache_status", "miss"),
                 }
             if statuses is not None:
                 statuses.append({
@@ -534,18 +556,19 @@ class DashboardService:
             "name": crop_name,
             "display_name": crop_name.title(),
             "location": region,
-            "price": 0,
+            "price": None,
             "unit": "VND/kg",
-            "change": "+0.0%",
-            "change_day_pct": 0,
-            "change_week_pct": 0,
-            "trend": "stable",
+            "change": None,
+            "change_day_pct": None,
+            "change_week_pct": None,
+            "trend": None,
             "last_updated": datetime.now(),
-            "source": "mock",
-            "source_name": "Dashboard featured crop fallback",
-            "is_mock": True,
-            "cache_status": "mock",
-            "confidence": 0.3,
+            "source": "realtime_api",
+            "source_name": "Dashboard featured crop",
+            "is_mock": False,
+            "cache_status": "miss",
+            "confidence": 0.0,
+            "error": "Không thể tải giá realtime.",
         }
 
     @staticmethod
@@ -555,28 +578,29 @@ class DashboardService:
             "temperature": None,
             "rainfall": None,
             "humidity": None,
-            "source": "mock",
-            "source_name": "Dashboard weather fallback",
-            "is_mock": True,
-            "cache_status": "mock",
+            "source": "realtime_api",
+            "source_name": "Dashboard weather",
+            "is_mock": False,
+            "cache_status": "miss",
             "last_updated": datetime.now(),
         }
         return {
             "region": region,
             "crop_name": crop_name,
             "risk_score": 0,
-            "risk_level": "low",
+            "risk_level": None,
             "current": current,
             "forecast": [],
             "hourly_forecast": [],
             "rain_24h": 0,
             "alerts": [],
             "activity_recommendations": [],
-            "source": "mock",
-            "source_name": "Dashboard weather fallback",
-            "is_mock": True,
-            "cache_status": "mock",
+            "source": "realtime_api",
+            "source_name": "Dashboard weather",
+            "is_mock": False,
+            "cache_status": "miss",
             "last_updated": datetime.now(),
+            "error": "Không thể tải dữ liệu thời tiết realtime.",
         }
 
     @staticmethod
@@ -586,10 +610,11 @@ class DashboardService:
             "current": current,
             "forecast": weather_risk.get("forecast", []),
             "alerts": weather_risk.get("alerts", []),
-            "is_mock": True,
+            "is_mock": False,
             "is_realtime": False,
-            "cache_status": current.get("cache_status", "mock"),
+            "cache_status": current.get("cache_status", "miss"),
             "last_updated": current.get("last_updated") or datetime.now(),
+            "error": current.get("error") or "Không thể tải dữ liệu thời tiết realtime.",
         }
 
     @staticmethod
@@ -599,11 +624,12 @@ class DashboardService:
             "region": region,
             "history": [],
             "forecast": [],
-            "trend": "stable",
-            "is_mock": True,
-            "source": "mock",
-            "source_name": "Dashboard price trend fallback",
-            "confidence": 0.3,
+            "trend": None,
+            "is_mock": False,
+            "source": "realtime_api",
+            "source_name": "Dashboard price trend",
+            "confidence": 0.0,
+            "error": "Không thể tải giá realtime.",
             "updated_at": datetime.now(),
         }
 
@@ -611,11 +637,12 @@ class DashboardService:
     def _fallback_news() -> dict:
         return {
             "news": [],
-            "source": "mock",
-            "source_name": "Dashboard market news fallback",
-            "is_mock": True,
-            "cache_status": "mock",
-            "confidence": 0.3,
+            "source": "realtime_api",
+            "source_name": "Dashboard market news",
+            "is_mock": False,
+            "cache_status": "miss",
+            "confidence": 0.0,
+            "error": "Không thể tải tin tức thị trường realtime.",
         }
 
     @staticmethod
@@ -624,11 +651,12 @@ class DashboardService:
             "featured_crop": featured,
             "global_references": [],
             "exchange_rate": {},
-            "cache_status": featured.get("cache_status", "mock"),
+            "cache_status": featured.get("cache_status", "miss"),
             "last_updated": featured.get("last_updated") or datetime.now(),
-            "source": "mock",
-            "source_name": "Dashboard realtime market fallback",
-            "is_mock": True,
+            "source": "realtime_api",
+            "source_name": "Dashboard realtime market",
+            "is_mock": False,
+            "error": "Không thể tải dữ liệu thị trường realtime.",
         }
 
     @staticmethod
@@ -637,16 +665,23 @@ class DashboardService:
             "crop_name": crop_name,
             "region": region,
             "action": "review",
-            "title": "Kiem tra du lieu noi bo",
-            "description": "AI dashboard dang dung goi y du phong vi mot module phan hoi cham.",
-            "confidence": 0.35,
-            "expected_price": 0,
-            "period": "hom nay",
-            "source": "mock",
-            "source_name": "Dashboard AI fallback",
-            "is_mock": True,
+            "title": "Không thể tải gợi ý AI",
+            "description": "Không thể tạo khuyến nghị realtime. Vui lòng thử lại sau.",
+            "confidence": 0.0,
+            "expected_price": None,
+            "period": "hôm nay",
+            "source": "realtime_api",
+            "source_name": "Dashboard AI",
+            "is_mock": False,
+            "error": "Không thể tải gợi ý AI realtime.",
             "last_updated": datetime.now(),
         }
+
+    @staticmethod
+    def _realtime_only() -> bool:
+        from app.core.config import settings
+
+        return bool(settings.USE_REALTIME_ONLY) and not bool(settings.ALLOW_MOCK_DATA or settings.ALLOW_SAMPLE_DATA)
 
     def _delete_dashboard_realtime_data(self, db: Session, region: str, crop_name: str) -> None:
         try:

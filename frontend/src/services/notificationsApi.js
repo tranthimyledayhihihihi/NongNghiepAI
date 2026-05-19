@@ -1,23 +1,22 @@
-import api, { getApiErrorMessage } from './api';
-import { normalizeApiResponse } from '../utils/apiResponse';
+﻿import api, { getApiErrorMessage } from './api';
+import { normalizeApiError, normalizeApiResponse } from '../utils/apiResponse';
 
 const unwrap = (response) => normalizeApiResponse(response);
 const request = async (factory, fallback) => {
   try {
     return unwrap(await factory());
   } catch (error) {
-    error.message = getApiErrorMessage(error, fallback);
-    throw error;
+    throw normalizeApiError({ ...error, message: getApiErrorMessage(error, fallback) });
   }
 };
 
 export const notificationsApi = {
   summary: async () => {
-    return request(() => api.get('/api/notifications/summary'), 'Khong tai duoc tong quan thong bao');
+    return request(() => api.get('/api/notifications/summary'), 'Không tải được tổng quan thông báo');
   },
 
   unreadCount: async () => {
-    return request(() => api.get('/api/notifications/unread-count'), 'Khong tai duoc so thong bao chua doc');
+    return request(() => api.get('/api/notifications/unread-count'), 'Không tải được số thông báo chưa đọc');
   },
 
   list: async ({ type, unreadOnly = false, limit = 50, offset = 0 } = {}) => {
@@ -28,15 +27,15 @@ export const notificationsApi = {
         limit,
         offset,
       },
-    }), 'Khong tai duoc danh sach thong bao');
+    }), 'Không tải được danh sách thông báo');
   },
 
   detail: async (notificationId) => {
-    return request(() => api.get(`/api/notifications/${notificationId}`), 'Khong tai duoc chi tiet thong bao');
+    return request(() => api.get(`/api/notifications/${notificationId}`), 'Không tải được chi tiết thông báo');
   },
 
   deliveries: async (notificationId) => {
-    return request(() => api.get(`/api/notifications/${notificationId}/deliveries`), 'Khong tai duoc delivery log');
+    return request(() => api.get(`/api/notifications/${notificationId}/deliveries`), 'Không tải được nhật ký gửi');
   },
 
   bulk: async ({ action, ids, type, unreadOnly }) => {
@@ -45,21 +44,21 @@ export const notificationsApi = {
       ids,
       type,
       unread_only: unreadOnly,
-    }), 'Khong cap nhat duoc thong bao hang loat');
+    }), 'Không cập nhật được thông báo hàng loạt');
   },
 
   retryDelivery: async (notificationId) => {
-    return request(() => api.post(`/api/notifications/${notificationId}/retry-delivery`), 'Khong gui lai duoc delivery');
+    return request(() => api.post(`/api/notifications/${notificationId}/retry-delivery`), 'Không gửi lại được thông báo');
   },
 
   markRead: async (notificationId) => {
     return request(() => api.post('/api/notifications/mark-read', {
       notification_id: notificationId,
-    }), 'Khong danh dau doc duoc thong bao');
+    }), 'Không đánh dấu đọc được thông báo');
   },
 
   markAllRead: async () => {
-    return request(() => api.post('/api/notifications/mark-all-read'), 'Khong danh dau doc tat ca thong bao');
+    return request(() => api.post('/api/notifications/mark-all-read'), 'Không đánh dấu đọc tất cả thông báo');
   },
 
   generateFromAlert: async ({ alertId, alertType, title, message, priority, suggestedAction }) => {
@@ -70,17 +69,17 @@ export const notificationsApi = {
       message,
       priority,
       suggested_action: suggestedAction,
-    }), 'Khong tao duoc thong bao tu alert');
+    }), 'Không tạo được thông báo từ cảnh báo');
   },
 
   priority: async ({ minPriority = 'high' } = {}) => {
     return request(() => api.get('/api/notifications/priority', {
       params: { min_priority: minPriority },
-    }), 'Khong tai duoc thong bao uu tien');
+    }), 'Không tải được thông báo ưu tiên');
   },
 
   remove: async (notificationId) => {
-    return request(() => api.delete(`/api/notifications/${notificationId}`), 'Khong xoa duoc thong bao');
+    return request(() => api.delete(`/api/notifications/${notificationId}`), 'Không xóa được thông báo');
   },
 
   streamUrl: () => {
@@ -95,3 +94,4 @@ notificationsApi.getPriorityNotifications = notificationsApi.priority;
 notificationsApi.markNotificationRead = notificationsApi.markRead;
 notificationsApi.markAllNotificationsRead = notificationsApi.markAllRead;
 notificationsApi.generateNotificationFromAlert = notificationsApi.generateFromAlert;
+

@@ -230,7 +230,7 @@ const AIChatPage = () => {
     id: crypto.randomUUID(),
     type: 'bot',
     content: extractAiReply(data) ||
-      'Tôi đã nhận được thông tin. Bạn nên bổ sung khu vực canh tác, tuổi cây, ảnh cận cảnh và lịch bón phân gần nhất để tôi phân tích chính xác hơn.',
+      'Không thể kết nối trợ lý AI. Vui lòng thử lại sau.',
     timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
     source: null,
     analysis: null,
@@ -265,7 +265,7 @@ const AIChatPage = () => {
         source: 'error',
         source_name: 'Lỗi trợ lý AI',
         is_mock: false,
-        fallback_used: true,
+        fallback_used: false,
         timeout: error?.isTimeout || error?.response?.status === 504,
         error: error?.message,
         confidence: 0,
@@ -290,19 +290,16 @@ const AIChatPage = () => {
         image: imageUrl,
       },
     ]);
-    setIsTyping(true);
-    window.setTimeout(() => {
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          type: 'bot',
-          content: 'Tôi đã nhận ảnh. Khi hệ thống xử lý ảnh sẵn sàng, ảnh này sẽ được dùng để kiểm định chất lượng.',
-          timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-        },
-      ]);
-      setIsTyping(false);
-    }, 700);
+    setMessages((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        type: 'bot',
+        content: 'Chức năng phân tích ảnh trong chat chưa kết nối API realtime. Vui lòng dùng trang Kiểm định chất lượng để phân tích ảnh.',
+        timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+      },
+    ]);
+    setIsTyping(false);
     event.target.value = '';
   };
 
@@ -660,7 +657,7 @@ const AIChatPage = () => {
           <h2 className="font-bold text-gray-900">AgriBot AI</h2>
           <p className="mt-2 text-sm text-gray-600">Trợ lý chuyên sâu cho dữ liệu nông nghiệp.</p>
           <div className="mt-3 inline-flex rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-green-700">
-            Phiên bản demo FE
+            Dữ liệu từ backend realtime
           </div>
         </div>
 

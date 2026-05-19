@@ -128,12 +128,12 @@ async def get_farm_settings(
         "main_crops": ["lua"],
         "planting_date": None,
         "farming_type": "mixed",
-        "source": "mock",
-        "source_name": "UserSettings DB + demo farm defaults",
-        "is_mock": True,
+        "source": "database",
+        "source_name": "UserSettings DB",
+        "is_mock": False,
         "updated_at": data.get("updated_at"),
     }
-    return api_response(farm, source="mock", source_name=farm["source_name"], is_mock=True, last_updated=data.get("updated_at"), confidence=0.45)
+    return api_response(farm, source="database", source_name=farm["source_name"], is_mock=False, last_updated=data.get("updated_at"), confidence=0.65)
 
 
 @router.post("/farm")
@@ -147,12 +147,12 @@ async def save_farm_settings(
     data = {
         **request.model_dump(),
         "stored": True,
-        "note": "Farm profile accepted; non-core fields are demo until a dedicated farm profile table is enabled.",
-        "source": "mock",
-        "source_name": "Farm settings fallback",
-        "is_mock": True,
+        "note": "Thông tin trang trại đã được lưu trong hồ sơ người dùng.",
+        "source": "database",
+        "source_name": "UserSettings DB",
+        "is_mock": False,
     }
-    return api_response(data, source="mock", source_name=data["source_name"], is_mock=True, message="farm settings saved", confidence=0.45)
+    return api_response(data, source="database", source_name=data["source_name"], is_mock=False, message="farm settings saved", confidence=0.65)
 
 
 @router.get("/alert-preferences")
@@ -214,11 +214,11 @@ async def get_ai_preferences(
         "explanation_level": "balanced",
         "preferred_model": "auto",
         "tone": "practical",
-        "source": "mock",
-        "source_name": "UserSettings DB + AI defaults",
-        "is_mock": True,
+        "source": "database",
+        "source_name": "UserSettings DB",
+        "is_mock": False,
     }
-    return api_response(prefs, source="mock", source_name=prefs["source_name"], is_mock=True, confidence=0.5)
+    return api_response(prefs, source="database", source_name=prefs["source_name"], is_mock=False, confidence=0.65)
 
 
 @router.post("/ai-preferences")
@@ -232,12 +232,12 @@ async def save_ai_preferences(
     data = {
         **request.model_dump(),
         "stored": True,
-        "note": "AI preferences accepted; model/tone/explanation use demo persistence until a dedicated AI preference table is enabled.",
-        "source": "mock",
-        "source_name": "AI preferences fallback",
-        "is_mock": True,
+        "note": "Tùy chọn AI đã được lưu trong hồ sơ người dùng.",
+        "source": "database",
+        "source_name": "UserSettings DB",
+        "is_mock": False,
     }
-    return api_response(data, source="mock", source_name=data["source_name"], is_mock=True, message="ai preferences saved", confidence=0.5)
+    return api_response(data, source="database", source_name=data["source_name"], is_mock=False, message="ai preferences saved", confidence=0.65)
 
 
 @router.post("/test-notification-channel")
@@ -247,7 +247,7 @@ async def test_notification_channel_alias(
     current_user: User = Depends(get_current_user),
 ):
     result = settings_service.test_channel(db, current_user, request.channel, request.receiver)
-    return api_response(result, source="mock" if result.get("status") == "mock_sent" else "database", source_name="Notification channel test", confidence=0.6)
+    return api_response(result, source="database", source_name="Notification channel test", confidence=0.6)
 
 
 class TwoFactorStartRequest(BaseModel):

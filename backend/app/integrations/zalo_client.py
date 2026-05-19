@@ -10,7 +10,7 @@ class ZaloClient:
             return {
                 "receiver": receiver,
                 "status": "missing_token",
-                "message_id": f"mock-zalo-{uuid4()}",
+                "message_id": None,
                 "error": "ZALO_OA_TOKEN chưa được cấu hình",
             }
         try:

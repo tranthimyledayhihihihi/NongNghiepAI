@@ -1,13 +1,12 @@
 import api, { getApiErrorMessage, settledValue } from './api';
-import { normalizeApiResponse } from '../utils/apiResponse';
+import { normalizeApiError, normalizeApiResponse } from '../utils/apiResponse';
 
 const unwrap = (response) => normalizeApiResponse(response);
 const request = async (factory, fallback) => {
   try {
     return unwrap(await factory());
   } catch (error) {
-    error.message = getApiErrorMessage(error, fallback);
-    throw error;
+    throw normalizeApiError({ ...error, message: getApiErrorMessage(error, fallback) });
   }
 };
 
@@ -18,7 +17,7 @@ export const dashboardApi = {
         region: region || undefined,
         crop_name: cropName,
       },
-    }), 'Khong tai duoc dashboard overview');
+    }), 'Không tải được tổng quan dashboard');
   },
 
   getRealtimeStatus: async (region, { cropName = 'lua' } = {}) => {
@@ -27,7 +26,7 @@ export const dashboardApi = {
         region: region || undefined,
         crop_name: cropName,
       },
-    }), 'Khong tai duoc realtime status');
+    }), 'Không tải được trạng thái realtime');
   },
 
   getAiInsights: async (region, { cropName = 'lua' } = {}) => {
@@ -36,7 +35,7 @@ export const dashboardApi = {
         region: region || undefined,
         crop_name: cropName,
       },
-    }), 'Khong tai duoc AI insights');
+    }), 'Không tải được gợi ý AI');
   },
 
   getRiskSummary: async (region, { cropName = 'lua' } = {}) => {
@@ -45,7 +44,7 @@ export const dashboardApi = {
         region: region || undefined,
         crop_name: cropName,
       },
-    }), 'Khong tai duoc risk summary');
+    }), 'Không tải được tổng quan rủi ro');
   },
 
   getActionToday: async (region, { cropName = 'lua' } = {}) => {
@@ -54,7 +53,7 @@ export const dashboardApi = {
         region: region || undefined,
         crop_name: cropName,
       },
-    }), 'Khong tai duoc action today');
+    }), 'Không tải được hành động hôm nay');
   },
 
   getSummary: async (region, { cropName = 'lua', forceRefresh = false } = {}) => {
@@ -64,7 +63,7 @@ export const dashboardApi = {
         crop_name: cropName,
         force_refresh: forceRefresh,
       },
-    }), 'Khong tai duoc dashboard summary');
+    }), 'Không tải được dữ liệu dashboard');
   },
 
   getFeaturedCrop: async (region, { cropName = 'lua', forceRefresh = false } = {}) => {
@@ -74,7 +73,7 @@ export const dashboardApi = {
         crop_name: cropName,
         force_refresh: forceRefresh,
       },
-    }), 'Khong tai duoc featured crop');
+    }), 'Không tải được giá nông sản nổi bật');
   },
 
   getPriceTrend: async ({ cropName = 'lua', region, days = 7 } = {}) => {
@@ -84,7 +83,7 @@ export const dashboardApi = {
         region: region || undefined,
         days,
       },
-    }), 'Khong tai duoc price trend');
+    }), 'Không tải được xu hướng giá');
   },
 
   getWeatherOverview: async (region, { forceRefresh = false } = {}) => {
@@ -93,7 +92,7 @@ export const dashboardApi = {
         region: region || undefined,
         force_refresh: forceRefresh,
       },
-    }), 'Khong tai duoc weather overview');
+    }), 'Không tải được thời tiết realtime');
   },
 
   getWeatherRisk: async ({ region, cropName = 'lua', growthStage, forceRefresh = false } = {}) => {
@@ -104,7 +103,7 @@ export const dashboardApi = {
         growth_stage: growthStage || undefined,
         force_refresh: forceRefresh,
       },
-    }), 'Khong tai duoc weather risk');
+    }), 'Không tải được rủi ro thời tiết');
   },
 
   getRegionalPrices: async ({ cropName = 'lua', regions, forceRefresh = false } = {}) => {
@@ -117,7 +116,7 @@ export const dashboardApi = {
       paramsSerializer: {
         indexes: null,
       },
-    }), 'Khong tai duoc regional prices');
+    }), 'Không tải được giá theo khu vực');
   },
 
   getRealtimeMarket: async ({ cropName = 'lua', region, forceRefresh = false } = {}) => {
@@ -127,7 +126,7 @@ export const dashboardApi = {
         region: region || undefined,
         force_refresh: forceRefresh,
       },
-    }), 'Khong tai duoc realtime market');
+    }), 'Không tải được dữ liệu thị trường realtime');
   },
 
   getNews: async ({ limit = 6, cropName, region, forceRefresh = false } = {}) => {
@@ -138,7 +137,7 @@ export const dashboardApi = {
         region: region || undefined,
         force_refresh: forceRefresh,
       },
-    }), 'Khong tai duoc dashboard news');
+    }), 'Không tải được tin tức dashboard');
   },
 
   getDataHealth: async ({ cropName = 'lua', region } = {}) => {
@@ -147,7 +146,7 @@ export const dashboardApi = {
         crop_name: cropName,
         region: region || undefined,
       },
-    }), 'Khong tai duoc data health');
+    }), 'Không tải được trạng thái dữ liệu');
   },
 
   refresh: async ({ source = 'all', cropName = 'lua', region } = {}) => {
@@ -157,7 +156,7 @@ export const dashboardApi = {
         crop_name: cropName,
         region: region || undefined,
       },
-    }), 'Khong refresh duoc dashboard');
+    }), 'Không làm mới được dashboard');
   },
 
   reset: async ({ cropName = 'lua', region } = {}) => {
@@ -166,7 +165,7 @@ export const dashboardApi = {
         crop_name: cropName,
         region: region || undefined,
       },
-    }), 'Khong reset duoc dashboard');
+    }), 'Không reset được dashboard');
   },
 
   getAiRecommendation: async ({ cropName = 'lua', region } = {}) => {
@@ -175,7 +174,7 @@ export const dashboardApi = {
         crop_name: cropName,
         region: region || undefined,
       },
-    }), 'Khong tai duoc AI recommendation');
+    }), 'Không tải được khuyến nghị AI');
   },
 };
 
@@ -197,28 +196,13 @@ dashboardApi.getDashboardFullData = async (region, { cropName = 'lua' } = {}) =>
   const errors = results
     .map((result, index) => ({ result, key: ['overview', 'realtimeStatus', 'aiInsights', 'riskSummary', 'actionToday'][index] }))
     .filter(({ result }) => result.status === 'rejected')
-    .map(({ result, key }) => ({ key, message: getApiErrorMessage(result.reason, `Khong tai duoc ${key}`) }));
+    .map(({ result, key }) => ({ key, message: getApiErrorMessage(result.reason, `Không tải được ${key}`) }));
   return {
-    overview: settledValue(results[0], {
-      region,
-      crop_name: cropName,
-      featured_crop: {},
-      weather: {},
-      weather_risk: {},
-      forecast: [],
-      regional_prices: [],
-      news: [],
-      realtime_market: {},
-      alert_center: [],
-      notifications: {},
-      source: 'mock',
-      source_name: 'Dashboard frontend fallback',
-      fallback_used: true,
-    }),
-    realtimeStatus: settledValue(results[1], { api_status: [], source: 'mock', fallback_used: true }),
+    overview: settledValue(results[0], null),
+    realtimeStatus: settledValue(results[1], null),
     aiInsights: settledValue(results[2], null),
-    riskSummary: settledValue(results[3], {}),
-    actionToday: settledValue(results[4], { actions: [], source: 'mock', fallback_used: true }),
+    riskSummary: settledValue(results[3], null),
+    actionToday: settledValue(results[4], null),
     errors,
   };
 };

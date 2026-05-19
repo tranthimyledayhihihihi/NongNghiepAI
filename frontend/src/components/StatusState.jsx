@@ -1,11 +1,11 @@
 import { AlertCircle, Inbox, Loader2, RefreshCw } from 'lucide-react';
 
-export const PageError = ({ message, onRetry }) => (
+export const PageError = ({ message, title = 'Có lỗi xảy ra', onRetry, actionLabel = 'Thử lại' }) => (
   <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
     <div className="flex items-start gap-3">
       <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
       <div className="flex-1">
-        <p className="font-medium">Có lỗi xảy ra</p>
+        <p className="font-medium">{title}</p>
         <p className="mt-1">{message}</p>
         {onRetry && (
           <button
@@ -14,12 +14,21 @@ export const PageError = ({ message, onRetry }) => (
             className="mt-3 inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 font-medium text-red-700 hover:bg-red-100"
           >
             <RefreshCw className="h-4 w-4" />
-            Thử lại
+            {actionLabel}
           </button>
         )}
       </div>
     </div>
   </div>
+);
+
+export const ErrorState = ({
+  title = 'Không thể tải dữ liệu realtime',
+  message = 'API realtime đang lỗi hoặc phản hồi quá chậm. Vui lòng thử lại sau.',
+  actionLabel = 'Thử lại',
+  onRetry,
+}) => (
+  <PageError title={title} message={message} actionLabel={actionLabel} onRetry={onRetry} />
 );
 
 export const EmptyState = ({ title = 'Chưa có dữ liệu', description, action }) => (

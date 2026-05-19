@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.auth import get_optional_current_user
-from app.api.response import api_response
+from app.api.response import api_response, error_response
 from app.core.database import get_db
 from app.models.user import User
 from app.schemas.market_schema import MarketSuggestRequest, MarketSuggestResponse
@@ -50,19 +50,32 @@ async def get_market_channels(region: str | None = None, db: Session = Depends(g
 async def get_market_news(
     limit: int = Query(default=10, ge=1, le=50),
     crop: str | None = None,
+    crop_name: str | None = None,
     region: str | None = None,
     db: Session = Depends(get_db),
 ):
-    data = market_news_service.get_market_news(db, limit=limit, crop=crop, region=region)
-    return api_response(
-        data,
-        source=data.get("source", "cached"),
-        source_name=data.get("source_name", "RSS market news cache"),
-        is_realtime=data.get("is_realtime", False),
-        is_mock=data.get("is_mock", False),
-        cache_status=data.get("cache_status", "from_db"),
-        confidence=0.7,
-    )
+    payload = market_news_service.get_market_news(db, limit=limit, crop=crop or crop_name, region=region)
+    if payload.get("_api_error"):
+        return error_response(payload.get("error_message") or "Không thể tải tin tức thị trường realtime.")
+    metadata = payload.get("metadata") or {
+        "source_type": "realtime" if payload.get("is_realtime") else payload.get("source", "database"),
+        "fetched_at": payload.get("fetched_at"),
+        "cache_status": payload.get("cache_status", "from_db"),
+        "source_name": payload.get("source_name"),
+        "is_mock": payload.get("is_mock", False),
+    }
+    return {
+        "success": True,
+        "data": payload.get("news", []),
+        "source": "cache" if payload.get("cache_status") in {"from_db", "hit", "fresh"} else payload.get("source", "realtime_api"),
+        "is_realtime": bool(payload.get("is_realtime")),
+        "is_cache": payload.get("cache_status") in {"from_db", "hit", "fresh"},
+        "is_mock": False,
+        "warning": payload.get("warning"),
+        "error": None,
+        "metadata": metadata,
+        "message": payload.get("message", "OK"),
+    }
 
 
 @router.get("/prices")
@@ -90,9 +103,9 @@ async def analyze_market_news(request: NewsAnalysisRequest):
     data = _analyze_news_payload(request)
     return api_response(
         data,
-        source=data.get("source", "mock"),
+        source=data.get("source", "ai_generated"),
         source_name=data.get("source_name"),
-        is_mock=data.get("is_mock", True),
+        is_mock=data.get("is_mock", False),
         confidence=data.get("confidence", 0.0),
     )
 
@@ -205,10 +218,8 @@ async def get_market_history(user_id: int, limit: int = 50, db: Session = Depend
 
 @router.get("/demand/{crop_name}")
 async def get_market_demand(crop_name: str):
-    return api_response(
-        {"crop_name": crop_name, "demand": "medium"},
-        source="mock",
-        source_name="Demand demo fallback",
-        is_mock=True,
-        confidence=0.4,
+    return error_response(
+        "Không thể tải nhu cầu thị trường realtime. Vui lòng thử lại sau.",
+        code="REALTIME_API_FAILED",
+        source="realtime_api",
     )

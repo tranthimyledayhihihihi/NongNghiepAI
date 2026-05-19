@@ -1,15 +1,25 @@
 import api, { getApiErrorMessage } from './api';
-import { normalizeApiResponse } from '../utils/apiResponse';
+import { normalizeApiError, normalizeApiResponse } from '../utils/apiResponse';
 import { normalizePriceInput } from '../utils/priceInputs';
 import { pricingApi } from './pricingApi';
 
 const unwrap = (response) => normalizeApiResponse(response);
+const normalizeNewsPayload = (payload) => (
+  Array.isArray(payload)
+    ? {
+        news: payload,
+        metadata: payload.meta || {},
+        source: payload.meta?.source_type || payload.source,
+        source_name: payload.meta?.source_name || payload.source_name,
+        cache_status: payload.meta?.cache_status,
+      }
+    : payload
+);
 const request = async (factory, fallback) => {
   try {
     return unwrap(await factory());
   } catch (error) {
-    error.message = getApiErrorMessage(error, fallback);
-    throw error;
+    throw normalizeApiError({ ...error, message: getApiErrorMessage(error, fallback) });
   }
 };
 
@@ -25,14 +35,15 @@ export const marketApi = {
     return request(() => api.get('/api/market/channels'), 'Không tải được danh sách kênh bán');
   },
 
-  getNews: async ({ limit = 10, crop, region } = {}) => {
-    return request(() => api.get('/api/market/news', {
+  getNews: async ({ limit = 10, crop, cropName, region } = {}) => {
+    const payload = await request(() => api.get('/api/market/news', {
       params: {
         limit,
-        crop: crop || undefined,
+        crop: crop || cropName || undefined,
         region: region || undefined,
       },
     }), 'Không tải được tin thị trường');
+    return normalizeNewsPayload(payload);
   },
 
   getPrices: async ({ crop = 'lua', region = 'Ha Noi', qualityGrade = 'grade_1' } = {}) => {
@@ -85,7 +96,11 @@ export const marketApi = {
 
 marketApi.getMarketNews = marketApi.getNews;
 marketApi.getMarketPrices = marketApi.getPrices;
-marketApi.getMarketTrends = (crop, region) => marketApi.getTrends({ crop, region });
+marketApi.getMarketTrends = (input, region) => (
+  typeof input === 'object'
+    ? marketApi.getTrends({ crop: input.cropName || input.crop, region: input.region })
+    : marketApi.getTrends({ crop: input, region })
+);
 marketApi.analyzeMarketNews = marketApi.analyzeNews;
 marketApi.getMarketAnalysis = marketApi.analyzeMarket;
 

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Integer, String, Unicode
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, JSON, String, Unicode
 from sqlalchemy.orm import synonym
 from sqlalchemy.sql import func
 
@@ -16,6 +16,13 @@ class MarketPrice(Base):
     MarketType = Column("MarketType", Unicode(50), nullable=False, default="Ban le")
     SourceURL = Column("SourceURL", String(500), nullable=True)
     SourceName = Column("SourceName", String(100), nullable=True)
+    SourceType = Column("SourceType", String(50), nullable=True)
+    ObservedAt = Column("ObservedAt", DateTime, nullable=True)
+    FetchedAt = Column("FetchedAt", DateTime, nullable=True)
+    ConfidenceScore = Column("ConfidenceScore", Float, nullable=True)
+    IsRealtime = Column("IsRealtime", Boolean, nullable=True, default=False)
+    IsMock = Column("IsMock", Boolean, nullable=True, default=False)
+    Metadata = Column("Metadata", JSON, nullable=True)
     PriceDate = Column("PriceDate", Date, nullable=False, index=True)
     UpdatedAt = Column("UpdatedAt", DateTime, server_default=func.now(), nullable=False)
 
@@ -28,6 +35,13 @@ class MarketPrice(Base):
     market_type = synonym("MarketType")
     source_url = synonym("SourceURL")
     source_name = synonym("SourceName")
+    source_type = synonym("SourceType")
+    observed_at = synonym("ObservedAt")
+    fetched_at = synonym("FetchedAt")
+    confidence_score = synonym("ConfidenceScore")
+    is_realtime = synonym("IsRealtime")
+    is_mock = synonym("IsMock")
+    metadata_json = synonym("Metadata")
     price_date = synonym("PriceDate")
     date = synonym("PriceDate")
     updated_at = synonym("UpdatedAt")

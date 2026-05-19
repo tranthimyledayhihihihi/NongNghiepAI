@@ -1,13 +1,17 @@
 from datetime import datetime
 from typing import Any
 
+from app.core.config import settings
+
 
 SOURCE_REALTIME = "realtime_api"
 SOURCE_DATABASE = "database"
 SOURCE_AI = "ai_generated"
-SOURCE_CACHED = "cached"
+SOURCE_CACHED = "cache"
 SOURCE_MOCK = "mock"
 SOURCE_LEGACY = "legacy"
+REALTIME_ERROR_MESSAGE = "Không thể lấy dữ liệu realtime. Vui lòng thử lại sau."
+CACHE_WARNING_MESSAGE = "Dữ liệu realtime đang chậm. Đang hiển thị dữ liệu cache gần nhất."
 
 
 def _normalized_source(
@@ -21,19 +25,119 @@ def _normalized_source(
     cache = (cache_status or "").lower()
     if raw in {"legacy", "old_api", "deprecated"}:
         return SOURCE_LEGACY
-    if is_mock or raw in {"mock", "fallback", "demo"} or cache in {"mock", "miss"}:
+    if is_mock or raw in {"mock", "demo"} or cache == "mock":
         return SOURCE_MOCK
     if raw in {"ai", "ai_generated", "rule", "rule_based_ai", "explainable_rule_ai"}:
         return SOURCE_AI
     if is_realtime or cache in {"live", "realtime", "refreshed"} or raw in {"realtime", "realtime_api", "open-meteo", "rss"}:
         return SOURCE_REALTIME
-    if raw in {"cached", "cache"}:
+    if raw in {"cached", "cache", "fallback"}:
         return SOURCE_CACHED
     if cache in {"cached", "hit", "from_cache", "from_db", "db", "stale"}:
         return SOURCE_CACHED if cache in {"cached", "hit", "from_cache", "stale"} else SOURCE_DATABASE
     if raw in {"database", "db", "market_db"}:
         return SOURCE_DATABASE
     return raw or SOURCE_DATABASE
+
+
+def dedupe_messages(messages: list[str | None] | tuple[str | None, ...] | None = None) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for message in messages or []:
+        if not message:
+            continue
+        text = str(message).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
+
+
+def success_response(
+    data: Any,
+    *,
+    source: str = SOURCE_REALTIME,
+    is_realtime: bool = True,
+    is_cache: bool = False,
+    warning: str | list[str] | None = None,
+    source_name: str | None = None,
+    fetched_at: datetime | None = None,
+    updated_at: datetime | None = None,
+    confidence: float | None = None,
+    message: str = "OK",
+    meta: dict | None = None,
+) -> dict:
+    warning_items = warning if isinstance(warning, list) else [warning]
+    clean_warning = " | ".join(dedupe_messages(warning_items))
+    payload = {
+        "success": True,
+        "data": data,
+        "source": source,
+        "source_name": source_name or source,
+        "is_realtime": bool(is_realtime),
+        "is_cache": bool(is_cache),
+        "is_mock": False,
+        "warning": clean_warning or None,
+        "error": None,
+        "message": message,
+        "fetched_at": fetched_at or updated_at or datetime.now(),
+        "updated_at": updated_at or fetched_at or datetime.now(),
+        "confidence": confidence if confidence is not None else 0.0,
+    }
+    payload["meta"] = {
+        "source": payload["source"],
+        "source_name": payload["source_name"],
+        "is_realtime": payload["is_realtime"],
+        "is_cache": payload["is_cache"],
+        "is_mock": False,
+        "warning": payload["warning"],
+        "error": None,
+        "fetched_at": payload["fetched_at"],
+        "updated_at": payload["updated_at"],
+        "confidence": payload["confidence"],
+        **(meta or {}),
+    }
+    return payload
+
+
+def error_response(
+    message: str = REALTIME_ERROR_MESSAGE,
+    *,
+    code: str = "REALTIME_API_FAILED",
+    source: str = SOURCE_REALTIME,
+) -> dict:
+    return {
+        "success": False,
+        "data": None,
+        "source": source,
+        "source_name": source,
+        "is_realtime": False,
+        "is_cache": False,
+        "is_mock": False,
+        "warning": None,
+        "error": {
+            "code": code,
+            "message": message or REALTIME_ERROR_MESSAGE,
+        },
+        "message": message or REALTIME_ERROR_MESSAGE,
+        "meta": {
+            "source": source,
+            "source_name": source,
+            "is_realtime": False,
+            "is_cache": False,
+            "is_mock": False,
+            "warning": None,
+            "error": {
+                "code": code,
+                "message": message or REALTIME_ERROR_MESSAGE,
+            },
+        },
+    }
+
+
+def _is_realtime_only() -> bool:
+    return bool(settings.USE_REALTIME_ONLY) and not bool(settings.ALLOW_MOCK_DATA or settings.ALLOW_SAMPLE_DATA)
 
 
 def api_response(
@@ -52,6 +156,13 @@ def api_response(
     timeout: bool | None = None,
     error: str | None = None,
 ) -> dict:
+    if isinstance(data, dict) and data.get("_api_error"):
+        return error_response(
+            data.get("error_message") or REALTIME_ERROR_MESSAGE,
+            code=data.get("error_code") or "REALTIME_API_FAILED",
+            source=data.get("source") or SOURCE_REALTIME,
+        )
+
     if isinstance(data, dict):
         source_name = source_name or data.get("source_name") or data.get("source") or source
         last_updated = last_updated or data.get("last_updated") or data.get("updated_at") or data.get("created_at")
@@ -62,17 +173,45 @@ def api_response(
         fallback_used = bool(data.get("fallback_used")) if fallback_used is None else fallback_used
         timeout = bool(data.get("timeout")) if timeout is None else timeout
         error = error or data.get("error")
+        if _is_realtime_only() and str(data.get("status") or "").lower() in {"mock_sent", "mock", "failed"}:
+            return error_response(
+                data.get("error") or "Không thể lấy dữ liệu realtime. Vui lòng thử lại sau.",
+                code="REALTIME_API_FAILED" if str(data.get("status") or "").lower() == "failed" else "MOCK_DATA_BLOCKED",
+                source=SOURCE_REALTIME,
+            )
 
     fetched_at = fetched_at or last_updated or datetime.now()
     updated_at = last_updated or fetched_at
     fallback_used = bool(fallback_used)
     timeout = bool(timeout)
+    if is_mock and _is_realtime_only():
+        return error_response(
+            REALTIME_ERROR_MESSAGE,
+            code="MOCK_DATA_BLOCKED",
+            source=SOURCE_REALTIME,
+        )
+
     normalized_source = _normalized_source(
         source,
         is_realtime=is_realtime,
         is_mock=is_mock,
         cache_status=cache_status,
     )
+    is_cache = (not is_realtime) and not is_mock and (
+        normalized_source in {SOURCE_CACHED, SOURCE_DATABASE}
+        or (cache_status or "").lower() in {"fresh", "stale", "from_db", "cached", "hit", "from_cache"}
+    )
+    if is_cache and (fallback_used or timeout or (cache_status or "").lower() == "stale"):
+        normalized_source = SOURCE_CACHED
+    warning_items: list[str | None] = []
+    if isinstance(data, dict):
+        warning_items.extend([
+            data.get("warning"),
+            data.get("message") if fallback_used or timeout or (cache_status or "").lower() == "stale" else None,
+        ])
+    if fallback_used or timeout or (cache_status or "").lower() == "stale":
+        warning_items.append(CACHE_WARNING_MESSAGE)
+    warning = " | ".join(dedupe_messages(warning_items)) or None
 
     response = dict(data) if isinstance(data, dict) else {}
     response.update({
@@ -80,6 +219,11 @@ def api_response(
         "data": data,
         "source": normalized_source,
         "source_name": source_name or source,
+        "is_realtime": bool(is_realtime),
+        "is_cache": bool(is_cache),
+        "is_mock": False,
+        "warning": warning,
+        "error": None,
         "fetched_at": fetched_at,
         "updated_at": updated_at,
         "confidence": confidence if confidence is not None else 0.0,
@@ -88,10 +232,12 @@ def api_response(
             "source": normalized_source,
             "source_name": source_name or source,
             "is_realtime": is_realtime,
-            "is_mock": is_mock,
+            "is_cache": is_cache,
+            "is_mock": False,
+            "warning": warning,
             "fallback_used": fallback_used,
             "timeout": timeout,
-            "error": error,
+            "error": None,
             "cache_status": cache_status,
             "last_updated": updated_at,
             "fetched_at": fetched_at,

@@ -119,10 +119,10 @@ class AIContextService:
         except Exception as exc:
             return {
                 "error": str(exc),
-                "source": "mock",
-                "source_name": f"{key} context fallback",
-                "is_mock": True,
-                "fallback_used": True,
+                "source": "realtime_api",
+                "source_name": f"{key} realtime context",
+                "is_mock": False,
+                "fallback_used": False,
                 "timeout": "timeout" in str(exc).lower(),
                 "confidence": 0.0,
             }

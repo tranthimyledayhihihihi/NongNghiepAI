@@ -98,6 +98,39 @@ class PricingService:
         selected_region = self._clean_region(region)
         selected_grade = self._clean_grade(quality_grade)
 
+        result = price_aggregator_service.get_best_current_price(
+            db,
+            selected_crop,
+            selected_region,
+            force_refresh=force_refresh,
+        )
+        multiplier = self.quality_multipliers.get(selected_grade, 1.0)
+        if multiplier != 1.0 and result.get("current_price") is not None:
+            adjusted_price = round(float(result["current_price"]) * multiplier, 2)
+            result["current_price"] = adjusted_price
+            result["market_price"] = adjusted_price
+            result["price"] = adjusted_price
+        result.update(
+            {
+                "crop_name": crop_name.strip(),
+                "crop": crop_name.strip(),
+                "region": selected_region,
+                "quality_grade": selected_grade,
+                "price_trend": self.analyze_price_trend(db, selected_crop, selected_region),
+                "data_age_minutes": self._age_minutes(result.get("fetched_at") or result.get("last_updated")),
+            }
+        )
+        if include_weather:
+            result.update(
+                self._safe_weather_adjustment(
+                    db,
+                    selected_crop,
+                    selected_region,
+                    float(result.get("current_price") or 0),
+                )
+            )
+        return result
+
         if not force_refresh:
             cache_key = f"price:{selected_crop}:{selected_region}:{selected_grade}"
             cached = redis_client.get(cache_key)
@@ -173,7 +206,7 @@ class PricingService:
         selected_region = self._clean_region(region)
         selected_grade = self._clean_grade(quality_grade)
 
-        refresh_result = price_aggregator_service.refresh_prices(db, crop_name=selected_crop)
+        refresh_result = price_aggregator_service.refresh_price_for_crop_region(db, selected_crop, selected_region)
         current = self.get_current_price(
             db,
             selected_crop,
@@ -183,12 +216,17 @@ class PricingService:
             force_refresh=False,
         )
         current["refresh_result"] = refresh_result
-        current["source"] = current.get("source") or ("database" if not current.get("is_mock") else "mock")
+        if refresh_result.get("records_fetched") and not current.get("is_mock"):
+            current["source"] = "realtime"
+            current["cache_status"] = "refreshed"
+            current["is_realtime"] = True
+        else:
+            current["source"] = current.get("source") or ("database" if not current.get("is_mock") else "mock")
         current["source_type"] = current["source"]
         current["message"] = (
             "Đã làm mới giá từ nguồn thực tế"
             if refresh_result.get("status") == "success" and not current.get("is_mock")
-            else "Chưa lấy được giá thực tế, đang trả về dữ liệu dự phòng"
+            else "Chưa lấy được giá thực tế, đang hiển thị dữ liệu cache nếu có"
         )
         return current
 
@@ -200,6 +238,8 @@ class PricingService:
             request.quality_grade,
             include_weather=True,
         )
+        if current.get("_api_error"):
+            return current
         base_price = float(current["current_price"])
         discount = quantity_discount(request.quantity)
         multiplier = GRADE_MULTIPLIERS.get(request.quality_grade, 0.88)
@@ -254,6 +294,18 @@ class PricingService:
         }
 
     def forecast_price(self, crop_name: str, region: str, days: int = 7) -> dict:
+        if self._realtime_only():
+            return {
+                "_api_error": True,
+                "error_code": "REALTIME_API_FAILED",
+                "error_message": "Không thể tải giá realtime. Vui lòng thử lại sau.",
+                "crop_name": crop_name,
+                "region": region,
+                "forecast_data": [],
+                "source": "realtime_api",
+                "is_mock": False,
+                "cache_status": "miss",
+            }
         base_price = self._mock_price(crop_name, region, "grade_1")
         forecast_data = []
         for offset in range(1, days + 1):
@@ -300,6 +352,9 @@ class PricingService:
                 }
                 for item in history
             ]
+
+        if self._realtime_only():
+            return []
 
         base_price = self._mock_price(crop_name, region, "grade_1")
         return [
@@ -350,7 +405,11 @@ class PricingService:
         days: int = 7,
     ) -> dict:
         current = self.get_current_price(db, crop_name, region, quality_grade)
+        if current.get("_api_error"):
+            return current
         forecast = self.forecast_price(crop_name, region, days)
+        if forecast.get("_api_error"):
+            return forecast
         suggestion = self.suggest_price(
             db,
             PricingSuggestRequest(
@@ -411,6 +470,8 @@ class PricingService:
         selected_crop = self._clean_crop(crop_name)
         selected_region = self._clean_region(region)
         base_current = self.get_current_price(db, selected_crop, selected_region, include_weather=False)
+        if base_current.get("_api_error"):
+            return base_current
         base_price = float(base_current.get("current_price") or 0)
 
         regions = [
@@ -439,7 +500,20 @@ class PricingService:
                 }
             )
 
+        items = [item for item in items if not item.get("_api_error")]
         has_real_data = any(not item.get("is_mock") for item in items)
+        if not has_real_data and self._realtime_only():
+            return {
+                "_api_error": True,
+                "error_code": "REALTIME_API_FAILED",
+                "error_message": "Không thể tải giá realtime. Vui lòng thử lại sau.",
+                "crop_name": crop_name,
+                "base_region": selected_region,
+                "regions": [],
+                "source": "realtime_api",
+                "is_mock": False,
+                "cache_status": "miss",
+            }
         return {
             "crop_name": crop_name,
             "crop": crop_name,
@@ -478,7 +552,19 @@ class PricingService:
     def get_price_comparison(self, db: Session, crop_name: str, regions: list[str]) -> dict:
         regions = regions or ["Ha Noi", "TP.HCM", "Da Nang", "Can Tho"]
         items = [self.get_current_price(db, crop_name, region, include_weather=False) for region in regions]
+        items = [item for item in items if not item.get("_api_error")]
         has_real_data = any(not item.get("is_mock") for item in items)
+        if not has_real_data and self._realtime_only():
+            return {
+                "_api_error": True,
+                "error_code": "REALTIME_API_FAILED",
+                "error_message": "Không thể tải giá realtime. Vui lòng thử lại sau.",
+                "crop_name": crop_name,
+                "regions": [],
+                "source": "realtime_api",
+                "is_mock": False,
+                "cache_status": "miss",
+            }
         return {
             "crop_name": crop_name,
             "crop": crop_name,
@@ -522,9 +608,24 @@ class PricingService:
         selected_region = self._clean_region(region)
         selected_grade = self._clean_grade(quality_grade or "grade_2")
         current = self.get_current_price(db, selected_crop, selected_region, selected_grade, include_weather=False)
+        if current.get("_api_error"):
+            return current
         history_30 = self.get_price_history(db, selected_crop, selected_region, 30)
         history_7 = self.get_price_history(db, selected_crop, selected_region, 7)
         comparison = self.compare_regions(db, selected_crop, selected_region)
+        try:
+            from app.services.market_news_service import market_news_service
+
+            news_bundle = market_news_service.get_market_news(
+                db,
+                crop=selected_crop,
+                region=selected_region,
+                limit=5,
+            )
+            related_news = news_bundle.get("news", [])
+        except Exception:
+            news_bundle = {"source": "database", "source_name": "Market news service", "cache_status": "unavailable"}
+            related_news = []
 
         current_price = float(current.get("current_price") or 0)
         estimated_revenue = round(current_price * float(quantity or 0), 2) if quantity else None
@@ -532,6 +633,7 @@ class PricingService:
         trend_7d = self._trend_summary(history_7, "7 ngày")
         trend_30d = self._trend_summary(history_30, "30 ngày")
         volatility = self._volatility_summary(history_30)
+        news_impact = self._news_impact_summary(related_news)
         recommendation = self._market_recommendation(
             current_price=current_price,
             trend_7d=trend_7d,
@@ -558,6 +660,23 @@ class PricingService:
                     "fetched_at": self._serialize_dt(datetime.now()),
                 }
             )
+        if current.get("global_reference"):
+            data_sources.append(
+                {
+                    "source_type": current["global_reference"].get("source_type", "global_commodity"),
+                    "source_name": current["global_reference"].get("source_name", "Twelve Data"),
+                    "source_url": current["global_reference"].get("source_url"),
+                    "fetched_at": self._serialize_dt(current["global_reference"].get("fetched_at")),
+                }
+            )
+        if related_news:
+            data_sources.append(
+                {
+                    "source_type": news_bundle.get("source", "database"),
+                    "source_name": news_bundle.get("source_name", "Market news service"),
+                    "fetched_at": self._serialize_dt(datetime.now()),
+                }
+            )
 
         result = {
             "crop_name": crop_name.strip(),
@@ -565,10 +684,19 @@ class PricingService:
             "current_price": current_price,
             "unit": "VNĐ/kg",
             "estimated_revenue": estimated_revenue,
+            "local_price": current.get("local_price") or {
+                "price": current_price,
+                "unit": current.get("unit", "VNĐ/kg"),
+                "source_name": current.get("source_name"),
+                "source_type": current.get("source_type"),
+            },
+            "global_reference": current.get("global_reference"),
             "trend_7d": trend_7d,
             "trend_30d": trend_30d,
             "volatility": volatility,
             "regional_comparison": comparison.get("regions", [])[:2],
+            "news_impact": news_impact,
+            "related_news": related_news,
             "recommendation": recommendation,
             "risk_level": volatility["level"],
             "confidence_score": confidence_score,
@@ -605,6 +733,40 @@ class PricingService:
             quantity=quantity,
             quality_grade=quality_grade,
         )
+
+    def _news_impact_summary(self, news_items: list[dict]) -> dict:
+        if not news_items:
+            return {
+                "level": "neutral",
+                "summary": "Chưa có tin tức thị trường mới đủ liên quan để đánh giá tác động.",
+                "impact_score": 0.0,
+            }
+        score = 0.0
+        for item in news_items:
+            sentiment = str(item.get("sentiment") or item.get("impact") or "neutral").lower()
+            weight = float(item.get("impact_score") or 0.5)
+            if sentiment == "positive":
+                score += weight
+            elif sentiment == "negative":
+                score -= weight
+        average = score / max(len(news_items), 1)
+        if average > 0.15:
+            return {
+                "level": "positive",
+                "summary": "Tin tức thị trường đang hỗ trợ xu hướng tăng giá.",
+                "impact_score": round(min(abs(average), 1), 2),
+            }
+        if average < -0.15:
+            return {
+                "level": "negative",
+                "summary": "Tin tức thị trường có dấu hiệu gây áp lực giảm giá.",
+                "impact_score": round(min(abs(average), 1), 2),
+            }
+        return {
+            "level": "neutral",
+            "summary": "Tin tức liên quan đang ở mức trung tính.",
+            "impact_score": round(min(abs(average), 1), 2),
+        }
 
     def _safe_weather_adjustment(self, db: Session, crop_name: str, region: str, current_price: float) -> dict:
         try:
@@ -890,6 +1052,10 @@ class PricingService:
         normalized = unicode_normalize("NFD", value.strip().lower())
         normalized = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
         return normalized.replace("đ", "d").replace("Đ", "d").strip()
+
+    @staticmethod
+    def _realtime_only() -> bool:
+        return bool(settings.USE_REALTIME_ONLY) and not bool(settings.ALLOW_MOCK_DATA or settings.ALLOW_SAMPLE_DATA)
 
     def _trend_summary_text(self, direction: str, days: int) -> str:
         if direction == "up":

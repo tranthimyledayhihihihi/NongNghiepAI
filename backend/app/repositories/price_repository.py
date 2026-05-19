@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import desc, func
 from sqlalchemy.exc import SQLAlchemyError
@@ -44,6 +45,13 @@ def create_market_price(
     quality_grade: str = "grade_1",
     source: str | None = None,
     source_url: str | None = None,
+    source_type: str | None = None,
+    observed_at: datetime | None = None,
+    fetched_at: datetime | None = None,
+    confidence_score: float | None = None,
+    is_realtime: bool = False,
+    is_mock: bool = False,
+    metadata: dict[str, Any] | None = None,
     collected_at: datetime | None = None,
     price_date: date | None = None,
     market_type: str = "Ban le",
@@ -57,6 +65,14 @@ def create_market_price(
         QualityGrade=to_db_grade(quality_grade),
         MarketType=to_db_market_type(market_type),
         SourceName=source,
+        SourceURL=source_url,
+        SourceType=source_type,
+        ObservedAt=observed_at or timestamp,
+        FetchedAt=fetched_at or timestamp,
+        ConfidenceScore=confidence_score,
+        IsRealtime=is_realtime,
+        IsMock=is_mock,
+        Metadata=metadata,
         PriceDate=(price_date or timestamp.date()),
         UpdatedAt=timestamp,
     )
@@ -225,8 +241,11 @@ def bulk_upsert_market_prices(db: Session, records: list[dict]) -> dict:
             quality_grade = to_db_grade(record.get("quality_grade"))
             source_name = record.get("source_name") or record.get("source") or "manual"
             source_url = record.get("source_url")
+            source_type = record.get("source_type")
             market_type = to_db_market_type(record.get("market_type"))
             timestamp = record.get("collected_at") or datetime.now()
+            observed_at = record.get("observed_at") or timestamp
+            fetched_at = record.get("fetched_at") or timestamp
 
             query = db.query(MarketPrice).filter(
                 MarketPrice.CropID == crop.CropID,
@@ -258,6 +277,13 @@ def bulk_upsert_market_prices(db: Session, records: list[dict]) -> dict:
             market_price.PricePerKg = float(record["price"])
             market_price.SourceName = source_name
             market_price.SourceURL = source_url
+            market_price.SourceType = source_type
+            market_price.ObservedAt = observed_at
+            market_price.FetchedAt = fetched_at
+            market_price.ConfidenceScore = record.get("confidence_score")
+            market_price.IsRealtime = bool(record.get("is_realtime", False))
+            market_price.IsMock = bool(record.get("is_mock", False))
+            market_price.Metadata = record.get("metadata")
             market_price.UpdatedAt = timestamp
             touched_history.add((crop.CropID, record["region"], record_date))
         except Exception as exc:

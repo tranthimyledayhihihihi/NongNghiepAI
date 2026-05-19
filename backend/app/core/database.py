@@ -180,6 +180,26 @@ def _apply_lightweight_schema_upgrades() -> None:
             "ImageHeight": "INTEGER NULL" if _is_sqlite() else "INT NULL",
             "SuggestedPriceSource": "VARCHAR(100) NULL",
         },
+        "MarketPrices": {
+            "SourceType": "VARCHAR(50) NULL",
+            "ObservedAt": "DATETIME NULL",
+            "FetchedAt": "DATETIME NULL",
+            "ConfidenceScore": "FLOAT NULL",
+            "IsRealtime": "BOOLEAN NULL DEFAULT 0" if _is_sqlite() else "BIT NULL DEFAULT 0",
+            "IsMock": "BOOLEAN NULL DEFAULT 0" if _is_sqlite() else "BIT NULL DEFAULT 0",
+            "Metadata": "TEXT NULL" if _is_sqlite() else "NVARCHAR(MAX) NULL",
+        },
+        "MarketNews": {
+            "Content": "TEXT NULL" if _is_sqlite() else "NVARCHAR(MAX) NULL",
+            "URL": "VARCHAR(500) NULL",
+            "FetchedAt": "DATETIME NULL",
+            "CropTags": "TEXT NULL" if _is_sqlite() else "NVARCHAR(MAX) NULL",
+            "RegionTags": "TEXT NULL" if _is_sqlite() else "NVARCHAR(MAX) NULL",
+            "ImpactLevel": "VARCHAR(20) NULL",
+            "ImpactScore": "FLOAT NULL",
+            "IsRealtime": "BOOLEAN NULL DEFAULT 0" if _is_sqlite() else "BIT NULL DEFAULT 0",
+            "Metadata": "TEXT NULL" if _is_sqlite() else "NVARCHAR(MAX) NULL",
+        },
     }
     if _is_sqlite():
         with engine.begin() as conn:

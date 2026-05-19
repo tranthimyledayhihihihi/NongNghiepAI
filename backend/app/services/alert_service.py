@@ -64,10 +64,10 @@ class AlertService:
         confirmation = self._send_registration_confirmation(db, alert, current)
         response = self._to_response(db, alert, "Tạo cảnh báo giá thành công.")
         response["confirmation_delivery"] = confirmation
-        if confirmation and confirmation.get("status") == "mock_sent":
-            response["message"] = "Đã đăng ký cảnh báo. SMTP chưa cấu hình nên email xác nhận đang ở chế độ mock."
-        elif confirmation and confirmation.get("status") in {"sent", "stored"}:
+        if confirmation and confirmation.get("status") in {"sent", "stored"}:
             response["message"] = f"Đã đăng ký cảnh báo và gửi email xác nhận tới {confirmation.get('receiver') or 'người nhận'}."
+        elif confirmation and confirmation.get("status") in {"failed", "error", "missing_token"}:
+            response["message"] = "Đã đăng ký cảnh báo, nhưng chưa thể gửi xác nhận realtime qua kênh thông báo."
         return response
 
     def list_price_alerts(self, db: Session, user: User | None = None) -> list[dict]:
@@ -164,7 +164,7 @@ class AlertService:
         return {
             "alert_id": alert_id,
             "deliveries": deliveries,
-            "sent": sum(1 for item in deliveries if item.get("status") in {"sent", "stored", "mock_sent"}),
+            "sent": sum(1 for item in deliveries if item.get("status") in {"sent", "stored"}),
             "failed": sum(1 for item in deliveries if item.get("status") in {"failed", "error"}),
             "source": "database",
             "source_name": "Alert send dispatcher",
@@ -410,8 +410,8 @@ class AlertService:
         response["confirmation_delivery"] = confirmation
         if confirmation and confirmation.get("status") == "sent":
             response["message"] = f"Đã tạo cảnh báo thời tiết và gửi email xác nhận tới {confirmation.get('receiver') or receiver}."
-        elif confirmation and confirmation.get("status") == "mock_sent":
-            response["message"] = "Đã tạo cảnh báo thời tiết. SMTP chưa cấu hình nên email xác nhận đang ở chế độ thử."
+        elif confirmation and confirmation.get("status") in {"failed", "error", "missing_token"}:
+            response["message"] = "Đã tạo cảnh báo thời tiết, nhưng chưa thể gửi xác nhận realtime qua kênh thông báo."
         return response
 
     def list_weather_alerts(self, db: Session, user: User | None = None) -> list[dict]:
@@ -1182,7 +1182,7 @@ class AlertService:
 
     @staticmethod
     def _legacy_send_status(status: str | None) -> str:
-        if status in {"sent", "stored", "mock_sent"}:
+        if status in {"sent", "stored"}:
             return "Sent"
         if status in {"failed", "error"}:
             return "Failed"

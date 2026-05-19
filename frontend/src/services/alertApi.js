@@ -1,19 +1,18 @@
-import api, { getApiErrorMessage } from './api';
-import { normalizeApiResponse } from '../utils/apiResponse';
+﻿import api, { getApiErrorMessage } from './api';
+import { normalizeApiError, normalizeApiResponse } from '../utils/apiResponse';
 
 const unwrap = (response) => normalizeApiResponse(response);
 const request = async (factory, fallback) => {
   try {
     return unwrap(await factory());
   } catch (error) {
-    error.message = getApiErrorMessage(error, fallback);
-    throw error;
+    throw normalizeApiError({ ...error, message: getApiErrorMessage(error, fallback) });
   }
 };
 
 export const alertApi = {
   getOptions: async () => {
-    return request(() => api.get('/api/alerts/options'), 'Khong tai duoc alert options');
+    return request(() => api.get('/api/alerts/options'), 'Không tải được tùy chọn cảnh báo');
   },
 
   getCurrentPrice: async ({ cropName, cropId, region, regionKey, forceRefresh = true }) => {
@@ -26,7 +25,7 @@ export const alertApi = {
         crop_id: cropId || undefined,
         region_key: regionKey || undefined,
       },
-    }), 'Khong tai duoc gia hien tai');
+    }), 'Không thể tải giá realtime');
   },
 
   getSuggestions: async ({ cropName, cropId, region, regionKey }) => {
@@ -37,16 +36,16 @@ export const alertApi = {
         region: region || undefined,
         region_key: regionKey || undefined,
       },
-    }), 'Khong tai duoc goi y canh bao');
+    }), 'Không tải được gợi ý cảnh báo');
   },
 
   // Get user alerts
   getAlerts: async (params = {}) => {
-    return request(() => api.get('/api/alerts/list', { params }), 'Khong tai duoc danh sach canh bao thong minh');
+    return request(() => api.get('/api/alerts/list', { params }), 'Không tải được danh sách cảnh báo');
   },
 
   getTriggers: async () => {
-    return request(() => api.get('/api/alerts/triggers'), 'Khong tai duoc lich su trigger');
+    return request(() => api.get('/api/alerts/triggers'), 'Không tải được lịch sử kích hoạt');
   },
 
   createPriceAlert: async ({
@@ -71,7 +70,7 @@ export const alertApi = {
       notification_channel: notificationChannel,
       send_channels: sendChannels || [notificationChannel || 'app'],
       receiver,
-    }), 'Khong tao duoc canh bao gia');
+    }), 'Không tạo được cảnh báo giá');
   },
 
   // Backward-compatible alias for older components
@@ -85,19 +84,19 @@ export const alertApi = {
       notification_channel: notifyMethod,
       send_channels: [notifyMethod || 'app'],
       receiver: contact,
-    }), 'Khong dang ky duoc canh bao');
+    }), 'Không đăng ký được cảnh báo');
   },
 
   deactivate: async (alertId) => {
-    return request(() => api.delete(`/api/alerts/${alertId}`), 'Khong tat duoc canh bao');
+    return request(() => api.delete(`/api/alerts/${alertId}`), 'Không tắt được cảnh báo');
   },
 
   unsubscribe: async (alertId) => {
-    return request(() => api.delete(`/api/alerts/${alertId}`), 'Khong huy duoc canh bao');
+    return request(() => api.delete(`/api/alerts/${alertId}`), 'Không hủy được cảnh báo');
   },
 
   checkNow: async (payload = {}) => {
-    return request(() => api.post('/api/alerts/evaluate', payload), 'Khong danh gia duoc canh bao');
+    return request(() => api.post('/api/alerts/evaluate', payload), 'Không đánh giá được cảnh báo');
   },
 
   autoGenerate: async ({ cropName = 'lua', region = 'Ha Noi', alertType = 'weather' } = {}) => {
@@ -105,19 +104,19 @@ export const alertApi = {
       alert_type: alertType,
       crop_name: cropName,
       region,
-    }), 'Khong auto-generate duoc canh bao');
+    }), 'Không tự tạo được cảnh báo');
   },
 
   sendSmartAlert: async (payload) => {
-    return request(() => api.post('/api/alerts/send', payload), 'Khong gui duoc canh bao thong minh');
+    return request(() => api.post('/api/alerts/send', payload), 'Không gửi được cảnh báo');
   },
 
   testChannel: async ({ channel, receiver }) => {
-    return request(() => api.post('/api/alerts/test-channel', { channel, receiver }), 'Khong test duoc kenh canh bao');
+    return request(() => api.post('/api/alerts/test-channel', { channel, receiver }), 'Không kiểm tra được kênh cảnh báo');
   },
 
   getWeatherAlerts: async (region) => {
-    return request(() => api.get(`/api/weather/alerts/${encodeURIComponent(region)}`), 'Khong tai duoc canh bao thoi tiet');
+    return request(() => api.get(`/api/weather/alerts/${encodeURIComponent(region)}`), 'Không tải được cảnh báo thời tiết');
   },
 
   createWeatherAlert: async (payload) => {
@@ -132,17 +131,18 @@ export const alertApi = {
       receiver: payload.receiver,
       recommended_action: payload.recommended_action,
       send_channels: payload.send_channels || [payload.notification_channel || 'app'],
-    }), 'Khong tao duoc canh bao thoi tiet');
+    }), 'Không tạo được cảnh báo thời tiết');
   },
 
   deactivateWeather: async (alertId) => {
-    return request(() => api.delete(`/api/weather-alert/${alertId}`), 'Khong tat duoc canh bao thoi tiet');
+    return request(() => api.delete(`/api/weather-alert/${alertId}`), 'Không tắt được cảnh báo thoi tiet');
   },
 };
 
-alertApi.createSmartAlert = (payload) => request(() => api.post('/api/alerts/create', payload), 'Khong tao duoc smart alert');
+alertApi.createSmartAlert = (payload) => request(() => api.post('/api/alerts/create', payload), 'Không tạo được cảnh báo thông minh');
 alertApi.getSmartAlerts = alertApi.getAlerts;
 alertApi.evaluateAlerts = alertApi.checkNow;
-alertApi.autoGenerateAlerts = (payload = {}) => request(() => api.post('/api/alerts/auto-generate', payload), 'Khong auto-generate duoc smart alert');
+alertApi.autoGenerateAlerts = (payload = {}) => request(() => api.post('/api/alerts/auto-generate', payload), 'Không tự tạo được cảnh báo thông minh');
 alertApi.sendAlert = alertApi.sendSmartAlert;
 alertApi.testAlertChannel = alertApi.testChannel;
+
