@@ -150,7 +150,7 @@ def _local_market_reply(context: dict, message: str) -> str:
     if not has_real_price:
         return (
             f"Hiện chưa có dữ liệu thị trường thực tế cho {crop} tại {region}. "
-            "Mình sẽ không tự bịa giá. Bạn có thể cấu hình APIFarmer/Twelve Data hoặc cập nhật dữ liệu MarketPrices DB rồi hỏi lại."
+            "Mình sẽ không tự bịa giá. Bạn có thể cập nhật dữ liệu thị trường thực tế hoặc thử lại sau khi hệ thống đồng bộ xong."
         )
 
     lines = [
@@ -160,7 +160,7 @@ def _local_market_reply(context: dict, message: str) -> str:
     global_reference = pricing.get("global_reference") or analysis.get("global_reference")
     if global_reference:
         lines.append(
-            f"Tham chiếu quốc tế: {global_reference.get('price')} {global_reference.get('unit') or 'USD/ton'} từ {global_reference.get('source_name') or 'Twelve Data'}."
+            f"Tham chiếu quốc tế: {global_reference.get('price')} {global_reference.get('unit') or 'USD/ton'} từ {global_reference.get('source_name') or 'Nguồn tham chiếu quốc tế'}."
         )
     recommendation = analysis.get("recommendation") or pricing.get("recommendation")
     if isinstance(recommendation, dict):

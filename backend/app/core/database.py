@@ -147,7 +147,19 @@ def _apply_lightweight_schema_upgrades() -> None:
             "Pressure": "FLOAT NULL",
             "WeatherCode": "INTEGER NULL" if _is_sqlite() else "INT NULL",
             "SourceName": "VARCHAR(100) NULL",
+            "SourceURL": "VARCHAR(500) NULL",
             "SourceUpdatedAt": "DATETIME NULL",
+            "FetchedAt": "DATETIME NULL",
+            "IsRealtime": "BOOLEAN NULL DEFAULT 0" if _is_sqlite() else "BIT NULL DEFAULT 0",
+            "IsMock": "BOOLEAN NULL DEFAULT 0" if _is_sqlite() else "BIT NULL DEFAULT 0",
+        },
+        "WeatherForecasts": {
+            "SourceName": "VARCHAR(100) NULL",
+            "SourceURL": "VARCHAR(500) NULL",
+            "SourceUpdatedAt": "DATETIME NULL",
+            "FetchedAt": "DATETIME NULL",
+            "IsRealtime": "BOOLEAN NULL DEFAULT 0" if _is_sqlite() else "BIT NULL DEFAULT 0",
+            "IsMock": "BOOLEAN NULL DEFAULT 0" if _is_sqlite() else "BIT NULL DEFAULT 0",
         },
         "AIConversations": {
             "ContextSnapshot": "TEXT NULL" if _is_sqlite() else "NVARCHAR(MAX) NULL",
@@ -198,7 +210,17 @@ def _apply_lightweight_schema_upgrades() -> None:
             "ImpactLevel": "VARCHAR(20) NULL",
             "ImpactScore": "FLOAT NULL",
             "IsRealtime": "BOOLEAN NULL DEFAULT 0" if _is_sqlite() else "BIT NULL DEFAULT 0",
+            "IsMock": "BOOLEAN NULL DEFAULT 0" if _is_sqlite() else "BIT NULL DEFAULT 0",
             "Metadata": "TEXT NULL" if _is_sqlite() else "NVARCHAR(MAX) NULL",
+        },
+        "MarketAnalysisResults": {
+            "SourceName": "VARCHAR(120) NULL",
+            "SourceURL": "VARCHAR(500) NULL",
+            "FetchedAt": "DATETIME NULL",
+            "IsRealtime": "BOOLEAN NULL DEFAULT 0" if _is_sqlite() else "BIT NULL DEFAULT 0",
+            "IsMock": "BOOLEAN NULL DEFAULT 0" if _is_sqlite() else "BIT NULL DEFAULT 0",
+            "Status": "VARCHAR(30) NULL",
+            "ErrorMessage": "TEXT NULL" if _is_sqlite() else "NVARCHAR(MAX) NULL",
         },
     }
     if _is_sqlite():

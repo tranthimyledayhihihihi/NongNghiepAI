@@ -1,16 +1,34 @@
+from __future__ import annotations
+
 from datetime import datetime, timedelta, timezone
 import re
 import unicodedata
+import logging
+
 
 from app.core.config import settings
 from app.core.database import SessionLocal
+from app.core.real_data import OFFICIAL_AGRI_SOURCE_NAME, OFFICIAL_NEWS_URL, cache_status_for, realtime_error
 from app.core.redis_client import redis_client
-from app.integrations.apifarmer_client import apifarmer_client
-from app.integrations.rss_client import rss_client
-from app.integrations.twelvedata_client import twelvedata_client
+from app.integrations.thitruong_nongsan_news_client import thitruong_nongsan_news_client
+from app.integrations.tavily_news_client import tavily_news_client
+
 from app.repositories.ingestion_repository import finish_ingestion_log, start_ingestion_log
 from app.repositories.market_news_repository import list_market_news, upsert_market_news
 from app.services.pricing_service import pricing_service
+
+logger = logging.getLogger(__name__)
+
+
+def _norm_dedupe_text(s: str | None) -> str:
+    if not s:
+        return ""
+    return re.sub(r"\s+", " ", str(s)).strip().lower()
+
+
+def _market_news_dedupe_key(title: str | None, source_url: str | None) -> str:
+    # requirement: dedupe by source_url/title
+    return f"{_norm_dedupe_text(source_url)}|{_norm_dedupe_text(title)}"
 
 
 class MarketNewsService:
@@ -53,36 +71,56 @@ class MarketNewsService:
 
     def refresh_news(self) -> dict:
         db = SessionLocal()
-        log = start_ingestion_log(db, "refresh_market_news", "market_news_aggregator")
+        log = start_ingestion_log(db, "refresh_market_news", OFFICIAL_AGRI_SOURCE_NAME)
         try:
-            fetched_records = []
-            if settings.ENABLE_MARKET_NEWS:
-                fetched_records.extend(apifarmer_client.search_market_news(limit=30))
-                fetched_records.extend(twelvedata_client.search_market_news(limit=20))
-            if not fetched_records:
-                fetched_records.extend(rss_client.fetch_market_news())
-            records = self._filter_relevant_news(fetched_records, since=self._recent_since())
+            official_records = (
+                thitruong_nongsan_news_client.fetch_latest_news(limit=40)
+                if settings.ENABLE_MARKET_NEWS
+                else []
+            )
+
+            # Tavily chỉ là nguồn bổ sung (không thay nguồn chính).
+            tavily_records: list[dict] = []
+            try:
+                if getattr(settings, "TAVILY_ENABLED", True):
+                    tavily_records = tavily_news_client.search_agriculture_news(limit=20)
+            except Exception as exc:
+                # Không crash nếu Tavily lỗi
+                logger.exception("[MarketNewsService] Tavily failed: %s", exc)
+                tavily_records = []
+
+            fetched_records = list(official_records or []) + list(tavily_records or [])
+
+            # requirement: thitruong_nongsan_news_client trước, sau đó tavily bổ sung
+            official_records = self._filter_relevant_news((official_records or []), since=self._recent_since())
+            tavily_records = self._filter_relevant_news((tavily_records or []), since=self._recent_since())
+
+            # requirement: gộp tin + loại trùng theo source_url/title
+            records = self._merge_dedupe_news(official_records, tavily_records)
+
             result = upsert_market_news(db, records)
             self._clear_latest_cache()
             finish_ingestion_log(
                 db,
                 log,
                 status="success",
-                records_fetched=len(fetched_records),
+                records_fetched=(len(official_records) + len(tavily_records)),
                 records_saved=result["records_saved"] + result["records_updated"],
             )
             return {
                 "status": "success",
                 "records_fetched": len(fetched_records),
                 "records_filtered": len(records),
-                "source": "realtime" if fetched_records else "database",
-                "source_name": "APIFarmer/Twelve Data/RSS market news aggregator",
+                "source": "realtime_api" if fetched_records else "cache",
+                "source_name": OFFICIAL_AGRI_SOURCE_NAME,
+                "source_url": OFFICIAL_NEWS_URL,
+                "is_mock": False,
                 "fetched_at": datetime.utcnow().isoformat(),
                 **result,
             }
         except Exception as exc:
             finish_ingestion_log(db, log, status="failed", error_message=str(exc))
-            return {"status": "failed", "error": str(exc)}
+            return {"status": "failed", "error": str(exc), "records_fetched": 0, "records_saved": 0, "is_mock": False}
         finally:
             db.close()
 
@@ -95,59 +133,72 @@ class MarketNewsService:
         )
         cached = redis_client.get(cache_key) if cache_key else None
         if cached:
-            return {**cached, "cache_status": "hit"}
+            return {**cached, "cache_status": "fresh_cache"}
 
         fetch_limit = max(limit * 5, 20)
         rows = self._filter_relevant_news(
             list_market_news(db, limit=fetch_limit, crop_name=crop_name, region=region, since=since),
             since=since,
         )
-        if not rows and settings.ENABLE_MARKET_NEWS:
-            refresh_result = self.refresh_news()
-            if refresh_result.get("status") == "success":
-                db.expire_all()
-                rows = self._filter_relevant_news(
-                    list_market_news(db, limit=fetch_limit, crop_name=crop_name, region=region, since=since),
-                    since=since,
-                )
-        if not rows and (crop_name or region):
-            rows = self._filter_relevant_news(list_market_news(db, limit=fetch_limit, since=since), since=since)
-        if not rows and self._realtime_only():
+
+        # If realtime miss: try refresh once.
+        # If still no realtime data but cache exists, return cache.
+        if not rows:
+            if cached:
+                # cached already returned earlier; keep for safety
+                return cached
+            # No cache => required error payload
+            payload = realtime_error(
+                code="MARKET_NEWS_CACHE_MISS",
+                message="Market news cache miss. Background refresh has not fetched fresh real data yet.",
+                source_name=OFFICIAL_AGRI_SOURCE_NAME,
+                source_url=OFFICIAL_NEWS_URL,
+            )
+            payload["news"] = []
+            return payload
             return {
                 "_api_error": True,
-                "error_code": "REALTIME_API_FAILED",
-                "error_message": "Không thể tải tin tức thị trường realtime. Vui lòng thử lại sau.",
-                "source": "realtime_api",
-                "is_realtime": False,
+                "error_code": "REALTIME_NEWS_FAILED",
+                "error_message": "Không thể tải tin tức thị trường nông sản thực tế.",
+                "news": [],
                 "is_mock": False,
                 "cache_status": "miss",
-                "news": [],
-            }
-        if not rows:
-            return {
-                "news": self._fallback_news(limit, crop_name=crop_name, region=region),
-                "source": "mock",
-                "source_name": "Market news fallback",
-                "is_realtime": False,
-                "is_mock": True,
-                "window_days": self.LATEST_WINDOW_DAYS,
-                "cache_status": "mock",
-                "fallback_used": True,
-                "message": "Tin thị trường realtime/cache chưa sẵn sàng.",
             }
 
+        if not rows and (crop_name or region):
+            rows = self._filter_relevant_news(list_market_news(db, limit=fetch_limit, since=since), since=since)
+
+
+        newest_fetched = rows[0].FetchedAt or rows[0].CreatedAt or datetime.utcnow()
+        cache_status = cache_status_for(newest_fetched, "market_news")
+        if cache_status == "miss":
+            payload = realtime_error(
+                code="MARKET_NEWS_CACHE_EXPIRED",
+                message="Market news cache expired. Background refresh has not fetched fresh real data yet.",
+                source_name=rows[0].SourceName or OFFICIAL_AGRI_SOURCE_NAME,
+                source_url=OFFICIAL_NEWS_URL,
+            )
+            payload["news"] = []
+            return payload
         response = {
-            "news": [self._to_dict(row) for row in rows[:limit]],
-            "source": "cached",
-            "source_name": rows[0].SourceName if rows and rows[0].SourceName else "Market news cache",
-            "is_realtime": any(bool(getattr(row, "IsRealtime", False)) for row in rows[:limit]),
+            "news": self._dedupe_and_order_news([self._to_dict(row) for row in rows[:limit]]),
+            "source": "cache",
+            "source_name": rows[0].SourceName if rows and rows[0].SourceName else OFFICIAL_AGRI_SOURCE_NAME,
+            "source_url": OFFICIAL_NEWS_URL,
+            "is_realtime": False,
             "is_mock": False,
             "window_days": self.LATEST_WINDOW_DAYS,
-            "cache_status": "from_db",
+            "cache_status": cache_status,
+            "fetched_at": newest_fetched,
+            "last_updated": newest_fetched,
+            "data_age_minutes": int((datetime.utcnow() - newest_fetched).total_seconds() // 60) if newest_fetched else None,
             "metadata": {
-                "source_type": "realtime" if any(bool(getattr(row, "IsRealtime", False)) for row in rows[:limit]) else "database",
-                "fetched_at": datetime.utcnow().isoformat(),
-                "cache_status": "fresh",
+                "source_type": "cache",
+                "source_name": rows[0].SourceName if rows and rows[0].SourceName else OFFICIAL_AGRI_SOURCE_NAME,
+                "source_url": OFFICIAL_NEWS_URL,
+                "fetched_at": newest_fetched.isoformat() if hasattr(newest_fetched, "isoformat") else newest_fetched,
+                "cache_status": cache_status,
+                "is_mock": False,
             },
         }
         if cache_key:
@@ -158,47 +209,7 @@ class MarketNewsService:
     def _realtime_only() -> bool:
         return bool(settings.USE_REALTIME_ONLY) and not bool(settings.ALLOW_MOCK_DATA or settings.ALLOW_SAMPLE_DATA)
 
-    @staticmethod
-    def _fallback_news(limit: int, crop_name: str | None = None, region: str | None = None) -> list[dict]:
-        crop = crop_name or "nong san"
-        area = region or "Viet Nam"
-        base = [
-            {
-                "news_id": f"fallback-{index}",
-                "title": title.format(crop=crop, region=area),
-                "summary": summary.format(crop=crop, region=area),
-                "source_name": "Market news fallback",
-                "source_url": None,
-                "published_at": datetime.utcnow().isoformat(),
-                "region": area,
-                "sentiment": "neutral",
-                "impact": "neutral",
-                "source": "mock",
-                "fetched_at": datetime.utcnow().isoformat(),
-                "updated_at": datetime.utcnow().isoformat(),
-                "confidence": 0.35,
-                "is_mock": True,
-                "fallback_used": True,
-            }
-            for index, (title, summary) in enumerate(
-                [
-                    (
-                        "Theo doi bien dong gia {crop} tai {region}",
-                        "Chua co tin RSS phu hop trong cache gan day. Nen ket hop gia DB, canh bao gia va nguon dia phuong truoc khi ra quyet dinh.",
-                    ),
-                    (
-                        "Khuyen nghi ban theo dot de giam rui ro",
-                        "Khi tin thị trường realtime chậm, hệ thống chỉ hiển thị cache hợp lệ nếu có.",
-                    ),
-                    (
-                        "Kiem tra chat luong va thoi tiet truoc khi chot don",
-                        "Fallback nay nhac nguoi dung doi chieu thoi tiet, chat luong va lich thu hoach.",
-                    ),
-                ],
-                start=1,
-            )
-        ]
-        return base[:limit]
+    # _fallback_news removed (no mock data allowed)
 
     def _filter_agriculture_news(self, items):
         return [item for item in (items or []) if self._is_agriculture_production_news(item)]
@@ -211,6 +222,45 @@ class MarketNewsService:
             and self._is_agriculture_production_news(item)
             and not self._has_text_corruption(item)
         ]
+
+    def _merge_dedupe_news(self, official_records: list[dict], tavily_records: list[dict]) -> list[dict]:
+        """Gộp + loại trùng theo source_url/title. Tin official luôn ưu tiên hiển thị trước."""
+        merged: list[dict] = []
+        seen: set[str] = set()
+
+        def _push(item: dict):
+            key = _market_news_dedupe_key(item.get("title"), item.get("source_url") or item.get("url"))
+            if key in seen:
+                return
+            seen.add(key)
+            merged.append(item)
+
+        for it in (official_records or []):
+            _push(it)
+        for it in (tavily_records or []):
+            _push(it)
+        return merged
+
+    def _dedupe_and_order_news(self, items: list[dict]) -> list[dict]:
+        """Trong dữ liệu cache/DB, loại trùng theo source_url/title và đảm bảo official ở trước Tavily."""
+        seen: set[str] = set()
+        official: list[dict] = []
+        others: list[dict] = []
+        for it in (items or []):
+            title = it.get("title")
+            source_url = it.get("source_url")
+            key = _market_news_dedupe_key(title, source_url)
+            if key in seen:
+                continue
+            seen.add(key)
+            src_url = (source_url or "").lower()
+            if OFFICIAL_NEWS_URL.lower() in src_url or "thitruongnongsan.gov.vn" in src_url:
+                official.append(it)
+            else:
+                others.append(it)
+        return official + others
+
+
 
     def _has_text_corruption(self, item) -> bool:
         text = " ".join(
@@ -324,11 +374,12 @@ class MarketNewsService:
             "impact_level": row.ImpactLevel or MarketNewsService._impact_level(impact_score),
             "impact_score": impact_score,
             "price_effect": "likely_increase" if row.Sentiment == "positive" else "likely_decrease" if row.Sentiment == "negative" else "stable",
-            "source": "realtime_api" if row.IsRealtime else "cached",
+            "source": "cache",
             "updated_at": row.PublishedAt.isoformat() if row.PublishedAt else None,
             "confidence": 0.76 if row.IsRealtime else 0.7,
-            "is_realtime": bool(row.IsRealtime),
+            "is_realtime": False,
             "is_mock": False,
+            "cache_status": cache_status_for(row.FetchedAt or row.CreatedAt, "market_news"),
         }
 
     @staticmethod
@@ -367,9 +418,16 @@ class MarketNewsService:
         return "low"
 
     def get_market_trends(self, db, crop: str | None = None, region: str | None = None) -> dict:
+        """
+        Trả phân tích xu hướng dựa trên dữ liệu thật từ DB.
+        Không được phép "lộ" mock từ pricing_service qua is_mock/source="mock".
+        """
         selected_crop = crop or "lua"
         selected_region = region or "Ha Noi"
+
         pricing = pricing_service.get_ai_price_recommendation(db, selected_crop, selected_region)
+
+        # Cưỡng ép anti-mock: market news public luôn trả is_mock=false và không cho source="mock"
         return {
             "crop": selected_crop,
             "crop_name": selected_crop,
@@ -379,9 +437,9 @@ class MarketNewsService:
             "evidence": pricing.get("reasons", []),
             "forecast": pricing.get("forecast", []),
             "recommendation": pricing.get("recommendation"),
-            "source": "ai_generated" if not pricing.get("is_mock") else "mock",
+            "source": "ai_generated",
             "source_name": "Market trend engine",
-            "is_mock": pricing.get("is_mock", False),
+            "is_mock": False,
             "cache_status": pricing.get("cache_status", "computed"),
             "updated_at": datetime.utcnow().isoformat(),
         }

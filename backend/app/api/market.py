@@ -1,17 +1,24 @@
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from app.api.auth import get_optional_current_user
 from app.api.response import api_response, error_response
 from app.core.database import get_db
 from app.models.user import User
 from app.schemas.market_schema import MarketSuggestRequest, MarketSuggestResponse
+from app.services.market_analysis_service import market_analysis_service
 from app.services.market_news_service import market_news_service
 from app.services.market_service import market_service
 from app.services.pricing_service import pricing_service
 
 router = APIRouter(prefix="/api/market", tags=["market"])
+
+_market_analysis_lock = threading.Lock()
+_market_analysis_processing: set[str] = set()
+_market_analysis_executor = ThreadPoolExecutor(max_workers=1)
 
 
 class NewsAnalysisRequest(BaseModel):
@@ -56,7 +63,20 @@ async def get_market_news(
 ):
     payload = market_news_service.get_market_news(db, limit=limit, crop=crop or crop_name, region=region)
     if payload.get("_api_error"):
+        return api_response(payload)
         return error_response(payload.get("error_message") or "Không thể tải tin tức thị trường realtime.")
+    return api_response(
+        payload,
+        source=payload.get("source", "cache"),
+        source_name=payload.get("source_name"),
+        is_realtime=payload.get("is_realtime", False),
+        is_mock=False,
+        cache_status=payload.get("cache_status", "fresh_cache"),
+        fetched_at=payload.get("fetched_at"),
+        last_updated=payload.get("last_updated"),
+        confidence=0.7,
+        message=payload.get("message", "OK"),
+    )
     metadata = payload.get("metadata") or {
         "source_type": "realtime" if payload.get("is_realtime") else payload.get("source", "database"),
         "fetched_at": payload.get("fetched_at"),
@@ -165,7 +185,7 @@ async def analyze_market(
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_current_user),
 ):
-    data = pricing_service.analyze_market(
+    data = market_analysis_service.get_analysis(
         db,
         crop_name=request.crop_name,
         region=request.region,
@@ -213,6 +233,159 @@ async def get_market_history(user_id: int, limit: int = 50, db: Session = Depend
         source_name="MarketRecommendations DB",
         cache_status="from_db",
         confidence=0.7,
+    )
+
+
+@router.get("/analysis")
+async def get_market_analysis(
+    crop_name: str = Query(default="lua"),
+    region: str = Query(default="Ha Noi"),
+    quantity: float | None = Query(default=None),
+    quality_grade: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    """
+    Trả MarketAnalysisResult gần nhất từ DB cache.
+    Không block realtime khi miss: sẽ trả cache_status=miss/error rõ ràng (không mock).
+    """
+    payload = market_analysis_service.get_analysis(
+        db,
+        crop_name=crop_name,
+        region=region,
+        quantity=quantity,
+        quality_grade=quality_grade,
+    )
+
+    # Quy ước response theo format api_response / error_response chuẩn
+    if payload.get("_api_error"):
+        return api_response(
+            payload,
+            source="cache",
+            source_name=payload.get("source_name") or "Market analysis cache",
+            is_realtime=False,
+            is_mock=False,
+            cache_status=payload.get("cache_status", "miss"),
+            last_updated=payload.get("last_updated"),
+            fetched_at=payload.get("fetched_at"),
+            confidence=0.0,
+            message=payload.get("error_message") or "Không thể tải dữ liệu phân tích thị trường.",
+        )
+
+    # payload là JSON payload đã lưu (không chứa metadata chuẩn error_response)
+    # map lại metadata bắt buộc theo spec:
+    meta = {
+        "source_name": payload.get("source_name") or "Market analysis cache",
+        "source_url": payload.get("source_url"),
+        "is_realtime": bool(payload.get("is_realtime")),
+        "is_mock": False,
+        "cache_status": payload.get("cache_status", "fresh_cache"),
+        "fetched_at": payload.get("fetched_at"),
+        "last_updated": payload.get("last_updated") or payload.get("fetched_at"),
+        "data_age_minutes": payload.get("data_age_minutes"),
+        "error": None,
+    }
+
+    return api_response(
+        payload,
+        source="cache",
+        source_name=meta["source_name"],
+        is_realtime=meta["is_realtime"],
+        is_mock=False,
+        cache_status=meta["cache_status"],
+        fetched_at=meta["fetched_at"],
+        last_updated=meta["last_updated"],
+        confidence=float(payload.get("confidence_score") or payload.get("confidence") or 0.0),
+        message="OK",
+    )
+
+
+@router.post("/analysis/refresh")
+async def refresh_market_analysis(
+    crop_name: str = Query(default="lua"),
+    region: str = Query(default="Ha Noi"),
+    quantity: float | None = Query(default=None),
+    quality_grade: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    """
+    Refresh MarketAnalysisResult theo background để không block dashboard.
+    Nếu đang processing thì trả processing state.
+    """
+    key = f"{crop_name.strip().lower()}::{region.strip().lower()}"
+    cache_key = key
+
+    with _market_analysis_lock:
+        if cache_key in _market_analysis_processing:
+            return api_response(
+                {
+                    "_api_error": True,
+                    "error_code": "MARKET_ANALYSIS_PROCESSING",
+                    "error_message": "Đang cập nhật phân tích thị trường. Vui lòng thử lại sau.",
+                    "crop_name": crop_name,
+                    "region": region,
+                    "source": "cache",
+                    "source_name": "Market analysis cache",
+                    "is_realtime": False,
+                    "is_mock": False,
+                    "cache_status": "processing",
+                    "fetched_at": None,
+                    "last_updated": None,
+                    "data_age_minutes": None,
+                },
+                source="cache",
+                source_name="Market analysis cache",
+                is_realtime=False,
+                is_mock=False,
+                cache_status="processing",
+                confidence=0.0,
+                message="Đang cập nhật.",
+            )
+
+        _market_analysis_processing.add(cache_key)
+
+    def _job():
+        local_db = None
+        try:
+            from app.core.database import SessionLocal
+            local_db = SessionLocal()
+            market_analysis_service.refresh_analysis(
+                local_db,
+                crop_name=crop_name,
+                region=region,
+                quantity=quantity,
+                quality_grade=quality_grade,
+            )
+        finally:
+            if local_db:
+                local_db.close()
+            with _market_analysis_lock:
+                _market_analysis_processing.discard(cache_key)
+
+    _market_analysis_executor.submit(_job)
+
+    return api_response(
+        {
+            "_api_error": True,
+            "error_code": "MARKET_ANALYSIS_PROCESSING",
+            "error_message": "Đang cập nhật phân tích thị trường. Vui lòng thử lại sau.",
+            "crop_name": crop_name,
+            "region": region,
+            "source": "cache",
+            "source_name": "Market analysis cache",
+            "is_realtime": False,
+            "is_mock": False,
+            "cache_status": "processing",
+            "fetched_at": None,
+            "last_updated": None,
+            "data_age_minutes": None,
+        },
+        source="cache",
+        source_name="Market analysis cache",
+        is_realtime=False,
+        is_mock=False,
+        cache_status="processing",
+        confidence=0.0,
+        message="Đang cập nhật.",
     )
 
 

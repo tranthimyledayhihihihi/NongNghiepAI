@@ -135,10 +135,10 @@ async def forecast_price(request: PriceForecastRequest):
     data = pricing_service.forecast_price(request.crop_name, request.region, request.days)
     return api_response(
         data,
-        source=data.get("source", "mock"),
+        source=data.get("source", "cache"),
         source_name=data.get("source_name"),
         is_mock=data.get("is_mock", False),
-        cache_status=data.get("cache_status", "mock"),
+        cache_status=data.get("cache_status", "miss"),
         last_updated=data.get("last_updated"),
         fetched_at=data.get("fetched_at"),
         confidence=data.get("confidence", 0.0),
@@ -204,6 +204,8 @@ async def weather_price_forecast(
     current = pricing_service.get_current_price(
         db, crop_name, region, quality_grade, include_weather=False
     )
+    if current.get("_api_error"):
+        return api_response(current)
     base_price = float(current["current_price"])
     weather_info = get_weather_adjusted_pricing(db, crop_name, region, base_price)
     multiplier = pricing_service.quality_multipliers.get(quality_grade, 1.0)

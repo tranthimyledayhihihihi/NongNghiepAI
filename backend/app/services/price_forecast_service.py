@@ -3,13 +3,14 @@ Price Forecast Service - merged Tien (schema/API) + Quang (AI model + rich analy
 - API endpoint dùng: predict_price(db, request: PricePredictionRequest)
 - Thử AI model trước, fallback về moving average, rồi về mock
 """
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
+from app.core.real_data import OFFICIAL_AGRI_SOURCE_NAME, OFFICIAL_PRICE_URL, realtime_error
 from app.schemas.price_schema import PricePredictionRequest
-from app.services.pricing_service import pricing_service
+from app.services.pricing_service import pricing_service  # kept for legacy test monkeypatch compatibility
 
 
 class PriceForecastService:
@@ -41,6 +42,7 @@ class PriceForecastService:
 
         # Tải lịch sử giá từ DB để sử dụng cho cả AI model hoặc fallback
         price_history = self._load_price_history(db, crop_name, region, days=60)
+        now = datetime.now()
 
         # 1. Thử AI model
         model = self._get_model()
@@ -58,6 +60,14 @@ class PriceForecastService:
                         "best_selling_time": self._find_best_selling_time(predicted_prices),
                         "warning": self._build_warning(trend, [p["predicted_price"] for p in predicted_prices]),
                         "recommendation": self._get_recommendation(trend),
+                        "source_name": "Price forecast model",
+                        "source_url": OFFICIAL_PRICE_URL,
+                        "is_realtime": False,
+                        "is_mock": False,
+                        "cache_status": "fresh_cache",
+                        "fetched_at": now,
+                        "last_updated": now,
+                        "data_age_minutes": 0,
                     }
             except Exception:
                 pass
@@ -76,32 +86,35 @@ class PriceForecastService:
                 "best_selling_time": self._find_best_selling_time(predicted_prices),
                 "warning": self._build_warning(trend, [p["predicted_price"] for p in predicted_prices]),
                 "recommendation": raw.get("recommendation", self._get_recommendation(trend)),
+                "source_name": "PriceHistory DB",
+                "source_url": OFFICIAL_PRICE_URL,
+                "is_realtime": False,
+                "is_mock": False,
+                "cache_status": "fresh_cache",
+                "fetched_at": now,
+                "last_updated": now,
+                "data_age_minutes": 0,
             }
 
         # 3. Fallback cuối: mock từ giá hiện tại
-        current = pricing_service.get_current_price(db, crop_name, region)
-        base_price = float(current["current_price"])
-        predicted_prices = []
-        for offset in range(1, forecast_days + 1):
-            predicted = round(base_price * (1 + offset * 0.006), 2)
-            predicted_prices.append({
-                "date": (date.today() + timedelta(days=offset)).isoformat(),
-                "predicted_price": predicted,
-                "min_price": round(predicted * 0.92, 2),
-                "max_price": round(predicted * 1.08, 2),
-            })
-
-        trend = self._calc_trend([p["predicted_price"] for p in predicted_prices])
-        return {
-            "crop_name": crop_name,
-            "region": region,
-            "forecast_days": forecast_days,
-            "predicted_prices": predicted_prices,
-            "trend": trend,
-            "best_selling_time": self._best_selling_time(trend, forecast_days),
-            "warning": self._build_warning(trend, [p["predicted_price"] for p in predicted_prices]),
-            "recommendation": self._get_recommendation(trend),
-        }
+        payload = realtime_error(
+            code="PRICE_FORECAST_CACHE_MISS",
+            message="Price forecast cache/history miss. Background refresh has not fetched enough real data yet.",
+            source_name=OFFICIAL_AGRI_SOURCE_NAME,
+            source_url=OFFICIAL_PRICE_URL,
+        )
+        payload.update(
+            {
+                "crop_name": crop_name,
+                "region": region,
+                "forecast_days": forecast_days,
+                "predicted_prices": [],
+                "trend": None,
+                "best_selling_time": None,
+                "warning": payload.get("error_message"),
+            }
+        )
+        return payload
 
     # ------------------------------------------------------------------ #
     # Helpers
@@ -137,6 +150,10 @@ class PriceForecastService:
                     MarketPrice.CropID == crop.CropID,
                     MarketPrice.Region.ilike(f"%{region}%"),
                     MarketPrice.PriceDate >= start,
+                    MarketPrice.SourceURL.isnot(None),
+                    MarketPrice.SourceName.isnot(None),
+                    MarketPrice.FetchedAt.isnot(None),
+                    MarketPrice.IsMock == False,  # noqa: E712
                 )
                 .order_by(MarketPrice.PriceDate)
                 .all()

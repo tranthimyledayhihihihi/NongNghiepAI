@@ -41,8 +41,10 @@ async def lifespan(_app: FastAPI):
 
     from app.tasks.alert_tasks import auto_alert_loop
     from app.tasks.crawler_tasks import auto_crawl_loop
+    from app.tasks.real_data_refresh import real_data_refresh_loop
     interval = os.getenv("CRAWL_INTERVAL_SECONDS", "3600")
     crawl_task = asyncio.create_task(auto_crawl_loop())
+    real_refresh_task = asyncio.create_task(real_data_refresh_loop())
     alert_task = asyncio.create_task(auto_alert_loop())
     logger.info("[Crawler] Started — seed 7 days on startup, update interval=%ss", interval)
 
@@ -51,9 +53,14 @@ async def lifespan(_app: FastAPI):
     yield
 
     crawl_task.cancel()
+    real_refresh_task.cancel()
     alert_task.cancel()
     try:
         await crawl_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await real_refresh_task
     except asyncio.CancelledError:
         pass
     try:

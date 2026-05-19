@@ -818,78 +818,18 @@ async def _scrape_web() -> List[Dict]:
 
 
 # ─── Giả lập (fallback) ───────────────────────────────────────────────────────
-
+# Theo spec anti-timeout + no-mock:
+# Không được sinh/insert dữ liệu mô phỏng cho giá. Các hàm này hiện chỉ được giữ lại
+# để không phá cấu trúc cũ, nhưng KHÔNG được gọi trong pipeline background nữa.
 def _generate_simulation_prices() -> List[Dict]:
-    """Sinh giá ±3% so với giá nền. Dùng khi không cào được web nào."""
-    items = []
-    today = date.today().isoformat()
-    for crop_name, regions in _BASE_PRICES.items():
-        for region, base in regions.items():
-            factor = random.uniform(0.97, 1.03)
-            items.append({
-                "crop_name": crop_name,
-                "region": region,
-                "price_per_kg": round(base * factor, -2),
-                "source": "simulation",
-                "date": today,
-                "url": "",
-            })
-    return items
+    raise RuntimeError("Simulation prices are disabled by spec (no-mock).")
 
 
 def _generate_historical_prices(
     days: int = 7,
     reference: Optional[List[Dict]] = None,
 ) -> List[Dict]:
-    """
-    Sinh giá lịch sử cho (days-1) ngày trước hôm nay theo mô hình random-walk.
-
-    Nếu `reference` được cung cấp (danh sách giá hôm nay đã cào được),
-    dùng làm điểm xuất phát; nếu không thì dùng _BASE_PRICES.
-
-    Mỗi ngày lùi: giá biến động ±1.5% so với ngày kề sau nó — mô phỏng
-    dao động thị trường thực tế trong tuần.
-    """
-    from datetime import timedelta
-
-    today = date.today()
-
-    # Xây bảng giá tham chiếu: (crop, region) → price hôm nay
-    ref_map: Dict[tuple, float] = {}
-    if reference:
-        for item in reference:
-            key = (item["crop_name"], item["region"])
-            ref_map[key] = float(item["price_per_kg"])
-
-    # Bổ sung từ _BASE_PRICES nếu chưa có
-    for crop, regions in _BASE_PRICES.items():
-        for region, base in regions.items():
-            key = (crop, region)
-            if key not in ref_map:
-                ref_map[key] = float(base) * random.uniform(0.97, 1.03)
-
-    # Sinh giá cho từng ngày trong quá khứ
-    all_items: List[Dict] = []
-    for d in range(1, days):          # d=1 → hôm qua, d=6 → 6 ngày trước
-        past_date = (today - timedelta(days=d)).isoformat()
-        for (crop, region), today_price in ref_map.items():
-            # Mỗi bước lùi ±1.5%
-            factor = random.uniform(0.985, 1.015)
-            hist_price = today_price / (factor ** d)   # lùi về quá khứ
-            hist_price = max(round(hist_price, -2), 500)
-            lo, hi = _PRICE_RANGE.get(crop, _DEFAULT_PRICE_RANGE)
-            hist_price = max(lo, min(hi, hist_price))
-            all_items.append({
-                "crop_name": crop,
-                "region": region,
-                "price_per_kg": hist_price,
-                "source": "simulation",
-                "date": past_date,
-                "url": "",
-            })
-
-    logger.info(f"[History] Sinh {len(all_items)} bản ghi lịch sử ({days-1} ngày trước hôm nay)")
-    return all_items
+    raise RuntimeError("Synthetic historical prices are disabled by spec (no-mock).")
 
 
 # ─── DB helpers ───────────────────────────────────────────────────────────────
@@ -1014,7 +954,7 @@ def _save_market_prices_force(items: List[Dict]) -> int:
         for item in items:
             crop_name = str(item.get("crop_name", "")).strip()
             region    = str(item.get("region", "")).strip()
-            source    = str(item.get("source", "simulation"))
+            source    = str(item.get("source", "web_crawler"))
             source_url = str(item.get("url", ""))
             try:
                 price = float(item.get("price_per_kg", 0))
@@ -1045,6 +985,11 @@ def _save_market_prices_force(items: List[Dict]) -> int:
                 existing.PricePerKg = price
                 existing.SourceName = source
                 existing.SourceURL  = source_url
+                existing.SourceType = "web_crawler"
+                existing.ObservedAt = datetime.now()
+                existing.FetchedAt = datetime.now()
+                existing.IsRealtime = True
+                existing.IsMock = False
             else:
                 db.add(MarketPrice(
                     CropID=crop.CropID,
@@ -1052,6 +997,11 @@ def _save_market_prices_force(items: List[Dict]) -> int:
                     PricePerKg=price,
                     SourceName=source,
                     SourceURL=source_url,
+                    SourceType="web_crawler",
+                    ObservedAt=datetime.now(),
+                    FetchedAt=datetime.now(),
+                    IsRealtime=True,
+                    IsMock=False,
                     PriceDate=price_date,
                 ))
             saved += 1
@@ -1230,13 +1180,9 @@ def _check_and_trigger_alerts() -> int:
 
 async def run_price_crawler() -> Dict:
     """
-    Pipeline đầy đủ:
-    1. Cào tất cả nguồn (BachHoaXanh, WinMart, giacaphe, giatieu, nongnghiep, gia.vn, ...)
-    2. Pre-filter: validate + loại nhiễu + ưu tiên nguồn
-    3. Fallback simulation nếu không thu được gì sau filter
-    4. Upsert DB (chỉ ghi đè nếu nguồn mới uy tín hơn)
-    5. Aggregate → PriceHistory
-    6. Kiểm tra và gửi price alerts
+    Pipeline (anti-timeout + no-mock):
+    - Chỉ lưu dữ liệu nếu crawl được dữ liệu thật và pass prefilter.
+    - Nếu không có dữ liệu thật: KHÔNG sinh/simulation; trả saved=0 để frontend nhận cache miss.
     """
     t0 = datetime.now()
 
@@ -1245,15 +1191,24 @@ async def run_price_crawler() -> Dict:
 
     source_tag = "web"
     if not filtered:
-        logger.info("[Crawler] Không có dữ liệu web hợp lệ — dùng simulation")
-        filtered = prefilter_items(_generate_simulation_prices())
-        source_tag = "simulation"
+        logger.warning("[Crawler] Không crawl được dữ liệu giá thật hợp lệ — bỏ qua insert (no-mock).")
+        elapsed = round((datetime.now() - t0).total_seconds(), 2)
+        return {
+            "raw_count": len(raw_items),
+            "filtered_count": 0,
+            "saved": 0,
+            "aggregated": 0,
+            "alerts": 0,
+            "weather_saved": 0,
+            "source": source_tag,
+            "elapsed_s": elapsed,
+        }
 
     saved = await asyncio.to_thread(_save_market_prices, filtered)
     aggregated = await asyncio.to_thread(_aggregate_to_price_history)
     alerts = await asyncio.to_thread(_check_and_trigger_alerts)
 
-    # Cập nhật thời tiết: hôm nay + 7 ngày tới (past_days=0)
+    # Cập nhật thời tiết (Open-Meteo) trong background: không block request trang.
     weather_rows = await _fetch_all_weather(past_days=0, forecast_days=7)
     weather_saved = await asyncio.to_thread(_save_weather_data_force, weather_rows)
 
@@ -1322,7 +1277,7 @@ async def _fetch_weather_province(
         f"&forecast_days={forecast_days}"
     )
     try:
-        resp = await client.get(url, timeout=15)
+        resp = await client.get(url, timeout=8)
         if resp.status_code == 429:
             logger.warning(f"[Weather] {region}: Rate limited (429) — sẽ retry")
             return []
@@ -1380,7 +1335,7 @@ async def _fetch_all_weather(past_days: int = 6, forecast_days: int = 7) -> List
 
     async def _fetch_with_limit(client, region, lat, lon):
         async with semaphore:
-            for attempt in range(3):
+            for attempt in range(2):
                 rows = await _fetch_weather_province(client, region, lat, lon, past_days, forecast_days)
                 if rows:
                     return rows
@@ -1412,6 +1367,7 @@ def _save_weather_data_force(rows: List[Dict]) -> int:
 
     db = SessionLocal()
     saved = 0
+    fetched_at = datetime.now()
     try:
         for row in rows:
             region = str(row.get("region", "")).strip()
@@ -1440,6 +1396,12 @@ def _save_weather_data_force(rows: List[Dict]) -> int:
                 existing.UVIndex        = row.get("uv_index")
                 existing.Latitude       = row.get("latitude")
                 existing.Longitude      = row.get("longitude")
+                existing.SourceName     = "Open-Meteo"
+                existing.SourceURL      = "https://api.open-meteo.com/v1/forecast"
+                existing.SourceUpdatedAt = fetched_at
+                existing.FetchedAt      = fetched_at
+                existing.IsRealtime     = True
+                existing.IsMock         = False
             else:
                 db.add(WeatherData(
                     Region=region,
@@ -1455,6 +1417,12 @@ def _save_weather_data_force(rows: List[Dict]) -> int:
                     UVIndex=row.get("uv_index"),
                     Latitude=row.get("latitude"),
                     Longitude=row.get("longitude"),
+                    SourceName="Open-Meteo",
+                    SourceURL="https://api.open-meteo.com/v1/forecast",
+                    SourceUpdatedAt=fetched_at,
+                    FetchedAt=fetched_at,
+                    IsRealtime=True,
+                    IsMock=False,
                 ))
             saved += 1
 
@@ -1470,85 +1438,29 @@ def _save_weather_data_force(rows: List[Dict]) -> int:
 
 async def seed_7_days_on_startup() -> Dict:
     """
-    Chạy MỘT LẦN khi server khởi động:
-    1. Seed CropTypes (bổ sung các cây còn thiếu)
-    2. Cào giá hôm nay từ tất cả nguồn (web → fallback simulation)
-    3. Sinh giá lịch sử 6 ngày trước theo mô hình random-walk từ giá hôm nay
-    4. Ghi đè TOÀN BỘ lên DB (bao gồm dữ liệu cũ)
-    5. Tổng hợp 7 ngày → PriceHistory
-    6. Cào thời tiết 7 ngày × 10 tỉnh → WeatherData
+    Theo spec no-mock:
+    - Không seed/sinh thêm dữ liệu giá lịch sử.
+    - Startup chỉ khởi động nền crawler theo interval để có dữ liệu thật từ crawl/API.
     """
-    t0 = datetime.now()
-    logger.info("[Startup] ═══ Bắt đầu seed dữ liệu 7 ngày ═══")
-
-    # ── Bước 0: Seed CropTypes ─────────────────────────────────────────────────
-    try:
-        from seed_db import seed_crops
-        added_crops = await asyncio.to_thread(seed_crops, False)
-        logger.info(f"[Startup] CropTypes: +{added_crops} cây mới đã được thêm")
-    except Exception as e:
-        logger.warning(f"[Startup] seed_crops() bỏ qua: {e}")
-
-    # ── Bước 1: Lấy giá hôm nay ────────────────────────────────────────────────
-    raw_today = await _scrape_web()
-    filtered_today = prefilter_items(raw_today)
-    source_today = "web"
-    if not filtered_today:
-        logger.info("[Startup] Web không trả về dữ liệu — dùng simulation cho hôm nay")
-        filtered_today = prefilter_items(_generate_simulation_prices())
-        source_today = "simulation"
-
-    # ── Bước 2: Sinh giá 6 ngày trước theo random-walk ─────────────────────────
-    historical = _generate_historical_prices(days=7, reference=filtered_today)
-
-    # ── Bước 3: Ghi đè toàn bộ DB ─────────────────────────────────────────────
-    all_items = filtered_today + historical
-    logger.info(
-        f"[Startup] Tổng cần lưu: {len(all_items)} bản ghi "
-        f"({len(filtered_today)} hôm nay + {len(historical)} lịch sử)"
-    )
-    saved = await asyncio.to_thread(_save_market_prices_force, all_items)
-
-    # ── Bước 4: Tổng hợp PriceHistory 7 ngày ──────────────────────────────────
-    aggregated = await asyncio.to_thread(_aggregate_history_range, 7)
-
-    # ── Bước 5: Cào thời tiết — 6 ngày qua + 7 ngày tới cho 10 tỉnh ────────────
-    weather_rows = await _fetch_all_weather(past_days=6, forecast_days=7)
-    weather_saved = await asyncio.to_thread(_save_weather_data_force, weather_rows)
-
-    elapsed = round((datetime.now() - t0).total_seconds(), 2)
-    logger.info(
-        f"[Startup] ✓ Seed hoàn tất: saved={saved} history={aggregated} "
-        f"weather={weather_saved} source_today={source_today} | {elapsed}s"
-    )
-    return {
-        "saved": saved,
-        "aggregated": aggregated,
-        "today_count": len(filtered_today),
-        "history_count": len(historical),
-        "weather_saved": weather_saved,
-        "source_today": source_today,
-        "elapsed_s": elapsed,
-    }
+    logger.info("[Startup] seed_7_days_on_startup() disabled by spec (no-mock).")
+    return {"disabled": True}
 
 
 async def auto_crawl_loop():
     """
-    Background loop:
-    - Khởi động: seed 7 ngày (ghi đè DB cũ)
-    - Sau đó: cào lại mỗi CRAWL_INTERVAL giây để cập nhật giá mới nhất
+    Background loop (anti-timeout + no-mock):
+    - Không seed/sinh lịch sử khi startup.
+    - Chỉ chạy run_price_crawler theo interval để cập nhật dữ liệu thật.
     """
     logger.info(f"[Crawler] Khởi động, interval={CRAWL_INTERVAL}s")
-    await asyncio.sleep(5)  # chờ DB init xong
+    await asyncio.sleep(int(os.getenv("CRAWL_STARTUP_DELAY_SECONDS", "60")))
 
-    # ── Seed 7 ngày ngay khi khởi động ─────────────────────────────────────────
+    # Chạy ngay lần đầu để tạo cache thật nếu crawl được, nhưng không seed giả.
     try:
-        result = await seed_7_days_on_startup()
-        logger.info(f"[Crawler] Seed 7 ngày: {result}")
+        await run_price_crawler()
     except Exception as e:
-        logger.error(f"[Crawler] Lỗi seed 7 ngày: {e}")
+        logger.error(f"[Crawler] Lỗi run_price_crawler lần đầu: {e}")
 
-    # ── Vòng lặp cập nhật định kỳ ──────────────────────────────────────────────
     while True:
         try:
             await asyncio.sleep(CRAWL_INTERVAL)

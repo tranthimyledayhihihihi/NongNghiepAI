@@ -238,6 +238,11 @@ def bulk_upsert_market_prices(db: Session, records: list[dict]) -> dict:
             record_date = record.get("price_date") or date.today()
             if isinstance(record_date, datetime):
                 record_date = record_date.date()
+            if isinstance(record_date, str):
+                try:
+                    record_date = date.fromisoformat(record_date[:10])
+                except ValueError:
+                    record_date = date.today()
             quality_grade = to_db_grade(record.get("quality_grade"))
             source_name = record.get("source_name") or record.get("source") or "manual"
             source_url = record.get("source_url")

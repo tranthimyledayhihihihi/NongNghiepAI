@@ -1,16 +1,14 @@
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 
+from app.core.real_data import external_circuit_breaker
 from app.core.resilience import resilient_request, weather_timeout
 from app.core.config import settings
 
 
 class WeatherProviderError(RuntimeError):
     pass
-
-
-_OPEN_METEO_FAILURE_UNTIL: datetime | None = None
 
 
 WEATHER_CODE_CONDITIONS = {
@@ -182,9 +180,8 @@ class WeatherClient:
         return result
 
     def _get_json(self, url: str, params: dict[str, Any]) -> dict:
-        global _OPEN_METEO_FAILURE_UNTIL
-        if _OPEN_METEO_FAILURE_UNTIL and _OPEN_METEO_FAILURE_UNTIL > datetime.now():
-            raise WeatherProviderError("Open-Meteo skipped because a recent provider request failed")
+        key = "open_meteo_forecast"
+        external_circuit_breaker.before_call(key)
         try:
             payload = resilient_request(
                 "GET",
@@ -195,10 +192,10 @@ class WeatherClient:
                 retries=settings.WEATHER_RETRY_COUNT,
                 service_name="Open-Meteo",
             ).json()
-            _OPEN_METEO_FAILURE_UNTIL = None
+            external_circuit_breaker.record_success(key)
             return payload
         except Exception as exc:
-            _OPEN_METEO_FAILURE_UNTIL = datetime.now() + timedelta(seconds=60)
+            external_circuit_breaker.record_failure(key, exc)
             raise WeatherProviderError(f"Weather provider request failed: {exc}") from exc
 
     @staticmethod

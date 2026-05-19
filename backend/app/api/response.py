@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Any
 
 from app.core.config import settings
+from app.core.real_data import normalize_cache_status
 
 
 SOURCE_REALTIME = "realtime_api"
@@ -33,8 +34,8 @@ def _normalized_source(
         return SOURCE_REALTIME
     if raw in {"cached", "cache", "fallback"}:
         return SOURCE_CACHED
-    if cache in {"cached", "hit", "from_cache", "from_db", "db", "stale"}:
-        return SOURCE_CACHED if cache in {"cached", "hit", "from_cache", "stale"} else SOURCE_DATABASE
+    if cache in {"cached", "hit", "from_cache", "from_db", "db", "stale", "fresh_cache", "stale_cache"}:
+        return SOURCE_CACHED if cache in {"cached", "hit", "from_cache", "stale", "fresh_cache", "stale_cache"} else SOURCE_DATABASE
     if raw in {"database", "db", "market_db"}:
         return SOURCE_DATABASE
     return raw or SOURCE_DATABASE
@@ -78,6 +79,7 @@ def success_response(
         "is_realtime": bool(is_realtime),
         "is_cache": bool(is_cache),
         "is_mock": False,
+        "cache_status": normalize_cache_status("live" if is_realtime else "fresh_cache"),
         "warning": clean_warning or None,
         "error": None,
         "message": message,
@@ -91,6 +93,7 @@ def success_response(
         "is_realtime": payload["is_realtime"],
         "is_cache": payload["is_cache"],
         "is_mock": False,
+        "cache_status": payload["cache_status"],
         "warning": payload["warning"],
         "error": None,
         "fetched_at": payload["fetched_at"],
@@ -106,32 +109,47 @@ def error_response(
     *,
     code: str = "REALTIME_API_FAILED",
     source: str = SOURCE_REALTIME,
+    source_name: str | None = None,
+    source_url: str | None = None,
 ) -> dict:
+    now = datetime.now()
     return {
         "success": False,
         "data": None,
         "source": source,
-        "source_name": source,
+        "source_name": source_name or source,
+        "source_url": source_url,
         "is_realtime": False,
         "is_cache": False,
         "is_mock": False,
+        "cache_status": "miss",
         "warning": None,
         "error": {
             "code": code,
             "message": message or REALTIME_ERROR_MESSAGE,
         },
         "message": message or REALTIME_ERROR_MESSAGE,
+        "fetched_at": now,
+        "last_updated": now,
+        "updated_at": now,
+        "data_age_minutes": None,
         "meta": {
             "source": source,
-            "source_name": source,
+            "source_name": source_name or source,
+            "source_url": source_url,
             "is_realtime": False,
             "is_cache": False,
             "is_mock": False,
+            "cache_status": "miss",
             "warning": None,
             "error": {
                 "code": code,
                 "message": message or REALTIME_ERROR_MESSAGE,
             },
+            "fetched_at": now,
+            "last_updated": now,
+            "updated_at": now,
+            "data_age_minutes": None,
         },
     }
 
@@ -161,11 +179,16 @@ def api_response(
             data.get("error_message") or REALTIME_ERROR_MESSAGE,
             code=data.get("error_code") or "REALTIME_API_FAILED",
             source=data.get("source") or SOURCE_REALTIME,
+            source_name=data.get("source_name"),
+            source_url=data.get("source_url"),
         )
 
+    source_url = None
     if isinstance(data, dict):
         source_name = source_name or data.get("source_name") or data.get("source") or source
+        source_url = data.get("source_url")
         last_updated = last_updated or data.get("last_updated") or data.get("updated_at") or data.get("created_at")
+        fetched_at = fetched_at or data.get("fetched_at")
         confidence = confidence if confidence is not None else data.get("confidence")
         is_realtime = is_realtime or bool(data.get("is_realtime"))
         is_mock = is_mock or bool(data.get("is_mock"))
@@ -180,8 +203,15 @@ def api_response(
                 source=SOURCE_REALTIME,
             )
 
+    cache_status = normalize_cache_status(cache_status, default="fresh_cache")
     fetched_at = fetched_at or last_updated or datetime.now()
     updated_at = last_updated or fetched_at
+    data_age_minutes = None
+    try:
+        fetched_dt = fetched_at if isinstance(fetched_at, datetime) else datetime.fromisoformat(str(fetched_at).replace("Z", "+00:00")).replace(tzinfo=None)
+        data_age_minutes = max(int((datetime.now() - fetched_dt).total_seconds() // 60), 0)
+    except Exception:
+        data_age_minutes = None
     fallback_used = bool(fallback_used)
     timeout = bool(timeout)
     if is_mock and _is_realtime_only():
@@ -199,17 +229,17 @@ def api_response(
     )
     is_cache = (not is_realtime) and not is_mock and (
         normalized_source in {SOURCE_CACHED, SOURCE_DATABASE}
-        or (cache_status or "").lower() in {"fresh", "stale", "from_db", "cached", "hit", "from_cache"}
+        or (cache_status or "").lower() in {"fresh_cache", "stale_cache"}
     )
-    if is_cache and (fallback_used or timeout or (cache_status or "").lower() == "stale"):
+    if is_cache and (fallback_used or timeout or (cache_status or "").lower() in {"stale", "stale_cache"}):
         normalized_source = SOURCE_CACHED
     warning_items: list[str | None] = []
     if isinstance(data, dict):
         warning_items.extend([
             data.get("warning"),
-            data.get("message") if fallback_used or timeout or (cache_status or "").lower() == "stale" else None,
+            data.get("message") if fallback_used or timeout or (cache_status or "").lower() in {"stale", "stale_cache"} else None,
         ])
-    if fallback_used or timeout or (cache_status or "").lower() == "stale":
+    if fallback_used or timeout or (cache_status or "").lower() in {"stale", "stale_cache"}:
         warning_items.append(CACHE_WARNING_MESSAGE)
     warning = " | ".join(dedupe_messages(warning_items)) or None
 
@@ -219,18 +249,23 @@ def api_response(
         "data": data,
         "source": normalized_source,
         "source_name": source_name or source,
+        "source_url": source_url if isinstance(data, dict) else None,
         "is_realtime": bool(is_realtime),
         "is_cache": bool(is_cache),
         "is_mock": False,
+        "cache_status": cache_status,
         "warning": warning,
         "error": None,
         "fetched_at": fetched_at,
+        "last_updated": updated_at,
         "updated_at": updated_at,
+        "data_age_minutes": data_age_minutes,
         "confidence": confidence if confidence is not None else 0.0,
         "message": message,
         "meta": {
             "source": normalized_source,
             "source_name": source_name or source,
+            "source_url": source_url if isinstance(data, dict) else None,
             "is_realtime": is_realtime,
             "is_cache": is_cache,
             "is_mock": False,
@@ -242,6 +277,7 @@ def api_response(
             "last_updated": updated_at,
             "fetched_at": fetched_at,
             "updated_at": updated_at,
+            "data_age_minutes": data_age_minutes,
             "confidence": confidence if confidence is not None else 0.0,
         },
     })

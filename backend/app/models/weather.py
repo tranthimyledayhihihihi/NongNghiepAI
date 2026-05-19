@@ -24,7 +24,11 @@ class WeatherData(Base):
     Pressure = Column("Pressure", Float, nullable=True)
     WeatherCode = Column("WeatherCode", Integer, nullable=True)
     SourceName = Column("SourceName", String(100), nullable=True)
+    SourceURL = Column("SourceURL", String(500), nullable=True)
     SourceUpdatedAt = Column("SourceUpdatedAt", DateTime, nullable=True)
+    FetchedAt = Column("FetchedAt", DateTime, nullable=True)
+    IsRealtime = Column("IsRealtime", Boolean, nullable=True, default=False)
+    IsMock = Column("IsMock", Boolean, nullable=True, default=False)
     CreatedAt = Column("CreatedAt", DateTime, server_default=func.now(), nullable=False)
 
     id = synonym("WeatherID")
@@ -43,7 +47,11 @@ class WeatherData(Base):
     pressure = synonym("Pressure")
     weather_code = synonym("WeatherCode")
     source_name = synonym("SourceName")
+    source_url = synonym("SourceURL")
     source_updated_at = synonym("SourceUpdatedAt")
+    fetched_at = synonym("FetchedAt")
+    is_realtime = synonym("IsRealtime")
+    is_mock = synonym("IsMock")
     created_at = synonym("CreatedAt")
 
     @property
@@ -105,7 +113,11 @@ class WeatherObservation(Base):
     WeatherCode = Column("WeatherCode", Integer, nullable=True)
     WeatherDesc = Column("WeatherDesc", Unicode(100), nullable=True)
     SourceName = Column("SourceName", String(100), nullable=True)
+    SourceURL = Column("SourceURL", String(500), nullable=True)
     SourceUpdatedAt = Column("SourceUpdatedAt", DateTime, nullable=True)
+    FetchedAt = Column("FetchedAt", DateTime, nullable=True)
+    IsRealtime = Column("IsRealtime", Boolean, nullable=True, default=False)
+    IsMock = Column("IsMock", Boolean, nullable=True, default=False)
     CreatedAt = Column("CreatedAt", DateTime, server_default=func.now(), nullable=False)
 
     id = synonym("ObservationID")
@@ -121,7 +133,11 @@ class WeatherObservation(Base):
     weather_code = synonym("WeatherCode")
     weather_desc = synonym("WeatherDesc")
     source_name = synonym("SourceName")
+    source_url = synonym("SourceURL")
     source_updated_at = synonym("SourceUpdatedAt")
+    fetched_at = synonym("FetchedAt")
+    is_realtime = synonym("IsRealtime")
+    is_mock = synonym("IsMock")
     created_at = synonym("CreatedAt")
 
 
@@ -148,7 +164,11 @@ class WeatherForecast(Base):
     WeatherDesc = Column("WeatherDesc", String(100), nullable=True)
     Recommendation = Column("Recommendation", Text, nullable=True)
     SourceName = Column("SourceName", String(100), nullable=True)
+    SourceURL = Column("SourceURL", String(500), nullable=True)
     SourceUpdatedAt = Column("SourceUpdatedAt", DateTime, nullable=True)
+    FetchedAt = Column("FetchedAt", DateTime, nullable=True)
+    IsRealtime = Column("IsRealtime", Boolean, nullable=True, default=False)
+    IsMock = Column("IsMock", Boolean, nullable=True, default=False)
     CreatedAt = Column("CreatedAt", DateTime, server_default=func.now(), nullable=False)
 
     id = synonym("ForecastID")
@@ -168,7 +188,11 @@ class WeatherForecast(Base):
     weather_desc = synonym("WeatherDesc")
     recommendation = synonym("Recommendation")
     source_name = synonym("SourceName")
+    source_url = synonym("SourceURL")
     source_updated_at = synonym("SourceUpdatedAt")
+    fetched_at = synonym("FetchedAt")
+    is_realtime = synonym("IsRealtime")
+    is_mock = synonym("IsMock")
     created_at = synonym("CreatedAt")
 
 

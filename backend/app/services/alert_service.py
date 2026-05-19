@@ -251,6 +251,13 @@ class AlertService:
         resolved_crop = crop.CropName if crop else (crop_name or "Nông sản")
         resolved_region = location_service.resolve_region(db, region_key or region)
         current = pricing_service.get_current_price(db, resolved_crop, resolved_region, include_weather=False)
+        if current.get("_api_error"):
+            return {
+                **current,
+                "alerts": [],
+                "suggestions": [],
+                "recommended_action": None,
+            }
         price = float(current["current_price"])
         history_rows = self._recent_history(db, crop.CropID if crop else None, resolved_crop, resolved_region)
         avg_7d = sum(history_rows) / len(history_rows) if history_rows else price

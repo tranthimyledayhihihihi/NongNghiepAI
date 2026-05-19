@@ -1,5 +1,3 @@
-from unicodedata import category, normalize
-
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, model_validator
 from sqlalchemy.orm import Session
@@ -205,14 +203,7 @@ def _detect_region(question: str) -> str:
 
 
 def _detect_crop(question: str) -> str:
-    from app.services.pricing_service import pricing_service
-
-    normalized_q = normalize("NFD", question.lower())
-    normalized_q = "".join(ch for ch in normalized_q if category(ch) != "Mn")
-    for crop in sorted(pricing_service.crop_base_prices, key=len, reverse=True):
-        if crop in normalized_q:
-            return crop
-    return "lua"
+    return extract_crop_from_message(question) or "lua"
 
 @router.post("", response_model=ChatResponse)
 async def ask_farming_advice(
@@ -361,6 +352,10 @@ async def price_qa(
         from app.services.pricing_service import pricing_service
 
         current = pricing_service.get_current_price(db, crop, region, include_weather=False)
+        if current.get("_api_error"):
+            answer = current.get("error_message") or "Chưa có dữ liệu giá thật trong cache cho câu hỏi này."
+            _save_conversation(db, current_user.UserID if current_user else None, q, answer, "price_query")
+            return PriceQAResponse(answer=answer, tavily_answer="", sources=[], db_prices=[])
         history = pricing_service.get_price_history(db, crop, region, days=7)
         context = ai_context_service.build_ai_context(
             db,
