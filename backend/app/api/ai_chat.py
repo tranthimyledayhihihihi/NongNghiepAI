@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from google import genai
 from google.genai import types
@@ -115,8 +115,36 @@ def _default_context(db: Session, user: User | None, request: AIChatMessageReque
     )
 
 
+_WEATHER_EVENT_PHRASES = (
+    "neu co bao",
+    "khi co bao",
+    "khi bao",
+    "co bao",
+    "bao so",
+    "bao lon",
+    "lu lut",
+    "han han",
+    "ngap lut",
+    "thien tai",
+    "mua lon",
+    "lu quet",
+    "gio lon",
+)
+
+
+def _has_weather_event(text: str) -> bool:
+    return any(phrase in text for phrase in _WEATHER_EVENT_PHRASES)
+
+
+def _wants_tomorrow_price(text: str) -> bool:
+    return any(w in text for w in ("ngay mai", "hom sau", "du bao gia", "gia ngay mai"))
+
+
 def _should_answer_market_locally(message: str, intent: str) -> bool:
     text = normalize_user_text(message)
+    # Câu hỏi có điều kiện thời tiết hoặc dự báo ngày mai → cần Gemini phân tích sâu hơn
+    if _has_weather_event(text) or _wants_tomorrow_price(text):
+        return False
     market_words = (
         "gia",
         "thi truong",
@@ -150,7 +178,8 @@ def _local_market_reply(context: dict, message: str) -> str:
     if not has_real_price:
         return (
             f"Hiện chưa có dữ liệu thị trường thực tế cho {crop} tại {region}. "
-            "Mình sẽ không tự bịa giá. Bạn có thể cấu hình APIFarmer/Twelve Data hoặc cập nhật dữ liệu MarketPrices DB rồi hỏi lại."
+            "Hệ thống đang lấy giá từ thitruongnongsan.gov.vn — dữ liệu sẽ có sau vài phút khi crawler hoàn tất. "
+            "Bạn có thể thử lại sau hoặc xem trang Thị trường để biết giá hiện tại."
         )
 
     lines = [
@@ -158,9 +187,10 @@ def _local_market_reply(context: dict, message: str) -> str:
         f"Nguồn: {pricing.get('source_name') or 'MarketPrices DB'}; độ tin cậy khoảng {round(float(pricing.get('confidence_score') or pricing.get('confidence') or 0) * 100)}%.",
     ]
     global_reference = pricing.get("global_reference") or analysis.get("global_reference")
-    if global_reference:
+    if global_reference and global_reference.get("price"):
+        source = global_reference.get("source_name") or "thị trường quốc tế"
         lines.append(
-            f"Tham chiếu quốc tế: {global_reference.get('price')} {global_reference.get('unit') or 'USD/ton'} từ {global_reference.get('source_name') or 'Twelve Data'}."
+            f"Tham chiếu quốc tế: {global_reference.get('price')} {global_reference.get('unit') or 'USD/ton'} từ {source}."
         )
     recommendation = analysis.get("recommendation") or pricing.get("recommendation")
     if isinstance(recommendation, dict):
@@ -174,6 +204,59 @@ def _local_market_reply(context: dict, message: str) -> str:
                 lines.append(f"- {item.get('title')} ({item.get('source_name') or 'nguồn tin thị trường'})")
         else:
             lines.append("Chưa có tin tức thị trường thực tế phù hợp trong cache cho nông sản/khu vực này.")
+    return "\n".join(lines)
+
+
+def _local_market_reply_extended(context: dict, message: str) -> str | None:
+    """Local reply mở rộng: xử lý thêm weather event và dự báo ngày mai."""
+    text = normalize_user_text(message)
+    crop = context.get("crop_name") or "nông sản"
+    region = context.get("region") or "khu vực này"
+    pricing = context.get("pricing") or {}
+
+    lines: list[str] = []
+
+    has_price = bool(pricing) and (pricing.get("current_price") or pricing.get("market_price"))
+    if has_price:
+        price_val = pricing.get("current_price") or pricing.get("market_price")
+        lines.append(
+            f"Giá tham chiếu {crop} tại {region}: {_format_vnd(price_val)} VNĐ/kg "
+            f"(nguồn: {pricing.get('source_name') or 'dữ liệu thị trường'})."
+        )
+
+    if _wants_tomorrow_price(text):
+        trend = (context.get("market_analysis") or {}).get("trend_7d") or {}
+        direction = trend.get("direction", "stable")
+        if direction == "up":
+            note = "Xu hướng 7 ngày đang tăng — giá ngày mai có thể duy trì hoặc tăng nhẹ nếu không có biến động lớn."
+        elif direction == "down":
+            note = "Xu hướng 7 ngày đang giảm — giá ngày mai có thể tiếp tục giảm nhẹ."
+        else:
+            note = "Giá đang ổn định — ngày mai dự kiến không biến động nhiều nếu không có tin thị trường mới."
+        lines.append(note)
+        lines.append("Lưu ý: Dự báo giá ngày mai cần AI phân tích — hãy cấu hình GOOGLE_API_KEY để nhận dự báo chính xác hơn.")
+
+    if _has_weather_event(text):
+        lines.append(
+            "Khi có bão/thiên tai, giá nông sản thường biến động mạnh:"
+            "\n- Ngắn hạn (trong và ngay sau bão): giá có thể TĂNG do thiếu nguồn cung, khó vận chuyển."
+            "\n- Sau bão 1–2 tuần: giá có thể GIẢM nếu hàng thu hoạch ép chất đống do không bán được."
+            f"\n- Với {crop}: nên thu hoạch sớm trước bão nếu sắp chín; nếu chưa chín, gia cố và đợi qua bão."
+        )
+        lines.append("Theo dõi giá tại chợ địa phương và đài khí tượng để quyết định thời điểm bán phù hợp.")
+
+    if not lines:
+        return None
+
+    recommendation = (context.get("market_analysis") or pricing or {}).get("recommendation")
+    if recommendation:
+        if isinstance(recommendation, dict):
+            rec_text = recommendation.get("title") or recommendation.get("action") or ""
+            rec_reason = recommendation.get("reason") or ""
+            lines.append(f"Khuyến nghị: {rec_text}. {rec_reason}".strip())
+        elif isinstance(recommendation, str):
+            lines.append(f"Khuyến nghị: {recommendation}")
+
     return "\n".join(lines)
 
 
@@ -287,42 +370,52 @@ def _current_season_context() -> str:
     )
 
 
+_ZONE_MAP: dict[str, str] = {
+    # Miền Bắc
+    "Hà Nội": "miền Bắc", "Hải Phòng": "miền Bắc", "Quảng Ninh": "miền Bắc",
+    "Hải Dương": "miền Bắc", "Hưng Yên": "miền Bắc", "Thái Bình": "miền Bắc",
+    "Nam Định": "miền Bắc", "Ninh Bình": "miền Bắc", "Hà Nam": "miền Bắc",
+    "Vĩnh Phúc": "miền Bắc", "Bắc Ninh": "miền Bắc", "Bắc Giang": "miền Bắc",
+    "Thái Nguyên": "miền Bắc", "Phú Thọ": "miền Bắc", "Yên Bái": "miền Bắc",
+    "Lào Cai": "miền Bắc", "Hà Giang": "miền Bắc", "Tuyên Quang": "miền Bắc",
+    "Cao Bằng": "miền Bắc", "Bắc Kạn": "miền Bắc", "Lạng Sơn": "miền Bắc",
+    "Sơn La": "miền Bắc", "Điện Biên": "miền Bắc", "Lai Châu": "miền Bắc",
+    "Hòa Bình": "miền Bắc", "Thanh Hóa": "miền Bắc", "Nghệ An": "miền Bắc",
+    "Hà Tĩnh": "miền Bắc",
+    "Đồng bằng sông Hồng": "miền Bắc", "Miền Bắc": "miền Bắc",
+    # Miền Trung
+    "Quảng Bình": "miền Trung", "Quảng Trị": "miền Trung",
+    "Thừa Thiên Huế": "miền Trung", "Đà Nẵng": "miền Trung",
+    "Quảng Nam": "miền Trung", "Quảng Ngãi": "miền Trung",
+    "Bình Định": "miền Trung", "Phú Yên": "miền Trung",
+    "Khánh Hòa": "miền Trung", "Ninh Thuận": "miền Trung",
+    "Bình Thuận": "miền Trung",
+    "Kon Tum": "miền Trung", "Gia Lai": "miền Trung",
+    "Đắk Lắk": "miền Trung", "Đắk Nông": "miền Trung",
+    "Lâm Đồng": "miền Trung", "Đà Lạt": "miền Trung",
+    "Tây Nguyên": "miền Trung", "Miền Trung": "miền Trung",
+    "Bắc Trung Bộ": "miền Trung", "Nam Trung Bộ": "miền Trung",
+    # Miền Nam
+    "TP.HCM": "miền Nam", "Bình Phước": "miền Nam", "Bình Dương": "miền Nam",
+    "Đồng Nai": "miền Nam", "Bà Rịa - Vũng Tàu": "miền Nam", "Tây Ninh": "miền Nam",
+    "Long An": "miền Nam", "Tiền Giang": "miền Nam", "Bến Tre": "miền Nam",
+    "Trà Vinh": "miền Nam", "Vĩnh Long": "miền Nam", "Đồng Tháp": "miền Nam",
+    "An Giang": "miền Nam", "Kiên Giang": "miền Nam", "Cần Thơ": "miền Nam",
+    "Hậu Giang": "miền Nam", "Sóc Trăng": "miền Nam", "Bạc Liêu": "miền Nam",
+    "Cà Mau": "miền Nam",
+    "ĐBSCL": "miền Nam", "Miền Tây": "miền Nam", "Đông Nam Bộ": "miền Nam",
+    "Miền Nam": "miền Nam",
+}
+
+
 def _classify_region_zone(region: str) -> str:
+    zone = _ZONE_MAP.get(region)
+    if zone:
+        return zone
     r = region.lower()
-    north = [
-        "hà nội", "ha noi", "hải phòng", "hai phong", "hà giang", "lào cai", "yên bái",
-        "phú thọ", "thái nguyên", "bắc giang", "bắc ninh", "nam định", "thái bình",
-        "hà nam", "ninh bình", "thanh hóa", "thanh hoa", "nghệ an", "nghe an",
-        "hà tĩnh", "ha tinh", "bắc kạn", "cao bằng", "lạng sơn", "quảng ninh",
-        "hòa bình", "sơn la", "điện biên", "lai châu", "tuyên quang", "vĩnh phúc", "hưng yên",
-    ]
-    central = [
-        "quảng bình", "quang binh", "lệ thủy", "le thuy", "đồng hới", "quảng trị", "quang tri",
-        "thừa thiên", "thua thien", "huế", "hue", "đà nẵng", "da nang",
-        "quảng nam", "quang nam", "hội an", "hoi an", "quảng ngãi", "quang ngai",
-        "bình định", "binh dinh", "quy nhon", "quy nhơn", "phú yên", "phu yen",
-        "khánh hòa", "khanh hoa", "nha trang", "ninh thuận", "ninh thuan",
-        "bình thuận", "binh thuan", "lâm đồng", "lam dong", "đà lạt", "da lat",
-        "kon tum", "gia lai", "pleiku", "đắk lắk", "dak lak", "buon ma thuot",
-        "đắk nông", "dak nong",
-    ]
-    south = [
-        "tp.hcm", "tp hcm", "hồ chí minh", "ho chi minh", "sài gòn", "sai gon",
-        "bình dương", "binh duong", "đồng nai", "dong nai", "vũng tàu", "vung tau",
-        "long an", "tiền giang", "tien giang", "bến tre", "ben tre", "trà vinh", "tra vinh",
-        "vĩnh long", "vinh long", "đồng tháp", "dong thap", "an giang", "kiên giang",
-        "kien giang", "cần thơ", "can tho", "hậu giang", "hau giang", "sóc trăng",
-        "soc trang", "bạc liêu", "bac lieu", "cà mau", "ca mau",
-    ]
-    for kw in north:
-        if kw in r:
-            return "miền Bắc"
-    for kw in central:
-        if kw in r:
-            return "miền Trung"
-    for kw in south:
-        if kw in r:
-            return "miền Nam"
+    for name, z in _ZONE_MAP.items():
+        if name.lower() in r or r in name.lower():
+            return z
     return "Việt Nam"
 
 
@@ -384,18 +477,28 @@ def _build_gemini_prompt(request: AIChatMessageRequest, context: dict) -> tuple[
     backend_context = json.dumps(sanitized_context, ensure_ascii=False, default=str)
     season_ctx = _current_season_context()
 
-    system_instruction = f"""Bạn là Trợ lý AI nông nghiệp của hệ thống NongNghiepAI.
-Nhiệm vụ: hỗ trợ nông dân Việt Nam về giá nông sản, thời tiết, mùa vụ, sâu bệnh, kỹ thuật canh tác.
+    system_instruction = f"""Bạn là AgriBot — Trợ lý AI nông nghiệp của NongNghiepAI, chuyên hỗ trợ nông dân Việt Nam.
 
-Nguyên tắc:
-1. Trả lời đúng câu hỏi. Không phân tích dữ liệu khi người dùng chỉ chào hỏi.
-2. Câu trả lời phải CỤ THỂ cho: khu vực "{region}" ({region_zone}), cây "{crop}", thời điểm tháng hiện tại.
-3. KHÔNG được trả lời chung chung kiểu "ở các vùng khác nhau" hay "tùy điều kiện". Phải nói rõ cho {region_zone}.
-4. Với DỮ LIỆU SỐ LIỆU (giá, nhiệt độ, lượng mưa, ngày tháng cụ thể): chỉ dùng từ backend context. Nếu không có, nói rõ "hệ thống chưa có số liệu thị trường cho khu vực này".
-5. Với KIẾN THỨC KỸ THUẬT (sâu bệnh, mùa vụ, kỹ thuật canh tác): BẮT BUỘC trả lời dựa trên kiến thức nông nghiệp Việt Nam cho {region_zone}, tháng hiện tại. Không được từ chối với lý do "thiếu dữ liệu".
-6. Không bịa giá, nhiệt độ, sản lượng cụ thể khi không có trong context.
-7. Ngắn gọn, thực tế, dễ hiểu cho nông dân. Dùng gạch đầu dòng.
-8. Không hiển thị metadata: Database, API, timestamp, engine."""
+PHẠM VI HỖ TRỢ:
+- Giá nông sản, xu hướng thị trường, khuyến nghị mua/bán
+- Thời tiết, dự báo, rủi ro thiên tai, khuyến cáo canh tác
+- Mùa vụ, lịch gieo trồng, thu hoạch theo vùng và tháng
+- Sâu bệnh, cách nhận biết, phòng trừ, thuốc bảo vệ thực vật
+- Kỹ thuật canh tác: đất, phân bón, tưới tiêu, cải tạo đất mặn/phèn
+- Chất lượng nông sản, bảo quản sau thu hoạch
+
+NGUYÊN TẮC BẮT BUỘC:
+1. Trả lời đúng câu hỏi — không mở rộng khi người dùng không yêu cầu.
+2. Câu trả lời PHẢI CỤ THỂ cho: khu vực "{region}" ({region_zone}), cây "{crop}", tháng hiện tại.
+3. TUYỆT ĐỐI KHÔNG trả lời chung chung "tùy vùng", "tùy điều kiện" — phải nói rõ cho {region_zone}.
+4. SỐ LIỆU THỰC (giá, nhiệt độ, lượng mưa, ngày cụ thể): chỉ dùng từ backend context. Nếu thiếu, nói thẳng "hệ thống chưa có số liệu cho khu vực này".
+5. KIẾN THỨC KỸ THUẬT (sâu bệnh, mùa vụ, kỹ thuật): BẮT BUỘC trả lời theo kiến thức nông nghiệp Việt Nam thực tế cho {region_zone} tháng này. KHÔNG được từ chối vì "thiếu dữ liệu".
+6. KHÔNG bịa giá, nhiệt độ, sản lượng khi không có trong context.
+7. Viết ngắn gọn, thực tế, dùng gạch đầu dòng. Ưu tiên thông tin hành động được ngay.
+8. KHÔNG hiển thị metadata nội bộ: Database, API, timestamp, engine, source.
+9. Nếu câu hỏi ngoài lĩnh vực nông nghiệp: lịch sự từ chối và gợi ý đặt câu hỏi liên quan nông nghiệp.
+
+PHONG CÁCH: Như người cán bộ khuyến nông địa phương — am hiểu thực tế, nói thẳng, có số liệu cụ thể khi có."""
 
     prompt = (
         f"Intent: {intent}\n"
@@ -631,7 +734,9 @@ async def ai_chat_message(
             "data_sources": [],
         }
 
-    if _should_answer_market_locally(request.message, intent):
+    _pricing = (context.get("pricing") or {})
+    _has_real_price = bool(_pricing) and not _pricing.get("is_mock") and _pricing.get("source_type") != "mock"
+    if _should_answer_market_locally(request.message, intent) and _has_real_price:
         reply = _local_market_reply(context, request.message)
         _save_gemini_conversation(
             db,
@@ -662,74 +767,62 @@ async def ai_chat_message(
 
     try:
         reply, model_name = await _call_gemini(request, context)
-    except RuntimeError as exc:
-        if str(exc) == "missing_google_api_key":
+    except (RuntimeError, asyncio.TimeoutError, Exception) as exc:
+        exc_str = str(exc)
+        # Fallback nội bộ khi Gemini không khả dụng — ưu tiên local reply nếu có pricing
+        if intent in ANALYSIS_INTENTS:
+            _fallback_reply = _local_market_reply_extended(context, request.message)
+            if _fallback_reply:
+                _save_gemini_conversation(
+                    db,
+                    user_id=current_user.UserID if current_user else None,
+                    session_id=request.session_id,
+                    question=request.message,
+                    reply=_fallback_reply,
+                    topic=context.get("intent", intent),
+                    crop_name=crop or context.get("crop_name"),
+                    context=context,
+                    model_name="local-fallback-v1",
+                    provider="local",
+                )
+                payload = _success_payload(
+                    reply=_fallback_reply,
+                    intent=context.get("intent", intent),
+                    crop=crop or context.get("crop_name"),
+                    region=region or context.get("region"),
+                    model_name="local-fallback-v1",
+                    provider="local",
+                    context=context,
+                    confidence=0.55,
+                )
+                payload["data"]["reasons"] = _build_reasons(context, {"is_mock": True})
+                payload["data"]["recommendations"] = _build_recommendations(context, {"is_mock": True})
+                return payload
+
+        # Không có fallback nội bộ khả dụng → trả lỗi tường minh
+        if isinstance(exc, asyncio.TimeoutError) or "timeout" in exc_str.lower():
             return JSONResponse(
-                status_code=500,
-                content={
-                    "success": False,
-                    "data": None,
-                    "source": "realtime_api",
-                    "is_realtime": False,
-                    "is_cache": False,
-                    "is_mock": False,
-                    "warning": None,
-                    "error": {
-                        "code": "AI_API_KEY_MISSING",
-                        "message": "Không thể kết nối trợ lý AI. Vui lòng cấu hình GOOGLE_API_KEY trong backend/.env.",
-                    },
-                },
-            )
-        return JSONResponse(
-                status_code=502,
-                content={
-                    "success": False,
-                    "data": None,
-                    "source": "realtime_api",
-                    "is_realtime": False,
-                    "is_cache": False,
-                    "is_mock": False,
-                    "warning": None,
-                    "error": {
-                        "code": "AI_API_FAILED",
-                        "message": f"Gemini không trả về câu trả lời hợp lệ: {exc}",
-                    },
-                },
-            )
-    except asyncio.TimeoutError:
-        return JSONResponse(
                 status_code=504,
                 content={
-                    "success": False,
-                    "data": None,
-                    "source": "realtime_api",
-                    "is_realtime": False,
-                    "is_cache": False,
-                    "is_mock": False,
-                    "warning": None,
-                    "error": {
-                        "code": "AI_API_TIMEOUT",
-                        "message": f"Gemini API timeout sau {settings.AI_TIMEOUT_SECONDS:g} giây.",
-                    },
+                    "success": False, "data": None,
+                    "error": {"code": "AI_API_TIMEOUT", "message": f"Gemini API timeout sau {settings.AI_TIMEOUT_SECONDS:g} giây."},
                 },
             )
-    except Exception as exc:
-        return JSONResponse(
-                status_code=502,
+        if exc_str == "missing_google_api_key":
+            return JSONResponse(
+                status_code=503,
                 content={
-                    "success": False,
-                    "data": None,
-                    "source": "realtime_api",
-                    "is_realtime": False,
-                    "is_cache": False,
-                    "is_mock": False,
-                    "warning": None,
-                    "error": {
-                        "code": "AI_API_FAILED",
-                        "message": f"Gemini API đang lỗi: {exc}",
-                    },
+                    "success": False, "data": None,
+                    "error": {"code": "AI_API_KEY_MISSING", "message": "Trợ lý AI chưa được cấu hình. Vui lòng liên hệ quản trị viên."},
                 },
             )
+        return JSONResponse(
+            status_code=502,
+            content={
+                "success": False, "data": None,
+                "error": {"code": "AI_API_FAILED", "message": f"Gemini API đang lỗi: {exc_str[:120]}"},
+            },
+        )
 
     result = {"answer": reply, "is_mock": False}
     recommendations = _build_recommendations(context, result) if intent in ANALYSIS_INTENTS else []
@@ -799,3 +892,38 @@ async def ai_chat_history(
         ],
     }
     return api_response(data, source="database", source_name="AIConversations DB", confidence=0.7)
+
+
+
+@router.delete("/history/{conv_id}")
+async def delete_chat_history_item(
+    conv_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.models.conversation import AIConversation
+    row = (
+        db.query(AIConversation)
+        .filter(AIConversation.ConvID == conv_id, AIConversation.UserID == current_user.UserID)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tin nhắn")
+    db.delete(row)
+    db.commit()
+    return api_response({"deleted": True, "conv_id": conv_id}, source="database", source_name="AIConversations DB")
+
+
+@router.delete("/history")
+async def clear_chat_history(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.models.conversation import AIConversation
+    count = (
+        db.query(AIConversation)
+        .filter(AIConversation.UserID == current_user.UserID)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return api_response({"deleted_count": count}, source="database", source_name="AIConversations DB")

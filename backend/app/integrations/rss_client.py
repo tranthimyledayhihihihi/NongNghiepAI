@@ -55,6 +55,8 @@ class RSSClient:
                     "source_url": link,
                     "published_at": published_at,
                     "sentiment": self._sentiment(title + " " + description),
+                    "is_realtime": True,
+                    "fetched_at": datetime.utcnow(),
                 }
             )
         return records

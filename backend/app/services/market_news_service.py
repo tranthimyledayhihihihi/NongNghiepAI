@@ -1,13 +1,13 @@
 from datetime import datetime, timedelta, timezone
 import re
+import threading
 import unicodedata
 
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.redis_client import redis_client
-from app.integrations.apifarmer_client import apifarmer_client
 from app.integrations.rss_client import rss_client
-from app.integrations.twelvedata_client import twelvedata_client
+from app.integrations.thitruongnongsan_client import thitruongnongsan_client
 from app.repositories.ingestion_repository import finish_ingestion_log, start_ingestion_log
 from app.repositories.market_news_repository import list_market_news, upsert_market_news
 from app.services.pricing_service import pricing_service
@@ -57,8 +57,7 @@ class MarketNewsService:
         try:
             fetched_records = []
             if settings.ENABLE_MARKET_NEWS:
-                fetched_records.extend(apifarmer_client.search_market_news(limit=30))
-                fetched_records.extend(twelvedata_client.search_market_news(limit=20))
+                fetched_records.extend(thitruongnongsan_client.search_market_news(limit=40))
             if not fetched_records:
                 fetched_records.extend(rss_client.fetch_market_news())
             records = self._filter_relevant_news(fetched_records, since=self._recent_since())
@@ -76,7 +75,7 @@ class MarketNewsService:
                 "records_fetched": len(fetched_records),
                 "records_filtered": len(records),
                 "source": "realtime" if fetched_records else "database",
-                "source_name": "APIFarmer/Twelve Data/RSS market news aggregator",
+                "source_name": "thitruongnongsan.gov.vn / RSS market news aggregator",
                 "fetched_at": datetime.utcnow().isoformat(),
                 **result,
             }
@@ -103,13 +102,7 @@ class MarketNewsService:
             since=since,
         )
         if not rows and settings.ENABLE_MARKET_NEWS:
-            refresh_result = self.refresh_news()
-            if refresh_result.get("status") == "success":
-                db.expire_all()
-                rows = self._filter_relevant_news(
-                    list_market_news(db, limit=fetch_limit, crop_name=crop_name, region=region, since=since),
-                    since=since,
-                )
+            threading.Thread(target=self.refresh_news, daemon=True, name="market-news-refresh").start()
         if not rows and (crop_name or region):
             rows = self._filter_relevant_news(list_market_news(db, limit=fetch_limit, since=since), since=since)
         if not rows and self._realtime_only():
