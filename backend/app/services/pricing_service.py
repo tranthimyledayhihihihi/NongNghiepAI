@@ -92,9 +92,17 @@ class PricingService:
         include_weather: bool = True,
         force_refresh: bool = False,
     ) -> dict:
+        from app.core.redis_client import redis_client
+
         selected_crop = self._clean_crop(crop_name)
         selected_region = self._clean_region(region)
         selected_grade = self._clean_grade(quality_grade)
+
+        if not force_refresh:
+            cache_key = f"price:{selected_crop}:{selected_region}:{selected_grade}"
+            cached = redis_client.get(cache_key)
+            if cached and isinstance(cached, dict):
+                return cached
 
         if force_refresh:
             price_aggregator_service.refresh_prices(db, crop_name=selected_crop)

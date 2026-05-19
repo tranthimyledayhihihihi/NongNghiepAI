@@ -27,18 +27,21 @@ GRADE_DB_TO_API = {
     "Loại 1": "grade_1",
     "Loại 2": "grade_2",
     "Loại 3": "grade_3",
+    "Loai 1": "grade_1",
+    "Loai 2": "grade_2",
+    "Loai 3": "grade_3",
 }
 
 ALERT_API_TO_DB = {
-    "above": "Tren",
-    "below": "Duoi",
-    "change": "Thay doi",
-    "Tren": "Tren",
-    "Duoi": "Duoi",
-    "Thay doi": "Thay doi",
-    "Trên": "Tren",
-    "Dưới": "Duoi",
-    "Thay đổi": "Thay doi",
+    "above": "Trên",
+    "below": "Dưới",
+    "change": "Thay đổi",
+    "Tren": "Trên",
+    "Duoi": "Dưới",
+    "Thay doi": "Thay đổi",
+    "Trên": "Trên",
+    "Dưới": "Dưới",
+    "Thay đổi": "Thay đổi",
 }
 
 ALERT_DB_TO_API = {
@@ -49,30 +52,6 @@ ALERT_DB_TO_API = {
     "Dưới": "below",
     "Thay đổi": "change",
 }
-
-GRADE_API_TO_DB.update(
-    {
-        "grade_1": "Loai 1",
-        "grade_2": "Loai 2",
-        "grade_3": "Loai 3",
-        "loai_1": "Loai 1",
-        "loai_2": "Loai 2",
-        "loai_3": "Loai 3",
-        "loai 1": "Loai 1",
-        "loai 2": "Loai 2",
-        "loai 3": "Loai 3",
-        "loại 1": "Loai 1",
-        "loại 2": "Loai 2",
-        "loại 3": "Loai 3",
-    }
-)
-GRADE_DB_TO_API.update(
-    {
-        "Loai 1": "grade_1",
-        "Loai 2": "grade_2",
-        "Loai 3": "grade_3",
-    }
-)
 
 CHANNEL_API_TO_DB = {
     "retail": "Thương lái",

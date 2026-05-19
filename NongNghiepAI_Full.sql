@@ -28,6 +28,30 @@ GO
 -- ============================================================
 -- BƯỚC 2: XÓA BẢNG CŨ (nếu chạy lại script)
 -- ============================================================
+
+-- Bước 2a: Xóa tất cả FK constraints trong DB trước để tránh lỗi phụ thuộc
+-- (bao gồm cả bảng do ORM tự tạo: Seasons, Notifications, UserSettings, ...)
+DECLARE @dropFK NVARCHAR(MAX) = N''
+SELECT @dropFK += N'ALTER TABLE ' + QUOTENAME(OBJECT_NAME(fk.parent_object_id))
+               + N' DROP CONSTRAINT ' + QUOTENAME(fk.name) + N';' + CHAR(10)
+FROM sys.foreign_keys fk
+IF LEN(@dropFK) > 0
+    EXEC sp_executesql @dropFK
+GO
+
+-- Bước 2b: Xóa các bảng ORM (Seasons, Notifications, UserSettings, ...)
+IF OBJECT_ID('NotificationDeliveries',  'U') IS NOT NULL DROP TABLE NotificationDeliveries;
+IF OBJECT_ID('Notifications',           'U') IS NOT NULL DROP TABLE Notifications;
+IF OBJECT_ID('NotificationPreferences', 'U') IS NOT NULL DROP TABLE NotificationPreferences;
+IF OBJECT_ID('UserSettings',            'U') IS NOT NULL DROP TABLE UserSettings;
+IF OBJECT_ID('Seasons',                 'U') IS NOT NULL DROP TABLE Seasons;
+IF OBJECT_ID('DashboardCache',          'U') IS NOT NULL DROP TABLE DashboardCache;
+IF OBJECT_ID('RegionalPriceSnapshots',  'U') IS NOT NULL DROP TABLE RegionalPriceSnapshots;
+IF OBJECT_ID('AirQualityObservations',  'U') IS NOT NULL DROP TABLE AirQualityObservations;
+IF OBJECT_ID('DataSources',             'U') IS NOT NULL DROP TABLE DataSources;
+GO
+
+-- Bước 2c: Xóa các bảng chính
 IF OBJECT_ID('HarvestForecastResults','U') IS NOT NULL DROP TABLE HarvestForecastResults;
 IF OBJECT_ID('AIConversations',       'U') IS NOT NULL DROP TABLE AIConversations;
 IF OBJECT_ID('QualityRecords',        'U') IS NOT NULL DROP TABLE QualityRecords;
@@ -229,8 +253,8 @@ CREATE TABLE AlertSubscriptions (
     CropID              INT             NOT NULL FOREIGN KEY REFERENCES CropTypes(CropID),
     Region              NVARCHAR(100)   NOT NULL,
     TargetPrice         DECIMAL(18,2)   NOT NULL,
-    AlertType           NVARCHAR(20)    DEFAULT 'Tren'
-                        CHECK (AlertType IN ('Tren', 'Duoi', 'Thay doi')),
+    AlertType           NVARCHAR(20)    DEFAULT N'Trên'
+                        CHECK (AlertType IN ('Tren', 'Duoi', 'Thay doi', N'Trên', N'Dưới', N'Thay đổi')),
     NotifyMethod        NVARCHAR(20)    DEFAULT 'Email'
                         CHECK (NotifyMethod IN ('Email', 'SMS', 'Zalo', 'App')),
     IsActive            BIT             DEFAULT 1,

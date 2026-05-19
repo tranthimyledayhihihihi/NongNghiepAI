@@ -174,7 +174,7 @@ class LocationService:
 
     @staticmethod
     def region_key(value: str | None) -> str:
-        if not value:
+        if not value or not isinstance(value, str):
             return ""
         canonical = LocationService.display_name(value)
         normalized = normalize("NFD", canonical.strip().lower())

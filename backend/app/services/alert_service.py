@@ -452,8 +452,33 @@ class AlertService:
                 triggered.append(result)
         return triggered
 
+    def _send_alert_notification(
+        self,
+        db: Session,
+        alert: PriceAlert,
+        crop_name: str,
+        current_price: float,
+        target_price: float,
+        condition: str,
+        message: str,
+        *,
+        source: dict | None = None,
+        previous_price: float | None = None,
+    ) -> dict:
+        return self._create_notification_records(
+            db,
+            alert,
+            crop_name,
+            current_price,
+            target_price,
+            condition,
+            message,
+            source=source,
+            previous_price=previous_price,
+        )
+
     def _evaluate_alert(self, db: Session, alert: PriceAlert) -> dict | None:
-        if alert.LastTriggered and datetime.now() - alert.LastTriggered < ALERT_COOLDOWN:
+        if isinstance(alert.LastTriggered, datetime) and datetime.now() - alert.LastTriggered < ALERT_COOLDOWN:
             return None
 
         crop_name = get_alert_crop_name(db, alert)
@@ -467,7 +492,7 @@ class AlertService:
         matched = current_price >= target_price if condition == "above" else current_price <= target_price
         last_price = self._last_recorded_price(db, alert.AlertID)
         price_changed = last_price is None or abs(current_price - last_price) >= 1
-        if not matched and not price_changed:
+        if not matched:
             return None
 
         direction = "vượt" if condition == "above" else "xuống dưới"
@@ -483,7 +508,7 @@ class AlertService:
                 f"{crop_name} tại {alert.Region} hiện {current_price:,.0f} VND/kg, "
                 f"đã {direction} ngưỡng {target_price:,.0f} VND/kg."
             )
-        delivery = self._create_notification_records(
+        delivery = self._send_alert_notification(
             db,
             alert,
             crop_name,
@@ -548,21 +573,7 @@ class AlertService:
                 "last_updated": latest.UpdatedAt,
                 "cache_status": "cached",
             }
-        try:
-            current = pricing_service.get_current_price(db, crop_name, alert.Region, include_weather=False)
-            return {
-                "current_price": float(current["current_price"]),
-                "unit": "VND/kg",
-                "source": "fallback",
-                "source_name": "Pricing fallback",
-                "source_url": None,
-                "observed_at": current.get("last_updated"),
-                "last_updated": current.get("last_updated"),
-                "cache_status": "mock",
-            }
-        except Exception as exc:
-            logger.warning("Cannot resolve price for alert %s: %s", alert.AlertID, exc)
-            return None
+        return None
 
     def _create_notification_records(
         self,

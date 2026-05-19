@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import func
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -92,8 +93,14 @@ def _is_placeholder_user(user: User) -> bool:
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 async def register(request: RegisterRequest, db: Session = Depends(get_db)):
-    email = request.email.strip().lower()
-    existing_user = db.query(User).filter(func.lower(User.Email) == email).first()
+    try:
+        email = request.email.strip().lower()
+        existing_user = db.query(User).filter(func.lower(User.Email) == email).first()
+    except (OperationalError, SQLAlchemyError):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Cơ sở dữ liệu tạm thời không khả dụng. Vui lòng khởi động SQL Server và thử lại.",
+        )
     if existing_user is not None:
         if _is_placeholder_user(existing_user):
             existing_user.FullName = request.full_name.strip()
@@ -133,12 +140,18 @@ async def register(request: RegisterRequest, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=AuthResponse)
 async def login(request: LoginRequest, db: Session = Depends(get_db)):
-    email = request.email.strip().lower()
-    user = db.query(User).filter(func.lower(User.Email) == email).first()
+    try:
+        email = request.email.strip().lower()
+        user = db.query(User).filter(func.lower(User.Email) == email).first()
+    except (OperationalError, SQLAlchemyError):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Cơ sở dữ liệu tạm thời không khả dụng. Vui lòng khởi động SQL Server và thử lại.",
+        )
     if user is None or not verify_password(request.password, user.PasswordHash):
-        raise HTTPException(status_code=401, detail="incorrect email or password")
+        raise HTTPException(status_code=401, detail="Email hoặc mật khẩu không đúng.")
     if not user.IsActive:
-        raise HTTPException(status_code=403, detail="user is inactive")
+        raise HTTPException(status_code=403, detail="Tài khoản đã bị vô hiệu hóa.")
 
     return AuthResponse(access_token=create_access_token(user.UserID), user=_to_user_read(user))
 

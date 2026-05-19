@@ -118,8 +118,8 @@ class HarvestService:
         region = request.region
         planting_date = request.planting_date
 
-        weather_data = self._get_latest_weather(db, region)
         growth_duration = self._resolve_growth_days(db, crop_name)
+        weather_for_predictor = None
 
         predictor = self._get_predictor()
         if predictor:
@@ -129,7 +129,7 @@ class HarvestService:
                     planting_date=datetime.combine(planting_date, datetime.min.time()),
                     region=region,
                     growth_duration_days=growth_duration,
-                    weather_data=weather_data,
+                    weather_data=weather_for_predictor,
                 )
                 growth_days = ai_result.get("growth_days", self._growth_days_for(crop_name))
                 expected_date = planting_date + timedelta(days=growth_days)
@@ -471,6 +471,7 @@ class HarvestService:
                 "source_name": weather.get("source_name"),
                 "fetched_at": weather.get("fetched_at") or weather.get("last_updated"),
                 "updated_at": weather.get("updated_at") or weather.get("last_updated"),
+                "is_mock": weather.get("is_mock", True),
             }
         except Exception:
             return None

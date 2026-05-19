@@ -90,12 +90,26 @@ export default function LoginPage() {
 
       setTimeout(() => navigate("/dashboard"), 450);
     } catch (err) {
-      const message =
-        err?.response?.data?.detail ||
-        err?.response?.data?.message ||
-        err?.message ||
-        "Không thể xử lý yêu cầu. Vui lòng kiểm tra tài khoản hoặc kết nối hệ thống.";
-      setError(message);
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail || err?.response?.data?.message;
+      if (status === 503) {
+        setError("Hệ thống đang bảo trì hoặc máy chủ cơ sở dữ liệu chưa khởi động. Vui lòng thử lại sau.");
+      } else if (status === 401) {
+        setError("Email hoặc mật khẩu không đúng. Vui lòng kiểm tra lại.");
+      } else if (status === 409) {
+        setError("Email này đã được đăng ký. Vui lòng đăng nhập hoặc dùng email khác.");
+      } else if (status === 422) {
+        const validationErrors = err?.response?.data?.detail;
+        if (Array.isArray(validationErrors)) {
+          setError(validationErrors.map((e) => e.msg).join(", "));
+        } else {
+          setError(detail || "Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.");
+        }
+      } else if (!err?.response) {
+        setError("Không thể kết nối máy chủ. Vui lòng kiểm tra backend đang chạy trên cổng 5000.");
+      } else {
+        setError(detail || err?.message || "Đã xảy ra lỗi. Vui lòng thử lại.");
+      }
     } finally {
       setLoading(false);
     }

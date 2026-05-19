@@ -208,6 +208,39 @@ def _apply_lightweight_schema_upgrades() -> None:
                         {"column_name": column},
                     )
         _apply_mssql_unicode_upgrades()
+        _fix_mssql_alert_type_constraint()
+
+
+def _fix_mssql_alert_type_constraint() -> None:
+    """Ensure AlertSubscriptions.AlertType constraint allows Vietnamese Unicode values."""
+    if not active_database_url.startswith("mssql"):
+        return
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("""
+                DECLARE @cname NVARCHAR(256)
+                SELECT @cname = cc.name
+                FROM sys.check_constraints cc
+                WHERE cc.parent_object_id = OBJECT_ID('AlertSubscriptions')
+                  AND cc.definition NOT LIKE N'%Tr%n%'
+                  AND cc.definition LIKE '%AlertType%'
+                IF @cname IS NOT NULL
+                    EXEC('ALTER TABLE AlertSubscriptions DROP CONSTRAINT [' + @cname + ']')
+            """))
+            conn.execute(text("""
+                IF NOT EXISTS (
+                    SELECT 1 FROM sys.check_constraints cc
+                    WHERE cc.parent_object_id = OBJECT_ID('AlertSubscriptions')
+                      AND cc.definition LIKE N'%Tr%n%'
+                )
+                ALTER TABLE AlertSubscriptions ADD CONSTRAINT CK_AlertSubs_AlertType_V2
+                CHECK (AlertType IN (
+                    'Tren', 'Duoi', 'Thay doi',
+                    N'Trên', N'Dưới', N'Thay đổi'
+                ))
+            """))
+    except Exception:
+        pass
 
 
 def _apply_mssql_unicode_upgrades() -> None:

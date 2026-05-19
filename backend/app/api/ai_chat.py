@@ -115,9 +115,9 @@ def _default_context(db: Session, user: User | None, request: AIChatMessageReque
 
 
 def _get_google_api_key() -> str | None:
-    api_key = (os.getenv("GOOGLE_API_KEY") or "").strip()
-    if api_key == "${GEMINI_API_KEY}":
-        api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
+    api_key = (os.getenv("GOOGLE_API_KEY") or settings.GOOGLE_API_KEY or "").strip()
+    if not api_key or api_key == "${GEMINI_API_KEY}":
+        api_key = (os.getenv("GEMINI_API_KEY") or settings.GEMINI_API_KEY or "").strip()
     return api_key or None
 
 
@@ -189,6 +189,80 @@ def _sanitize_context_for_prompt(value: Any) -> Any:
     return value
 
 
+def _current_season_context() -> str:
+    month = datetime.now().month
+    year = datetime.now().year
+    if month in (12, 1, 2):
+        north = "vụ Đông Xuân giai đoạn mạ/cây con. Chú ý rét đậm, rét hại, ốc bươu vàng"
+        central = "vụ Đông Xuân mới gieo sạ. Thời tiết lạnh-khô. Chú ý chuột, ốc bươu vàng, bệnh lùn sọc đen"
+        south = "mùa khô - vụ Đông Xuân sinh trưởng hoặc sắp thu hoạch. Thiếu nước tưới cuối vụ"
+    elif month in (3, 4):
+        north = "vụ Đông Xuân giai đoạn làm đòng-trổ bông. Cần bón thúc đòng, phòng đạo ôn cổ bông, sâu cuốn lá"
+        central = "vụ Đông Xuân giai đoạn làm đòng-trổ bông. Nắng nóng sớm, nguy cơ hạn, bọ trĩ, sâu đục thân"
+        south = "vụ Đông Xuân thu hoạch. Chuẩn bị làm đất vụ Hè Thu. Nguy cơ cháy đồng"
+    elif month in (5, 6):
+        north = "vụ Đông Xuân thu hoạch. Đang làm đất chuẩn bị vụ Mùa. Nắng nóng, dễ cháy đồng"
+        central = "vụ Đông Xuân thu hoạch; đang gieo sạ vụ Hè Thu. Nắng nóng đỉnh điểm, hạn Bắc Trung Bộ, nguy cơ sâu cuốn lá vụ Hè Thu"
+        south = "đầu mùa mưa, vụ Hè Thu bắt đầu gieo sạ. Chú ý ốc bươu vàng, bệnh lùn sọc đen, rầy nâu"
+    elif month in (7, 8):
+        north = "vụ Mùa giai đoạn đẻ nhánh-làm đòng. Mưa nhiều, nguy cơ sâu cuốn lá, bạc lá, đạo ôn"
+        central = "vụ Hè Thu sinh trưởng. Mưa lũ, nguy cơ đổ ngã, sâu cuốn lá, đạo ôn cổ bông"
+        south = "vụ Hè Thu sinh trưởng. Mùa mưa, nguy cơ rầy nâu, bệnh đạo ôn, vàng lùn"
+    elif month in (9, 10):
+        north = "vụ Mùa giai đoạn trổ-chín. Đầu mùa lạnh, chú ý đạo ôn, chuẩn bị thu hoạch"
+        central = "vụ Hè Thu thu hoạch. Mùa bão lũ - cần thu hoạch sớm trước lũ"
+        south = "vụ Hè Thu thu hoạch. Vụ Thu Đông bắt đầu ở ĐBSCL. Chú ý nhện gié, rầy nâu cuối vụ"
+    else:
+        north = "thu hoạch vụ Mùa xong. Chuẩn bị đất vụ Đông Xuân. Trồng rau màu vụ Đông"
+        central = "chuẩn bị vụ Đông Xuân. Mưa muộn, lũ lụt còn xảy ra ở Trung Bộ"
+        south = "mùa khô bắt đầu. Vụ Thu Đông ĐBSCL đang sinh trưởng"
+    return (
+        f"Thời điểm: tháng {month}/{year}\n"
+        f"Miền Bắc: {north}\n"
+        f"Miền Trung (Quảng Bình, Quảng Nam, Nghệ An...): {central}\n"
+        f"Miền Nam (ĐBSCL, Đông Nam Bộ): {south}"
+    )
+
+
+def _classify_region_zone(region: str) -> str:
+    r = region.lower()
+    north = [
+        "hà nội", "ha noi", "hải phòng", "hai phong", "hà giang", "lào cai", "yên bái",
+        "phú thọ", "thái nguyên", "bắc giang", "bắc ninh", "nam định", "thái bình",
+        "hà nam", "ninh bình", "thanh hóa", "thanh hoa", "nghệ an", "nghe an",
+        "hà tĩnh", "ha tinh", "bắc kạn", "cao bằng", "lạng sơn", "quảng ninh",
+        "hòa bình", "sơn la", "điện biên", "lai châu", "tuyên quang", "vĩnh phúc", "hưng yên",
+    ]
+    central = [
+        "quảng bình", "quang binh", "lệ thủy", "le thuy", "đồng hới", "quảng trị", "quang tri",
+        "thừa thiên", "thua thien", "huế", "hue", "đà nẵng", "da nang",
+        "quảng nam", "quang nam", "hội an", "hoi an", "quảng ngãi", "quang ngai",
+        "bình định", "binh dinh", "quy nhon", "quy nhơn", "phú yên", "phu yen",
+        "khánh hòa", "khanh hoa", "nha trang", "ninh thuận", "ninh thuan",
+        "bình thuận", "binh thuan", "lâm đồng", "lam dong", "đà lạt", "da lat",
+        "kon tum", "gia lai", "pleiku", "đắk lắk", "dak lak", "buon ma thuot",
+        "đắk nông", "dak nong",
+    ]
+    south = [
+        "tp.hcm", "tp hcm", "hồ chí minh", "ho chi minh", "sài gòn", "sai gon",
+        "bình dương", "binh duong", "đồng nai", "dong nai", "vũng tàu", "vung tau",
+        "long an", "tiền giang", "tien giang", "bến tre", "ben tre", "trà vinh", "tra vinh",
+        "vĩnh long", "vinh long", "đồng tháp", "dong thap", "an giang", "kiên giang",
+        "kien giang", "cần thơ", "can tho", "hậu giang", "hau giang", "sóc trăng",
+        "soc trang", "bạc liêu", "bac lieu", "cà mau", "ca mau",
+    ]
+    for kw in north:
+        if kw in r:
+            return "miền Bắc"
+    for kw in central:
+        if kw in r:
+            return "miền Trung"
+    for kw in south:
+        if kw in r:
+            return "miền Nam"
+    return "Việt Nam"
+
+
 def _intent_format_instruction(intent: str) -> str:
     formats = {
         "price_analysis": (
@@ -205,16 +279,18 @@ def _intent_format_instruction(intent: str) -> str:
             "- Khuyến nghị tưới/phun/thu hoạch"
         ),
         "harvest_analysis": (
-            "- Mùa vụ đang theo dõi\n"
-            "- Giai đoạn hiện tại\n"
-            "- Ngày dự kiến thu hoạch\n"
-            "- Việc cần làm tiếp theo"
+            "- Giai đoạn vụ mùa hiện tại tại khu vực người dùng hỏi (dựa vào context mùa vụ)\n"
+            "- Tình hình cụ thể: cây đang ở giai đoạn nào, cần làm gì\n"
+            "- Rủi ro thời tiết/sâu bệnh phổ biến trong giai đoạn này tại khu vực đó\n"
+            "- Khuyến nghị cụ thể cho nông dân tại khu vực và thời điểm hiện tại\n"
+            "(Nếu backend không có số liệu cụ thể, dùng kiến thức nông nghiệp cho vùng và tháng này)"
         ),
         "quality_analysis": (
-            "- Tình trạng/chất lượng hiện tại\n"
-            "- Nhận xét chính\n"
-            "- Rủi ro sâu bệnh hoặc lỗi chất lượng nếu có\n"
-            "- Khuyến nghị xử lý tiếp theo"
+            "- Sâu bệnh/vấn đề chất lượng phổ biến với cây trồng đó tại khu vực và thời điểm hỏi\n"
+            "- Triệu chứng nhận biết\n"
+            "- Cách xử lý cụ thể: thuốc/biện pháp sinh học/canh tác\n"
+            "- Phòng ngừa cho giai đoạn tiếp theo\n"
+            "(Dùng kiến thức nông nghiệp thực tế, không cần dữ liệu backend cho câu hỏi kỹ thuật)"
         ),
         "alert_analysis": (
             "- Cảnh báo hiện có\n"
@@ -239,32 +315,36 @@ def _build_gemini_prompt(request: AIChatMessageRequest, context: dict) -> tuple[
     intent = normalize_intent(context.get("intent") or classify_user_intent(request.message))
     crop = request.resolved_crop or context.get("crop_name") or "chưa xác định"
     region = request.region or context.get("region") or "chưa xác định"
+    region_zone = _classify_region_zone(region)
     user_context = _safe_json(request.context)
     sanitized_context = _sanitize_context_for_prompt(context)
     backend_context = json.dumps(sanitized_context, ensure_ascii=False, default=str)
+    season_ctx = _current_season_context()
 
-    system_instruction = """Bạn là Trợ lý AI nông nghiệp của hệ thống NongNghiepAI.
-Nhiệm vụ của bạn là hỗ trợ nông dân phân tích giá nông sản, thời tiết, mùa vụ, chất lượng nông sản và cảnh báo rủi ro.
+    system_instruction = f"""Bạn là Trợ lý AI nông nghiệp của hệ thống NongNghiepAI.
+Nhiệm vụ: hỗ trợ nông dân Việt Nam về giá nông sản, thời tiết, mùa vụ, sâu bệnh, kỹ thuật canh tác.
 
-Nguyên tắc bắt buộc:
-1. Trả lời đúng trọng tâm câu hỏi của người dùng.
-2. Không tự động phân tích dữ liệu nếu người dùng chỉ chào hỏi hoặc hỏi xã giao.
-3. Chỉ sử dụng dữ liệu được backend cung cấp trong context.
-4. Không bịa số liệu giá, thời tiết, sản lượng, rủi ro hoặc ngày thu hoạch.
-5. Nếu thiếu dữ liệu, hãy nói rõ “Hiện chưa có đủ dữ liệu để phân tích chính xác”.
-6. Khi phân tích, phải nêu: Tình hình hiện tại, Nhận xét chính, Rủi ro nếu có, Khuyến nghị hành động.
-7. Câu trả lời phải ngắn gọn, thực tế, dễ hiểu cho nông dân.
-8. Không lặp lại quá nhiều thông tin kỹ thuật.
-9. Không hiển thị metadata nội bộ như Database, API, AI Generated, timestamp, engine."""
+Nguyên tắc:
+1. Trả lời đúng câu hỏi. Không phân tích dữ liệu khi người dùng chỉ chào hỏi.
+2. Câu trả lời phải CỤ THỂ cho: khu vực "{region}" ({region_zone}), cây "{crop}", thời điểm tháng hiện tại.
+3. KHÔNG được trả lời chung chung kiểu "ở các vùng khác nhau" hay "tùy điều kiện". Phải nói rõ cho {region_zone}.
+4. Với DỮ LIỆU SỐ LIỆU (giá, nhiệt độ, lượng mưa, ngày tháng cụ thể): chỉ dùng từ backend context. Nếu không có, nói rõ "hệ thống chưa có số liệu thị trường cho khu vực này".
+5. Với KIẾN THỨC KỸ THUẬT (sâu bệnh, mùa vụ, kỹ thuật canh tác): BẮT BUỘC trả lời dựa trên kiến thức nông nghiệp Việt Nam cho {region_zone}, tháng hiện tại. Không được từ chối với lý do "thiếu dữ liệu".
+6. Không bịa giá, nhiệt độ, sản lượng cụ thể khi không có trong context.
+7. Ngắn gọn, thực tế, dễ hiểu cho nông dân. Dùng gạch đầu dòng.
+8. Không hiển thị metadata: Database, API, timestamp, engine."""
+
     prompt = (
-        f"Intent đã phân loại: {intent}\n"
+        f"Intent: {intent}\n"
         f"Cây trồng: {crop}\n"
-        f"Khu vực: {region}\n"
-        f"Ngữ cảnh người dùng gửi thêm: {user_context or 'Không có'}\n\n"
-        f"Context backend đã lọc theo intent:\n{backend_context or '{}'}\n\n"
-        f"Định dạng trả lời cần dùng:\n{_intent_format_instruction(intent)}\n\n"
-        f"Câu hỏi người dùng:\n{request.message}\n\n"
-        "Hãy trả lời đúng intent trên. Nếu context không có dữ liệu cần thiết, nói thiếu dữ liệu và hỏi thêm thông tin cần thiết."
+        f"Khu vực: {region} ({region_zone})\n\n"
+        f"=== LỊCH MÙA VỤ HIỆN TẠI ===\n{season_ctx}\n\n"
+        f"=== DỮ LIỆU BACKEND (nếu có) ===\n{backend_context or '{}'}\n\n"
+        f"Ngữ cảnh người dùng thêm: {user_context or 'Không có'}\n\n"
+        f"=== ĐỊNH DẠNG TRẢ LỜI ===\n{_intent_format_instruction(intent)}\n\n"
+        f"Câu hỏi: {request.message}\n\n"
+        f"Hãy trả lời CỤ THỂ cho {region} ({region_zone}), tháng này. "
+        "Dùng kiến thức nông nghiệp Việt Nam khi backend không có dữ liệu."
     )
     return system_instruction, prompt
 

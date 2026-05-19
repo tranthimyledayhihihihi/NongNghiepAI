@@ -47,7 +47,24 @@
       "Bash(python -c \"import app.integrations.tavily_client as m; print\\('import OK'\\); print\\('is_available:', m._is_available\\(\\)\\)\")",
       "Bash(python -c ' *)",
       "Bash(venv\\\\Scripts\\\\pip install *)",
-      "Bash(git check-ignore *)"
+      "Bash(git check-ignore *)",
+      "Bash(git rm *)",
+      "Bash(git commit -m 'Remove backend/.env from tracking \\(sensitive keys\\) *)",
+      "Bash(python -m pytest tests/test_chat_history.py -v)",
+      "Bash(python diag_fix_crops.py)",
+      "Bash(python diag_orm.py)",
+      "Bash(python -m pytest tests/test_quality_vision.py -v)",
+      "Bash(python -m pytest tests/test_quality_vision.py -q)",
+      "Bash(cd /d d:\\\\HocTap\\\\Nam3\\\\CDNNLT\\\\NongNghiepAI\\\\backend)",
+      "Bash(python -m pytest tests/ -q --no-header)",
+      "Bash(python -m pytest tests/test_weather_hourly_detail.py -v --no-header)",
+      "Bash(npx vite *)",
+      "Bash(git fetch *)",
+      "Bash(git merge *)",
+      "PowerShell(tasklist /fi \"PID eq 6976\")",
+      "Bash(python -m py_compile app/api/season.py app/models/season.py app/schemas/season_schema.py app/services/season_service.py app/services/ai_intent_service.py app/services/pricing_service.py app/api/ai_chat.py)",
+      "Bash(python diag_fix_alert.py)",
+      "Bash(python -m pytest tests/ -v --tb=short)"
     ],
     "additionalDirectories": [
       "d:\\HocTap\\Nam3\\CDNNLT\\NongNghiepAI\\backend"

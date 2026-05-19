@@ -13,10 +13,11 @@ if sys.stderr.encoding and sys.stderr.encoding.lower() != "utf-8":
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware # type: ignore
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
 from app.api import (
     ai, ai_chat, alert, auth, chat, crawler, crops, dashboard,
@@ -76,6 +77,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(OperationalError)
+@app.exception_handler(SQLAlchemyError)
+async def db_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.error("Database error on %s: %s", request.url.path, exc)
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": "Cơ sở dữ liệu tạm thời không khả dụng. Vui lòng khởi động SQL Server và thử lại.",
+            "error": "database_unavailable",
+        },
+    )
 
 app.include_router(auth.router)
 app.include_router(chat.router)

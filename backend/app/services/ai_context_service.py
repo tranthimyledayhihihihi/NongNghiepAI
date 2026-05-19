@@ -84,7 +84,6 @@ class AIContextService:
                 "trends": market_bundle.get("trends", {}),
                 "opportunities": market_bundle.get("opportunities", []),
                 "risks": market_bundle.get("risks", []),
-                "analysis": market_analysis,
             },
             "market_analysis": market_analysis,
             "pricing_analysis": market_analysis,
