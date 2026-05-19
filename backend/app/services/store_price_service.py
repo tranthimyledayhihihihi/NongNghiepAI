@@ -121,6 +121,22 @@ def _parse_price_vnd(text: str) -> int | None:
     return None
 
 
+def _friendly_error(last_error: str | None) -> str:
+    base = "Đang hiển thị ước tính dựa trên giá sỉ + markup thông thường."
+    if not last_error:
+        return base
+    e = last_error.lower()
+    if "no_api_key" in e:
+        return base
+    if "503" in e or "unavailable" in e or "experimental" in e:
+        return f"Không lấy được giá realtime (Gemini tạm thời quá tải). {base}"
+    if "429" in e or "resource_exhausted" in e:
+        return f"Không lấy được giá realtime (vượt giới hạn API). {base}"
+    if "timeout" in e:
+        return f"Không lấy được giá realtime (timeout). {base}"
+    return f"Không lấy được giá realtime. {base}"
+
+
 def _markup_fallback(crop_name: str, region: str, base_price: int, last_error: str | None) -> dict:
     today = date.today().strftime("%d/%m/%Y")
     stores_out = [
@@ -142,11 +158,7 @@ def _markup_fallback(crop_name: str, region: str, base_price: int, last_error: s
         "source": "estimated",
         "source_name": "Ước tính (giá sỉ + markup thông thường)",
         "confidence": 0.45,
-        "warning": (
-            f"Không lấy được giá realtime"
-            f"{(' (' + last_error + ')') if last_error else ''}. "
-            "Hiển thị ước tính dựa trên giá sỉ + markup thông thường."
-        ),
+        "warning": _friendly_error(last_error),
         "is_estimated": True,
         "cache_status": "miss",
         "from_cache": False,
@@ -227,7 +239,15 @@ async def _fetch_via_gemini(crop_name: str, region: str) -> dict:
 
     client = genai.Client(api_key=api_key)
     last_error: str | None = None
-    for model_name in ["gemini-2.0-flash", "gemini-2.5-flash"]:
+    # Thử theo thứ tự ưu tiên: model nhẹ/ổn trước, model nặng sau
+    model_candidates = [
+        "gemini-2.0-flash-lite",
+        "gemini-2.5-flash-lite-preview-06-17",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-2.5-flash",
+    ]
+    for model_name in model_candidates:
         try:
             response = await asyncio.wait_for(
                 client.aio.models.generate_content(
@@ -263,8 +283,12 @@ async def _fetch_via_gemini(crop_name: str, region: str) -> dict:
             last_error = "timeout"
             break
         except Exception as exc:
-            last_error = str(exc)[:80]
-            continue
+            last_error = str(exc)[:120]
+            err_text = last_error.lower()
+            # 503/429/unavailable → thử model khác; lỗi khác → dừng luôn
+            if any(t in err_text for t in ("503", "429", "unavailable", "resource_exhausted", "404", "not_found", "experimental")):
+                continue
+            break
     return {"error": last_error}
 
 
