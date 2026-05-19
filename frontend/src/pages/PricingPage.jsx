@@ -326,7 +326,7 @@ const PricingPage = () => {
                 <p className="mt-2 text-2xl font-bold text-gray-900">
                   {Number(currentPrice.global_reference.price || 0).toLocaleString('vi-VN')} {currentPrice.global_reference.unit || 'USD/ton'}
                 </p>
-                <p className="mt-1 text-xs text-gray-500">{currentPrice.global_reference.source_name || 'Twelve Data'}</p>
+                <p className="mt-1 text-xs text-gray-500">{currentPrice.global_reference.source_name || 'thitruongnongsan.gov.vn'}</p>
               </>
             ) : (
               <p className="mt-2 text-sm text-gray-500">Chưa có tham chiếu quốc tế cho nông sản này.</p>

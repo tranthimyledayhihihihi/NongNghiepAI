@@ -37,6 +37,8 @@ google-genai>=0.5.0
 tavily-python>=0.5.0
 
 # --- Crawler / Task Queue (Quang) ---
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
 scrapy>=2.11.0
 celery>=5.3.4
 celery[redis]>=5.3.4

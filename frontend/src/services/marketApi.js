@@ -83,6 +83,12 @@ export const marketApi = {
     }), 'Không gợi ý được kênh bán hàng');
   },
 
+  getStorePrices: async ({ cropName, region = 'TP.HCM' }) => {
+    return request(() => api.get('/api/market/store-prices', {
+      params: { crop_name: normalizePriceInput(cropName), region: normalizePriceInput(region) },
+    }), 'Không tải được giá chuỗi cửa hàng');
+  },
+
   getHistory: async (userId = 1, limit = 50) => {
     return request(() => api.get(`/api/market/history/${encodeURIComponent(userId)}`, {
       params: { limit },

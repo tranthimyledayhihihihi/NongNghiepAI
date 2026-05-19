@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-from typing import Any
 
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.integrations.apifarmer_client import apifarmer_client
 from app.integrations.base_market_client import MarketPriceResult
 from app.integrations.market_price_client import market_price_client
-from app.integrations.twelvedata_client import twelvedata_client
+from app.integrations.thitruongnongsan_client import thitruongnongsan_client
 from app.models.crop import Crop
 from app.models.price import MarketPrice
 from app.repositories.common import ensure_crop, normalize_text
@@ -32,18 +30,11 @@ class PriceAggregatorService:
 
         if settings.ENABLE_REALTIME_PRICE:
             try:
-                local_price = apifarmer_client.get_current_price(crop_name, selected_region)
+                local_price = thitruongnongsan_client.get_current_price(crop_name, selected_region)
                 if local_price:
                     api_results.append(local_price)
             except Exception as exc:
-                errors.append(f"APIFarmer: {exc}")
-
-            try:
-                global_price = twelvedata_client.get_current_price(crop_name, "Global Futures")
-                if global_price:
-                    api_results.append(global_price)
-            except Exception as exc:
-                errors.append(f"Twelve Data: {exc}")
+                errors.append(f"ThiTruongNongSan: {exc}")
 
         records.extend(self._result_to_record(result) for result in api_results)
         saved_result = bulk_upsert_market_prices(db, records) if records else {
@@ -128,15 +119,6 @@ class PriceAggregatorService:
         if row and self._is_fresh(row):
             return self._row_to_reference(row)
 
-        if settings.ENABLE_REALTIME_PRICE:
-            result = twelvedata_client.get_current_price(selected_crop, "Global Futures")
-            if result:
-                bulk_upsert_market_prices(db, [self._result_to_record(result)])
-                db.expire_all()
-                row = self._latest_db_price(db, selected_crop, "Global Futures", prefer_global=True)
-                if row:
-                    return self._row_to_reference(row)
-
         return self._row_to_reference(row) if row else None
 
     def get_price_sources_status(self, db: Session) -> dict:
@@ -144,18 +126,11 @@ class PriceAggregatorService:
         return {
             "sources": [
                 {
-                    "source_name": "APIFarmer",
+                    "source_name": "Thị trường nông sản Việt Nam (thitruongnongsan.gov.vn)",
                     "source_type": "local_agriculture",
-                    "enabled": bool(settings.APIFARMER_ENABLED),
-                    "configured": bool(settings.APIFARMER_API_BASE_URL and settings.APIFARMER_API_KEY),
-                    "role": "Nguồn chính cho giá nông sản Việt Nam",
-                },
-                {
-                    "source_name": "Twelve Data",
-                    "source_type": "global_commodity",
-                    "enabled": bool(settings.TWELVEDATA_ENABLED),
-                    "configured": bool(settings.TWELVEDATA_API_KEY),
-                    "role": "Nguồn tham chiếu hàng hóa quốc tế",
+                    "enabled": bool(getattr(settings, "THITRUONGNONGSAN_ENABLED", True)),
+                    "configured": True,
+                    "role": "Nguồn chính: giá và tin tức nông sản Việt Nam từ Bộ NN&PTNT",
                 },
                 {
                     "source_name": "MarketPrices DB",
@@ -433,7 +408,7 @@ class PriceAggregatorService:
             "price": float(row.PricePerKg or 0),
             "unit": "USD/ton" if (row.SourceType or "") == "global_commodity" else self._display_unit(row),
             "currency": "USD" if (row.SourceType or "") == "global_commodity" else "VND",
-            "source_name": row.SourceName or "Twelve Data",
+            "source_name": row.SourceName or "Thị trường nông sản Việt Nam",
             "source_type": row.SourceType or "global_commodity",
             "source_url": row.SourceURL,
             "observed_at": row.ObservedAt,

@@ -114,8 +114,11 @@ class QualityService:
 
         # 2. Lấy giá thực từ DB/Tavily theo grade
         price_info = self._fetch_real_price(db, effective_crop, region, grade)
+        price_unavailable = False
         if price_info.get("_api_error"):
-            return price_info
+            # Pricing thất bại — vẫn trả về kết quả chất lượng, không block
+            price_unavailable = True
+            price_info = {"min": 0, "max": 0, "suggested": 0, "multiplier": 1.0, "source": "unavailable"}
 
         final_min       = price_info["min"]
         final_max       = price_info["max"]
@@ -187,6 +190,7 @@ class QualityService:
             },
             # Nguồn giá và hệ số chất lượng
             "price_source":        price_info.get("source", ""),
+            "price_unavailable":   price_unavailable,
             "quality_multiplier":  price_info.get("multiplier", 1.0),
             # Thông tin thời tiết kèm theo
             "weather_factor":      pricing.get("weather_factor", 1.0),

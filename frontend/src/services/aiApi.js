@@ -30,10 +30,10 @@ export const aiApi = {
   },
 
   deleteMessage: async (convId) => {
-    return request(() => api.delete(`/api/chat/history/${convId}`), 'Không xóa được tin chat');
+    return request(() => api.delete(`/api/ai-chat/history/${convId}`), 'Không xóa được tin chat');
   },
 
   clearHistory: async () => {
-    return request(() => api.delete('/api/chat/history'), 'Không xóa được lịch sử chat');
+    return request(() => api.delete('/api/ai-chat/history'), 'Không xóa được lịch sử chat');
   },
 };

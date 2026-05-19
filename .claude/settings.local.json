@@ -14,7 +14,10 @@
       "PowerShell(Get-WmiObject Win32_Process | Where-Object { $_.Name -match \"python\" } | Select-Object ProcessId, CommandLine | Format-List)",
       "Bash(curl -s --max-time 5 http://localhost:8001/health)",
       "Bash(curl -s --max-time 5 http://localhost:8001/api/crops)",
-      "Bash(curl -s --max-time 5 http://localhost:8001/db-test)"
+      "Bash(curl -s --max-time 5 http://localhost:8001/db-test)",
+      "Bash(cd /d \"d:\\\\HocTap\\\\Nam3\\\\CDNNLT\\\\NongNghiepAI\")",
+      "Bash(python -c ' *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }

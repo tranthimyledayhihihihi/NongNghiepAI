@@ -55,8 +55,21 @@ async def get_market_news(
     db: Session = Depends(get_db),
 ):
     payload = market_news_service.get_market_news(db, limit=limit, crop=crop or crop_name, region=region)
+    # Trả 200 kể cả khi không có tin — không để lỗi này phá vỡ toàn bộ trang
     if payload.get("_api_error"):
-        return error_response(payload.get("error_message") or "Không thể tải tin tức thị trường realtime.")
+        return {
+            "success": True,
+            "data": [],
+            "news": [],
+            "source": "realtime_api",
+            "is_realtime": False,
+            "is_cache": False,
+            "is_mock": False,
+            "warning": payload.get("error_message") or "Tin tức thị trường đang được tải. Vui lòng thử lại sau.",
+            "error": None,
+            "message": "no_data",
+            "metadata": {"cache_status": "miss", "source_type": "realtime_api"},
+        }
     metadata = payload.get("metadata") or {
         "source_type": "realtime" if payload.get("is_realtime") else payload.get("source", "database"),
         "fetched_at": payload.get("fetched_at"),
@@ -76,6 +89,25 @@ async def get_market_news(
         "metadata": metadata,
         "message": payload.get("message", "OK"),
     }
+
+
+@router.get("/store-prices")
+async def get_store_prices(
+    crop_name: str = Query(..., description="Tên nông sản"),
+    region: str = Query(default="TP.HCM", description="Khu vực"),
+    db: Session = Depends(get_db),
+):
+    from app.services.store_price_service import fetch_store_prices
+    base_data = pricing_service.get_current_price(db, crop_name, region, "grade_1", include_weather=False)
+    base_price = int(base_data.get("current_price") or base_data.get("price") or 0)
+    result = await fetch_store_prices(crop_name, region, base_price=base_price)
+    return api_response(
+        result,
+        source=result.get("source", "gemini_search"),
+        source_name=result.get("source_name", "Gemini Google Search"),
+        confidence=result.get("confidence", 0.45 if result.get("is_estimated") else 0.72),
+        cache_status=result.get("cache_status", "miss"),
+    )
 
 
 @router.get("/prices")

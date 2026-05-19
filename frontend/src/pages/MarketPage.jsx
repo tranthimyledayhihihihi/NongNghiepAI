@@ -1,4 +1,4 @@
-import { Globe, RefreshCw, Search, ShoppingCart, TrendingUp } from 'lucide-react';
+import { Globe, RefreshCw, Search, ShoppingCart, Store, TrendingUp, AlertTriangle } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import DataSourceBadge from '../components/DataSourceBadge';
 import { getApiErrorMessage } from '../services/api';
@@ -37,6 +37,8 @@ const MarketPage = () => {
   const [error, setError] = useState(null);
   const [newsLoading, setNewsLoading] = useState(false);
   const [newsError, setNewsError] = useState(null);
+  const [storePrices, setStorePrices] = useState(null);
+  const [storePricesLoading, setStorePricesLoading] = useState(false);
 
   const normalizedInputs = useMemo(
     () => ({
@@ -81,7 +83,8 @@ const MarketPage = () => {
     setNewsError(null);
 
     try {
-      const [analysisData, priceData, newsData] = await Promise.all([
+      // Tải phân tích và giá song song — không bao gồm news để tránh block khi news chậm
+      const [analysisResult, priceResult] = await Promise.allSettled([
         marketApi.analyzeMarket({
           cropName: normalizedInputs.cropName,
           region: normalizedInputs.region,
@@ -93,20 +96,41 @@ const MarketPage = () => {
           region: normalizedInputs.region,
           qualityGrade: normalizedInputs.qualityGrade,
         }),
-        marketApi.getMarketNews({
-          limit: 4,
-          crop: normalizedInputs.cropName,
-          region: normalizedInputs.region,
-        }),
       ]);
 
-      setAnalysis(analysisData);
-      setMarketPrice(priceData);
-      setNews(newsData?.news || []);
+      if (analysisResult.status === 'fulfilled') {
+        setAnalysis(analysisResult.value);
+      } else {
+        setError(getApiErrorMessage(analysisResult.reason, 'Không thể phân tích thị trường.'));
+      }
+      if (priceResult.status === 'fulfilled') {
+        setMarketPrice(priceResult.value);
+      }
+
+      // Tải news riêng — lỗi ở đây không ảnh hưởng phần phân tích
+      setNewsLoading(true);
+      marketApi.getMarketNews({
+        limit: 4,
+        crop: normalizedInputs.cropName,
+        region: normalizedInputs.region,
+      }).then((newsData) => {
+        setNews(newsData?.news || []);
+        if (!newsData?.news?.length && newsData?.warning) {
+          setNewsError(newsData.warning);
+        }
+      }).catch((err) => {
+        setNewsError(getApiErrorMessage(err, 'Không thể tải tin tức thị trường.'));
+      }).finally(() => setNewsLoading(false));
+
+      // Fetch giá chuỗi cửa hàng song song sau khi có dữ liệu phân tích
+      setStorePrices(null);
+      setStorePricesLoading(true);
+      marketApi.getStorePrices({
+        cropName: normalizedInputs.cropName,
+        region: normalizedInputs.region,
+      }).then((d) => setStorePrices(d)).catch(() => setStorePrices({ stores: [], error: 'Không tải được giá chuỗi cửa hàng.' })).finally(() => setStorePricesLoading(false));
     } catch (err) {
-      setError(getApiErrorMessage(err, 'Không thể phân tích thị trường realtime.'));
-      setNews([]);
-      setNewsError('Không thể tải tin tức thị trường realtime.');
+      setError(getApiErrorMessage(err, 'Không thể phân tích thị trường.'));
     } finally {
       setLoading(false);
     }
@@ -287,7 +311,7 @@ const MarketPage = () => {
                 <p className="mt-2 text-2xl font-bold text-gray-900">
                   {Number(analysis.global_reference.price || 0).toLocaleString('vi-VN')} {analysis.global_reference.unit || 'USD/ton'}
                 </p>
-                <p className="mt-1 text-xs text-gray-500">{analysis.global_reference.source_name || 'Twelve Data'}</p>
+                <p className="mt-1 text-xs text-gray-500">{analysis.global_reference.source_name || 'thitruongnongsan.gov.vn'}</p>
               </>
             ) : (
               <p className="mt-2 text-sm text-gray-500">Chưa có dữ liệu tham chiếu quốc tế.</p>
@@ -398,6 +422,105 @@ const MarketPage = () => {
           );
         })}
       </div>
+
+      {/* ── Store price comparison (realtime) ──────────────────────────── */}
+      {(storePricesLoading || storePrices) && (
+        <section className="rounded-lg border border-gray-200 bg-white p-6 shadow">
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <Store className="h-5 w-5 text-green-700" />
+            <h2 className="text-lg font-semibold text-gray-900">Giá tại chuỗi cửa hàng lớn</h2>
+            {storePrices && !storePricesLoading && (
+              <DataSourceBadge data={{ source: storePrices.source || 'gemini_search', source_name: storePrices.source_name || 'Gemini Google Search', confidence: storePrices.confidence || 0.72 }} />
+            )}
+          </div>
+
+          {storePricesLoading && (
+            <div className="flex items-center gap-3 py-6 text-sm text-gray-500">
+              <div className="h-4 w-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
+              Đang tìm giá thực tế tại các chuỗi cửa hàng...
+            </div>
+          )}
+
+          {!storePricesLoading && storePrices?.error && !storePrices?.stores?.length && (
+            <div className="flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              {storePrices.error}
+            </div>
+          )}
+
+          {!storePricesLoading && storePrices?.stores?.length > 0 && (
+            <>
+              {storePrices.warning && (
+                <div className="mb-3 flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  {storePrices.warning}
+                </div>
+              )}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 text-left">
+                      <th className="pb-3 pr-4 font-semibold text-gray-700">Chuỗi cửa hàng</th>
+                      <th className="pb-3 pr-4 font-semibold text-gray-700">Loại hình</th>
+                      <th className="pb-3 pr-4 font-semibold text-gray-700 text-right">Giá (đ/kg)</th>
+                      <th className="pb-3 font-semibold text-gray-700 text-right">So với sỉ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {analysis?.current_price > 0 && (
+                      <tr className="border-b border-gray-50 bg-gray-50">
+                        <td className="py-3 pr-4 font-semibold text-gray-600">Chợ đầu mối / thương lái</td>
+                        <td className="py-3 pr-4 text-gray-400">Sỉ</td>
+                        <td className="py-3 pr-4 text-right font-bold text-gray-900">
+                          {Number(analysis.current_price).toLocaleString('vi-VN')}
+                        </td>
+                        <td className="py-3 text-right text-xs text-gray-400">— cơ sở</td>
+                      </tr>
+                    )}
+                    {storePrices.stores.map((store) => {
+                      const diffPct = analysis?.current_price > 0
+                        ? (((store.price - analysis.current_price) / analysis.current_price) * 100).toFixed(0)
+                        : null;
+                      return (
+                        <tr key={store.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
+                          <td className="py-3 pr-4 font-semibold text-gray-900">
+                            {store.name}
+                            {store.is_estimated && (
+                              <span className="ml-2 text-xs font-normal text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">ước tính</span>
+                            )}
+                          </td>
+                          <td className="py-3 pr-4 text-gray-500">{store.type}</td>
+                          <td className="py-3 pr-4 text-right font-bold text-gray-900">
+                            {Number(store.price).toLocaleString('vi-VN')}
+                          </td>
+                          <td className="py-3 text-right">
+                            {diffPct !== null ? (
+                              <span className={`text-xs font-semibold ${Number(diffPct) > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                                {Number(diffPct) > 0 ? '+' : ''}{diffPct}%
+                              </span>
+                            ) : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-3 text-xs text-gray-400">
+                {storePrices.is_estimated
+                  ? `* Giá ước tính dựa trên giá sỉ + markup thông thường — ${storePrices.fetched_at}. Có thể dao động theo chuỗi và thời điểm.`
+                  : `* Giá tìm kiếm realtime qua Gemini Google Search — ${storePrices.fetched_at}. Có thể dao động theo chi nhánh và thời điểm.`}
+              </p>
+            </>
+          )}
+
+          {!storePricesLoading && storePrices?.stores?.length === 0 && !storePrices?.error && (
+            <p className="text-sm text-gray-500 py-4">
+              Chưa tìm thấy giá tại các chuỗi cửa hàng cho <strong>{normalizedInputs.cropName}</strong> tại <strong>{normalizedInputs.region}</strong>.
+            </p>
+          )}
+        </section>
+      )}
 
       <section className="mt-8 rounded-lg border border-gray-200 bg-white p-6 shadow">
         <div className="mb-4 flex flex-wrap items-center gap-3">

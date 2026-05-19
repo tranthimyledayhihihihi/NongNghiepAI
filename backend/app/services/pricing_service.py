@@ -16,7 +16,6 @@ from app.core.config import settings
 from app.repositories.common import ensure_crop, normalize_text, to_db_grade
 from app.repositories.price_repository import (
     create_pricing_request,
-    get_latest_price,
     get_latest_prices_by_crop,
     get_price_history,
     get_recent_market_prices,
@@ -129,76 +128,6 @@ class PricingService:
                     float(result.get("current_price") or 0),
                 )
             )
-        return result
-
-        if not force_refresh:
-            cache_key = f"price:{selected_crop}:{selected_region}:{selected_grade}"
-            cached = redis_client.get(cache_key)
-            if cached and isinstance(cached, dict):
-                return cached
-
-        if force_refresh:
-            price_aggregator_service.refresh_prices(db, crop_name=selected_crop)
-
-        latest_price = get_latest_price(db, selected_crop, selected_region, selected_grade)
-        if latest_price is None and settings.ENABLE_STOOQ_PRICE_SOURCE:
-            refresh_result = price_aggregator_service.refresh_prices(db, crop_name=selected_crop)
-            if refresh_result.get("status") == "success":
-                latest_price = get_latest_price(db, selected_crop, selected_region, selected_grade)
-
-        if latest_price:
-            current_price = float(latest_price.PricePerKg)
-            source = "database"
-            source_name = latest_price.SourceName or "MarketPrices DB"
-            source_url = latest_price.SourceURL
-            last_updated = latest_price.UpdatedAt
-            price_date = latest_price.PriceDate
-            is_mock = False
-            cache_status = self._cache_status(latest_price.UpdatedAt)
-        else:
-            current_price = self._get_price_from_crop_profile(db, selected_crop, selected_region, selected_grade)
-            source = "mock"
-            source_name = "Dữ liệu mô phỏng"
-            source_url = None
-            last_updated = datetime.now()
-            price_date = None
-            is_mock = True
-            cache_status = "mock"
-
-        previous_price = self._previous_price(db, selected_crop, selected_region, selected_grade)
-        price_change = round(current_price - previous_price, 2) if previous_price else 0.0
-        price_change_percent = round((price_change / previous_price) * 100, 2) if previous_price else 0.0
-        trend = self._trend_from_change(price_change_percent)
-
-        result = {
-            "crop_name": crop_name.strip(),
-            "crop": crop_name.strip(),
-            "region": selected_region,
-            "current_price": round(float(current_price), 2),
-            "market_price": round(float(current_price), 2),
-            "price": round(float(current_price), 2),
-            "unit": "VNĐ/kg",
-            "quality_grade": selected_grade,
-            "price_trend": self.analyze_price_trend(db, selected_crop, selected_region),
-            "trend": trend,
-            "price_change": round(price_change, 2),
-            "price_change_percent": round(price_change_percent, 2),
-            "last_updated": last_updated,
-            "fetched_at": last_updated,
-            "price_date": price_date,
-            "source": source,
-            "source_type": source,
-            "source_name": source_name,
-            "source_url": source_url,
-            "cache_status": cache_status,
-            "is_mock": is_mock,
-            "confidence": 0.84 if not is_mock else 0.42,
-            "data_age_minutes": self._age_minutes(last_updated),
-        }
-
-        if include_weather:
-            result.update(self._safe_weather_adjustment(db, selected_crop, selected_region, current_price))
-
         return result
 
     def refresh_current_price(self, db: Session, crop_name: str, region: str, quality_grade: str = "grade_1") -> dict:
@@ -664,7 +593,7 @@ class PricingService:
             data_sources.append(
                 {
                     "source_type": current["global_reference"].get("source_type", "global_commodity"),
-                    "source_name": current["global_reference"].get("source_name", "Twelve Data"),
+                    "source_name": current["global_reference"].get("source_name", "thitruongnongsan.gov.vn"),
                     "source_url": current["global_reference"].get("source_url"),
                     "fetched_at": self._serialize_dt(current["global_reference"].get("fetched_at")),
                 }
