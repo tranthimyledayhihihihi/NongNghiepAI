@@ -218,10 +218,13 @@ def _scrape_all_stores_sync(crop_name: str) -> dict[str, int]:
 
 # ── Gemini fallback ────────────────────────────────────────────────────────────
 
-async def _fetch_via_gemini(crop_name: str, region: str) -> dict:
+async def _fetch_via_gemini(crop_name: str, region: str, timeout: float | None = None) -> dict:
     api_key = _get_gemini_key()
     if not api_key:
         return {}
+
+    # Timeout mỗi model = tối đa 8s hoặc phần budget còn lại, tối thiểu 3s
+    per_model_timeout = min(8.0, max(3.0, timeout or 8.0))
 
     today = date.today().strftime("%d/%m/%Y")
     store_names = ", ".join(s["name"] for s in STORES)
@@ -258,7 +261,7 @@ async def _fetch_via_gemini(crop_name: str, region: str) -> dict:
                         temperature=0.1,
                     ),
                 ),
-                timeout=float(settings.AI_TIMEOUT_SECONDS),
+                timeout=per_model_timeout,
             )
             raw = (getattr(response, "text", None) or "").strip()
             if not raw:
@@ -325,15 +328,20 @@ async def fetch_store_prices(crop_name: str, region: str, base_price: int = 0) -
             base_price = 25_000
         return _markup_fallback(crop_name, region, base_price, "no_api_key_configured")
 
-    # ── Bước 1: scrape trực tiếp ──────────────────────────────────────────────
+    # ── Bước 1 + 2: scrape + Gemini trong budget tổng 13s ────────────────────
+    # Frontend timeout = 18s; để lại 5s cho overhead mạng + DB
+    _BUDGET = 13.0
+    _deadline = time.time() + _BUDGET
+
     loop = asyncio.get_running_loop()
+    scraped: dict[str, int] = {}
     try:
+        scrape_timeout = min(5.0, max(1.0, _deadline - time.time()))
         scraped = await asyncio.wait_for(
             loop.run_in_executor(None, _scrape_all_stores_sync, crop_name),
-            timeout=10.0,
+            timeout=scrape_timeout,
         )
     except Exception as exc:
-        scraped = {}
         last_error = str(exc)[:80]
 
     stores_out = []
@@ -364,11 +372,14 @@ async def fetch_store_prices(crop_name: str, region: str, base_price: int = 0) -
         _CACHE[cache_key] = (result, now)
         return result
 
-    # ── Bước 2: Gemini fallback ───────────────────────────────────────────────
-    gemini_result = await _fetch_via_gemini(crop_name, region)
+    # ── Bước 2: Gemini fallback (chỉ nếu còn đủ thời gian) ──────────────────
+    gemini_budget = _deadline - time.time()
+    gemini_result: dict = {}
+    if gemini_budget >= 3.0:
+        gemini_result = await _fetch_via_gemini(crop_name, region, timeout=gemini_budget)
+
     if gemini_result.get("prices"):
         prices_by_id: dict[str, int] = gemini_result["prices"]
-        # Merge với kết quả scrape (nếu có)
         for store in STORES:
             if store["id"] in scraped and store["id"] not in prices_by_id:
                 prices_by_id[store["id"]] = scraped[store["id"]]
