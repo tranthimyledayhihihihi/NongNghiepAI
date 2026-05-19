@@ -1,48 +1,124 @@
-import { AlertCircle, Inbox, Loader2, RefreshCw } from 'lucide-react';
+import React from 'react';
+import { AlertCircle, Loader2, RefreshCw } from 'lucide-react';
+import DataSourceBadge from './DataSourceBadge';
+import { API_FAILURE_MESSAGE } from '../utils/apiResponse';
 
-export const PageError = ({ message, title = 'Có lỗi xảy ra', onRetry, actionLabel = 'Thử lại' }) => (
-  <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-    <div className="flex items-start gap-3">
-      <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
-      <div className="flex-1">
-        <p className="font-medium">{title}</p>
-        <p className="mt-1">{message}</p>
-        {onRetry && (
-          <button
-            type="button"
-            onClick={onRetry}
-            className="mt-3 inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 font-medium text-red-700 hover:bg-red-100"
-          >
-            <RefreshCw className="h-4 w-4" />
-            {actionLabel}
-          </button>
-        )}
+export function StatusState({
+  status = 'idle',
+  title,
+  message,
+  error,
+  source,
+  actions,
+  onRetry,
+  retryLabel = 'Thử lại',
+  className = '',
+  showSourceBadge = true,
+}) {
+  const isLoading = status === 'loading';
+  const isError = status === 'error';
+  const isEmpty = status === 'empty';
+
+  const resolvedTitle =
+    title ||
+    (isError
+      ? 'Không thể tải dữ liệu'
+      : isLoading
+        ? 'Đang tải dữ liệu'
+        : isEmpty
+          ? 'Chưa có dữ liệu'
+          : 'Hoàn tất');
+
+  const resolvedMessage =
+    message ||
+    error ||
+    (isError
+      ? API_FAILURE_MESSAGE
+      : isLoading
+        ? 'Vui lòng chờ trong giây lát.'
+        : isEmpty
+          ? 'Hiện chưa có dữ liệu hiển thị.'
+          : '');
+
+  const icon = isLoading ? (
+    <Loader2 className="h-5 w-5 animate-spin text-sky-600" />
+  ) : isError ? (
+    <AlertCircle className="h-5 w-5 text-red-600" />
+  ) : (
+    <RefreshCw className="h-5 w-5 text-slate-500" />
+  );
+
+  return (
+    <div className={['rounded-2xl border border-slate-200 bg-white p-4 shadow-sm', className].filter(Boolean).join(' ')}>
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5">{icon}</div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-semibold text-slate-900">{resolvedTitle}</h3>
+            {showSourceBadge && source ? <DataSourceBadge source={source} compact /> : null}
+          </div>
+          {resolvedMessage ? <p className="mt-1 text-sm text-slate-600">{resolvedMessage}</p> : null}
+          {(actions || onRetry) ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {onRetry ? (
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  className="inline-flex items-center rounded-full bg-slate-900 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-slate-800"
+                >
+                  {retryLabel}
+                </button>
+              ) : null}
+              {actions}
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
+}
 
-export const ErrorState = ({
-  title = 'Không thể tải dữ liệu realtime',
-  message = 'API realtime đang lỗi hoặc phản hồi quá chậm. Vui lòng thử lại sau.',
-  actionLabel = 'Thử lại',
-  onRetry,
-}) => (
-  <PageError title={title} message={message} actionLabel={actionLabel} onRetry={onRetry} />
-);
+export function EmptyState({ title, description, source, actions, onRetry, retryLabel, className, showSourceBadge }) {
+  return (
+    <StatusState
+      status="empty"
+      title={title}
+      message={description}
+      source={source}
+      actions={actions}
+      onRetry={onRetry}
+      retryLabel={retryLabel}
+      className={className}
+      showSourceBadge={showSourceBadge}
+    />
+  );
+}
 
-export const EmptyState = ({ title = 'Chưa có dữ liệu', description, action }) => (
-  <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center">
-    <Inbox className="mx-auto h-12 w-12 text-gray-400" />
-    <p className="mt-4 font-semibold text-gray-900">{title}</p>
-    {description && <p className="mx-auto mt-2 max-w-md text-sm text-gray-600">{description}</p>}
-    {action && <div className="mt-5">{action}</div>}
-  </div>
-);
+export function InlineLoading({ text = 'Đang tải dữ liệu...', className = '', source, showSourceBadge = true }) {
+  return (
+    <StatusState
+      status="loading"
+      message={text}
+      source={source}
+      className={className}
+      showSourceBadge={showSourceBadge}
+    />
+  );
+}
 
-export const InlineLoading = ({ text = 'Đang tải dữ liệu...' }) => (
-  <div className="flex items-center justify-center gap-3 rounded-lg border border-gray-200 bg-white p-8 text-gray-600">
-    <Loader2 className="h-5 w-5 animate-spin text-green-700" />
-    <span className="text-sm font-medium">{text}</span>
-  </div>
-);
+export function PageError({ message, error, source, onRetry, retryLabel = 'Thử lại', className = '', showSourceBadge = true }) {
+  return (
+    <StatusState
+      status="error"
+      message={message}
+      error={error}
+      source={source}
+      onRetry={onRetry}
+      retryLabel={retryLabel}a
+      className={className}
+      showSourceBadge={showSourceBadge}
+    />
+  );
+}
+
+export default StatusState;

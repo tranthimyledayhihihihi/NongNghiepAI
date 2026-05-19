@@ -13,7 +13,9 @@ def upsert_market_news(db: Session, records: list[dict]) -> dict:
     updated = 0
     unique_records = {}
     for index, record in enumerate(records):
-        source_url = record.get("source_url") or record.get("url") or f"internal-news-{index}-{record.get('title')}"
+        source_url = record.get("source_url") or record.get("url")
+        if not source_url:
+            continue
         record["source_url"] = source_url
         record.setdefault("url", source_url)
         if source_url:
@@ -43,6 +45,7 @@ def upsert_market_news(db: Session, records: list[dict]) -> dict:
             row.ImpactLevel = record.get("impact_level")
             row.ImpactScore = record.get("impact_score")
             row.IsRealtime = bool(record.get("is_realtime", False))
+            row.IsMock = bool(record.get("is_mock", False))
             row.Metadata = record.get("metadata")
         except Exception:
             continue

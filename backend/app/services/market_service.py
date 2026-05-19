@@ -61,6 +61,13 @@ class MarketService:
                 quality_grade=request.quality_grade,
             ),
         )
+        if pricing.get("_api_error"):
+            return {
+                **pricing,
+                "recommended_channel": None,
+                "profit_comparison": [],
+                "warning": pricing.get("error_message"),
+            }
         base_price = pricing["suggested_price"]
         channel_source = self.get_channels(db, request.region)
         channels = self._build_channel_list(

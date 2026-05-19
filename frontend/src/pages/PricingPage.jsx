@@ -194,9 +194,11 @@ const PricingPage = () => {
   };
 
   const trend = trendMeta[currentPrice?.trend || currentPrice?.price_trend] || trendMeta.stable;
-  const sourceNotice = currentPrice?.is_mock
-    ? 'Dữ liệu này là mô phỏng, chưa phải giá thị trường thực tế.'
-    : 'Dữ liệu giá lấy từ nguồn thực tế hoặc cơ sở dữ liệu nội bộ.';
+  const sourceNotice = currentPrice?._api_error
+    ? 'Không thể tải dữ liệu thực tế hiện tại. Vui lòng thử lại sau.'
+    : currentPrice?.is_mock
+      ? 'Không thể tải dữ liệu thực tế hiện tại. Vui lòng thử lại sau.'
+      : 'Dữ liệu giá lấy từ nguồn thực tế hoặc cơ sở dữ liệu nội bộ.';
 
   return (
     <div className="space-y-6">
@@ -321,12 +323,12 @@ const PricingPage = () => {
 
           <div className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
             <p className="text-sm text-gray-600">Tham chiếu quốc tế</p>
-            {currentPrice.global_reference ? (
+              {currentPrice.global_reference ? (
               <>
                 <p className="mt-2 text-2xl font-bold text-gray-900">
                   {Number(currentPrice.global_reference.price || 0).toLocaleString('vi-VN')} {currentPrice.global_reference.unit || 'USD/ton'}
                 </p>
-                <p className="mt-1 text-xs text-gray-500">{currentPrice.global_reference.source_name || 'thitruongnongsan.gov.vn'}</p>
+                <p className="mt-1 text-xs text-gray-500">{currentPrice.global_reference.source_name || 'Nguồn tham chiếu quốc tế'}</p>
               </>
             ) : (
               <p className="mt-2 text-sm text-gray-500">Chưa có tham chiếu quốc tế cho nông sản này.</p>

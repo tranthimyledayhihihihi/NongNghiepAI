@@ -25,6 +25,7 @@ class MarketNews(Base):
     ImpactLevel = Column("ImpactLevel", String(20), nullable=True)
     ImpactScore = Column("ImpactScore", Float, nullable=True)
     IsRealtime = Column("IsRealtime", Boolean, nullable=True, default=False)
+    IsMock = Column("IsMock", Boolean, nullable=True, default=False)
     Metadata = Column("Metadata", JSON, nullable=True)
     CreatedAt = Column("CreatedAt", DateTime, server_default=func.now(), nullable=False)
 
@@ -45,5 +46,6 @@ class MarketNews(Base):
     impact_level = synonym("ImpactLevel")
     impact_score = synonym("ImpactScore")
     is_realtime = synonym("IsRealtime")
+    is_mock = synonym("IsMock")
     metadata_json = synonym("Metadata")
     created_at = synonym("CreatedAt")

@@ -1,467 +1,317 @@
-"""
-Scraper chính thức cho cổng Thị Trường Nông Sản Việt Nam
-  Giá:     https://thitruongnongsan.gov.vn/vn/nguonwmy.aspx
-  Tin tức: https://thitruongnongsan.gov.vn/vn/xc0_tin-tuc.html
-"""
 from __future__ import annotations
 
+import html
 import re
-import threading
-import time
-import unicodedata
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Any
+from urllib.parse import urljoin
 
-import httpx
-from bs4 import BeautifulSoup
-
-from app.core.config import settings
-from app.integrations.base_market_client import BaseMarketClient, MarketPriceResult
-
-BASE_URL = "https://thitruongnongsan.gov.vn"
-PRICE_URL = f"{BASE_URL}/vn/nguonwmy.aspx"
-NEWS_URL = f"{BASE_URL}/vn/xc0_tin-tuc.html"
-
-_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-    "Referer": BASE_URL,
-}
-
-# Tên chuẩn hóa → biến thể tiếng Việt xuất hiện trên trang
-CROP_VARIANTS: dict[str, list[str]] = {
-    "lua": ["lúa tẻ", "lúa nếp", "lúa", "thóc"],
-    "gao": ["gạo tẻ", "gạo nếp", "gạo"],
-    "ca phe": ["cà phê", "café", "robusta", "arabica"],
-    "ho tieu": ["hồ tiêu", "tiêu đen", "tiêu sọ", "tiêu"],
-    "dieu": ["điều", "hạt điều"],
-    "ngo": ["ngô", "bắp ngô", "bắp"],
-    "sau rieng": ["sầu riêng"],
-    "xoai": ["xoài"],
-    "thanh long": ["thanh long"],
-    "chuoi": ["chuối"],
-    "cam": ["cam sành", "cam"],
-    "buoi": ["bưởi"],
-    "mit": ["mít"],
-    "dua hau": ["dưa hấu"],
-    "ca chua": ["cà chua"],
-    "dua chuot": ["dưa chuột", "dưa leo"],
-    "ot": ["ớt chuông", "ớt"],
-    "hanh": ["hành tây", "hành lá", "hành"],
-    "toi": ["tỏi"],
-    "khoai lang": ["khoai lang"],
-    "khoai tay": ["khoai tây"],
-    "rau muong": ["rau muống"],
-    "cai xanh": ["cải xanh", "cải"],
-    "dau nanh": ["đậu nành", "đậu tương"],
-    "lac": ["lạc", "đậu phộng"],
-    "mia": ["mía"],
-    "dua": ["dừa"],
-    "tieu": ["hồ tiêu", "tiêu"],
-}
+from app.core.real_data import (
+    OFFICIAL_AGRI_SOURCE_NAME,
+    OFFICIAL_NEWS_URL,
+    OFFICIAL_PRICE_URL,
+    external_circuit_breaker,
+)
+from app.core.resilience import build_timeout, resilient_request
+from app.repositories.common import normalize_text
 
 
-def _norm(text: str) -> str:
-    """Chuẩn hoá tiếng Việt để so sánh không phân biệt dấu."""
-    text = unicodedata.normalize("NFD", (text or "").lower())
-    text = "".join(c for c in text if unicodedata.category(c) != "Mn")
-    return re.sub(r"\s+", " ", text.replace("đ", "d")).strip()
+class ThiTruongNongSanError(RuntimeError):
+    pass
 
 
-class ThiTruongNongSanClient(BaseMarketClient):
-    """Scraper cho thitruongnongsan.gov.vn – nguồn giá và tin tức chính thức của Bộ NN&PTNT."""
+class ThiTruongNongSanClient:
+    price_url = OFFICIAL_PRICE_URL
+    news_url = OFFICIAL_NEWS_URL
+    source_name = OFFICIAL_AGRI_SOURCE_NAME
 
-    # class-level in-memory cache để tất cả instance chia sẻ
-    _price_rows: list[dict] = []
-    _price_fetched_at: float = 0.0
-    _news_items: list[dict] = []
-    _news_fetched_at: float = 0.0
-    _PRICE_TTL = 3600   # 1 giờ
-    _NEWS_TTL = 7200    # 2 giờ
-    _fetching: dict[str, bool] = {"price": False, "news": False}  # lock per type
+    PRICE_TIMEOUT = build_timeout(total=15, connect=5, read=12)
+    NEWS_TIMEOUT = build_timeout(total=12, connect=5, read=10)
 
-    # ──────────────────────────── public API ────────────────────────────
-
-    def get_current_price(
+    def fetch_prices(
         self,
-        crop_name: str,
+        crop_name: str | None = None,
+        *,
         region: str | None = None,
-        quality_grade: str = "grade_1",  # noqa: ARG002
-        **kwargs: Any,
-    ) -> MarketPriceResult | None:
-        rows = self._get_price_rows()
-        if not rows:
-            return None
+        days: int = 30,
+    ) -> list[dict]:
+        categories = self._categories_for_crop(crop_name)
+        all_records: list[dict] = []
+        requested_crop = normalize_text(crop_name or "")
+        for category in categories:
+            all_records.extend(
+                self._fetch_price_category(
+                    category,
+                    requested_crop=requested_crop,
+                    region=region,
+                    days=days,
+                )
+            )
+        return all_records
 
-        norm_input = _norm(crop_name)
-        variants = [_norm(v) for v in CROP_VARIANTS.get(norm_input, [])]
-        if not variants:
-            variants = [norm_input]
+    def fetch_news(self, limit: int = 30) -> list[dict]:
+        key = "thitruongnongsan_news"
+        external_circuit_breaker.before_call(key)
+        try:
+            response = resilient_request(
+                "GET",
+                self.news_url,
+                headers=self._headers(),
+                timeout=self.NEWS_TIMEOUT,
+                retries=1,
+                backoff=0.5,
+                service_name="thitruongnongsan_news",
+            )
+            records = self._parse_news(response.text, limit=limit)
+            external_circuit_breaker.record_success(key)
+            return records
+        except Exception as exc:
+            external_circuit_breaker.record_failure(key, exc)
+            raise ThiTruongNongSanError(str(exc)) from exc
 
-        target_region = _norm(region or "")
-        best: dict | None = None
-
-        for row in rows:
-            name_n = _norm(row.get("name", ""))
-            region_n = _norm(row.get("region", ""))
-            # Kiểm tra tên nông sản có khớp không
-            name_ok = any(v in name_n or name_n.startswith(v) for v in variants)
-            if not name_ok:
-                continue
-            # Ưu tiên khớp khu vực
-            region_ok = not target_region or (target_region in region_n or region_n in target_region)
-            if region_ok:
-                best = row
-                break
-            if best is None:
-                best = row  # lưu kết quả bất kỳ để dùng nếu không có khớp khu vực
-
-        if not best:
-            return None
-
-        return MarketPriceResult(
-            crop_name=crop_name,
-            region=best.get("region") or region or "Vietnam",
-            price=float(best["price"]),
-            unit="VNĐ/kg",
-            currency="VND",
-            source_type="local_agriculture",
-            source_name="Thị trường nông sản Việt Nam (thitruongnongsan.gov.vn)",
-            source_url=PRICE_URL,
-            observed_at=_parse_vn_date(best.get("date", "")),
-            fetched_at=datetime.now(),
-            confidence_score=0.83,
-            is_realtime=True,
-            metadata={"raw_name": best.get("name"), "unit": best.get("unit", "đ/kg")},
-        )
-
-    def get_price_history(
+    def _fetch_price_category(
         self,
-        crop_name: str,
-        region: str | None = None,
-        days: int = 30,  # noqa: ARG002
-        **kwargs: Any,
-    ) -> list[MarketPriceResult]:
-        # Trang chỉ cung cấp snapshot ngày hôm nay
-        result = self.get_current_price(crop_name, region)
-        return [result] if result else []
-
-    def search_market_news(self, limit: int = 20, **kwargs: Any) -> list[dict]:
-        return self._get_news_items()[:limit]
-
-    def enabled(self) -> bool:
-        return bool(getattr(settings, "THITRUONGNONGSAN_ENABLED", True))
-
-    def _trigger_background_fetch(self, kind: str) -> None:
-        """Chạy HTTP fetch trong daemon thread – không bao giờ block event loop."""
-        if ThiTruongNongSanClient._fetching.get(kind):
-            return  # đang fetch rồi, bỏ qua
-        ThiTruongNongSanClient._fetching[kind] = True
-
-        def _run():
-            try:
-                if kind == "price":
-                    rows = self._fetch_price_page()
-                    ThiTruongNongSanClient._price_rows = rows
-                    ThiTruongNongSanClient._price_fetched_at = time.time()
-                else:
-                    items = self._fetch_news_page()
-                    ThiTruongNongSanClient._news_items = items
-                    ThiTruongNongSanClient._news_fetched_at = time.time()
-            except Exception:
-                pass
-            finally:
-                ThiTruongNongSanClient._fetching[kind] = False
-
-        threading.Thread(target=_run, daemon=True, name=f"ttngs-{kind}").start()
-
-    # ──────────────────────────── price fetching ────────────────────────────
-
-    def _get_price_rows(self) -> list[dict]:
-        """Trả về từ cache ngay; nếu cache cũ/rỗng → trigger background refresh, không block."""
-        now = time.time()
-        if ThiTruongNongSanClient._price_rows and (now - ThiTruongNongSanClient._price_fetched_at) < self._PRICE_TTL:
-            return ThiTruongNongSanClient._price_rows
-        self._trigger_background_fetch("price")
-        return ThiTruongNongSanClient._price_rows  # có thể rỗng nếu lần đầu
-
-    def _fetch_price_page(self) -> list[dict]:
+        category: str,
+        *,
+        requested_crop: str,
+        region: str | None,
+        days: int,
+    ) -> list[dict]:
+        key = f"thitruongnongsan_price:{category}"
+        external_circuit_breaker.before_call(key)
         try:
-            with self._make_client() as client:
-                resp = client.get(PRICE_URL)
-                resp.raise_for_status()
-                return self._parse_price_html(resp.text)
-        except Exception:
-            return []
+            initial = resilient_request(
+                "GET",
+                self.price_url,
+                headers=self._headers(),
+                timeout=self.PRICE_TIMEOUT,
+                retries=1,
+                backoff=0.5,
+                service_name="thitruongnongsan_price",
+            )
+            fields = self._hidden_fields(initial.text)
+            body = {
+                **fields,
+                "__EVENTTARGET": "",
+                "__EVENTARGUMENT": "",
+                "ctl00$maincontent$tu_ngay": (date.today() - timedelta(days=max(days, 1))).strftime("%d/%m/%Y"),
+                "ctl00$maincontent$den_ngay": date.today().strftime("%d/%m/%Y"),
+                "ctl00$maincontent$Ng\u00e0nh_h\u00e0ng": category,
+                "ctl00$maincontent$Theo_th\u1eddi_gian": "ngay",
+                "ctl00$maincontent$Xem": "Xem",
+            }
+            response = resilient_request(
+                "POST",
+                self.price_url,
+                data=body,
+                headers={
+                    **self._headers(),
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Origin": "https://thitruongnongsan.gov.vn",
+                    "Referer": self.price_url,
+                },
+                timeout=self.PRICE_TIMEOUT,
+                retries=1,
+                backoff=0.5,
+                service_name="thitruongnongsan_price",
+            )
+            records = self._parse_price_rows(
+                response.text,
+                category=category,
+                requested_crop=requested_crop,
+                region=region,
+            )
+            external_circuit_breaker.record_success(key)
+            return records
+        except Exception as exc:
+            external_circuit_breaker.record_failure(key, exc)
+            raise ThiTruongNongSanError(str(exc)) from exc
 
-    def _parse_price_html(self, html: str) -> list[dict]:
-        try:
-            soup = BeautifulSoup(html, "html.parser")
-        except Exception:
-            return []
-
-        rows: list[dict] = []
-
-        for table in soup.find_all("table"):
-            # Kiểm tra đây có phải bảng giá không
-            all_text = _norm(table.get_text(" ", strip=True))
-            price_signals = ["gia", "dong", "kg", "mat hang", "nong san"]
-            if not any(s in all_text for s in price_signals):
+    def _parse_price_rows(
+        self,
+        content: str,
+        *,
+        category: str,
+        requested_crop: str,
+        region: str | None,
+    ) -> list[dict]:
+        records: list[dict] = []
+        target_region = normalize_text(region or "")
+        fetched_at = datetime.now()
+        default_crop = requested_crop or self._canonical_crop_for_category(category)
+        for row in re.findall(r"<tr[^>]*>(.*?)</tr>", content, flags=re.IGNORECASE | re.DOTALL):
+            cells = re.findall(r"<td[^>]*>(.*?)</td>", row, flags=re.IGNORECASE | re.DOTALL)
+            if len(cells) != 4:
                 continue
-
-            col = self._detect_col_indices(table)
-            if col.get("price") is None:
+            product, row_region, observed, raw_price = [self._clean_html(cell) for cell in cells]
+            if not product or not row_region:
                 continue
+            if target_region and target_region not in normalize_text(row_region):
+                continue
+            price = self._parse_price(raw_price)
+            observed_date = self._parse_date(observed)
+            if price is None or observed_date is None:
+                continue
+            records.append(
+                {
+                    "crop_name": default_crop,
+                    "region": row_region,
+                    "price": price,
+                    "quality_grade": "grade_1",
+                    "source_name": self.source_name,
+                    "source_url": self.price_url,
+                    "source_type": "official_agriculture_price",
+                    "price_date": observed_date,
+                    "market_type": "Cho dau moi",
+                    "observed_at": datetime.combine(observed_date, datetime.min.time()),
+                    "fetched_at": fetched_at,
+                    "collected_at": fetched_at,
+                    "confidence_score": 0.9,
+                    "is_realtime": True,
+                    "is_mock": False,
+                    "metadata": {
+                        "official_product_name": product,
+                        "official_category": category,
+                    },
+                }
+            )
+        return records
 
-            trs = table.find_all("tr")
-            for tr in trs[1:]:  # bỏ hàng tiêu đề
-                cells = tr.find_all(["td", "th"])
-                row = self._extract_price_row(cells, col)
-                if row:
-                    rows.append(row)
-
-            if rows:
-                break  # Dùng bảng đầu tiên tìm thấy
-
-        if not rows:
-            rows = self._regex_price_parse(html)
-
-        return rows
-
-    def _detect_col_indices(self, table) -> dict[str, int | None]:
-        col: dict[str, int | None] = {"name": None, "price": None, "unit": None, "region": None, "date": None}
-        for tr in table.find_all("tr")[:4]:
-            cells = tr.find_all(["th", "td"])
-            for i, cell in enumerate(cells):
-                t = _norm(cell.get_text(" ", strip=True))
-                if col["name"] is None and any(k in t for k in ["mat hang", "ten hang", "nong san", "san pham", "loai hang"]):
-                    col["name"] = i
-                if col["price"] is None and any(k in t for k in ["gia", "don gia", "gia ban", "gia ca"]):
-                    col["price"] = i
-                if col["unit"] is None and any(k in t for k in ["don vi", "dv", "dvt"]):
-                    col["unit"] = i
-                if col["region"] is None and any(k in t for k in ["khu vuc", "dia diem", "noi", "tinh", "vung", "thi truong"]):
-                    col["region"] = i
-                if col["date"] is None and any(k in t for k in ["ngay", "thoi gian", "date"]):
-                    col["date"] = i
-        # Mặc định nếu không detect được
-        if col["name"] is None:
-            col["name"] = 0
-        if col["price"] is None:
-            # Thử tìm cột nào có số tiền
-            col["price"] = 1
-        return col
-
-    def _extract_price_row(self, cells: list, col: dict) -> dict | None:
-        def text(idx: int | None) -> str:
-            if idx is None or idx >= len(cells):
-                return ""
-            return cells[idx].get_text(" ", strip=True).strip()
-
-        name = text(col.get("name"))
-        price_val = _parse_price_str(text(col.get("price")))
-        if not price_val or not name or len(name) < 2:
-            return None
-        return {
-            "name": name,
-            "price": price_val,
-            "unit": text(col.get("unit")) or "đ/kg",
-            "region": text(col.get("region")) or "Vietnam",
-            "date": text(col.get("date")) or "",
-        }
-
-    def _regex_price_parse(self, html: str) -> list[dict]:
-        """Fallback: trích giá bằng regex khi không parse được bảng."""
-        rows = []
-        clean = re.sub(r"<[^>]+>", " ", html)
-        # Tìm các mẫu "Tên hàng ... 12.000 đ/kg"
-        pattern = re.compile(
-            r"([A-Za-zÀ-ỹ][A-Za-zÀ-ỹ\s]{2,29}?)\s+"
-            r"(\d{1,3}(?:[.,]\d{3})+|\d{4,7})\s*"
-            r"(?:đ|đồng|vnđ|vnd)?(?:/kg|/tan)?",
-            re.IGNORECASE,
+    def _parse_news(self, content: str, *, limit: int) -> list[dict]:
+        blocks = re.findall(
+            r"<div class=\"khung_dv_con\">(.*?)</div>\s*</div>\s*</div>",
+            content,
+            flags=re.IGNORECASE | re.DOTALL,
         )
-        seen: set[str] = set()
-        for m in pattern.finditer(clean):
-            name = m.group(1).strip()
-            price = _parse_price_str(m.group(2))
-            if price and name and _norm(name) not in seen:
-                seen.add(_norm(name))
-                rows.append({"name": name, "price": price, "unit": "đ/kg", "region": "Vietnam", "date": ""})
-            if len(rows) >= 50:
+        if not blocks:
+            blocks = re.findall(r"<h4 class=\"title_dv\">(.*?)</div>\s*</div>", content, flags=re.IGNORECASE | re.DOTALL)
+        records: list[dict] = []
+        fetched_at = datetime.now()
+        for block in blocks:
+            link_match = re.search(r"<a\s+href=[\"']([^\"']+)[\"'][^>]*>\s*(.*?)\s*</a>", block, flags=re.IGNORECASE | re.DOTALL)
+            if not link_match:
+                continue
+            url = urljoin(self.news_url, self._clean_html(link_match.group(1)))
+            title = self._clean_html(link_match.group(2))
+            if not title or "img" in title.lower():
+                title_match = re.search(r"<h4[^>]*>.*?<a[^>]*>(.*?)</a>", block, flags=re.IGNORECASE | re.DOTALL)
+                title = self._clean_html(title_match.group(1)) if title_match else title
+            date_match = re.search(r"<div class=\"time_up\">\s*<p>(.*?)</p>", block, flags=re.IGNORECASE | re.DOTALL)
+            summary_match = re.search(r"<div class=\"descript_dv\">\s*<p>(.*?)</p>", block, flags=re.IGNORECASE | re.DOTALL)
+            published_at = self._parse_date(self._clean_html(date_match.group(1)) if date_match else "")
+            summary = self._clean_html(summary_match.group(1)) if summary_match else None
+            if not title or not url:
+                continue
+            records.append(
+                {
+                    "title": title,
+                    "summary": summary,
+                    "content": summary,
+                    "url": url,
+                    "source_name": self.source_name,
+                    "source_url": url,
+                    "published_at": datetime.combine(published_at, datetime.min.time()) if published_at else fetched_at,
+                    "fetched_at": fetched_at,
+                    "region": None,
+                    "crop_tags": self._infer_crop_tags(f"{title} {summary or ''}"),
+                    "region_tags": [],
+                    "sentiment": "neutral",
+                    "impact_level": "medium",
+                    "impact_score": 0.6,
+                    "is_realtime": True,
+                    "is_mock": False,
+                    "metadata": {"listing_url": self.news_url},
+                }
+            )
+            if len(records) >= limit:
                 break
-        return rows
+        return records
 
-    # ──────────────────────────── news fetching ────────────────────────────
+    @staticmethod
+    def _hidden_fields(content: str) -> dict[str, str]:
+        fields: dict[str, str] = {}
+        for name in ("__VIEWSTATE", "__VIEWSTATEGENERATOR", "__EVENTVALIDATION", "__LASTFOCUS"):
+            match = re.search(rf'name="{re.escape(name)}"[^>]*value="([^"]*)"', content, flags=re.IGNORECASE)
+            if match:
+                fields[name] = html.unescape(match.group(1))
+        return fields
 
-    def _get_news_items(self) -> list[dict]:
-        """Trả về từ cache; nếu cache rỗng → fetch đồng bộ lần đầu; nếu cache cũ → background refresh."""
-        now = time.time()
-        if ThiTruongNongSanClient._news_items and (now - ThiTruongNongSanClient._news_fetched_at) < self._NEWS_TTL:
-            return ThiTruongNongSanClient._news_items
-        if not ThiTruongNongSanClient._news_items:
-            # Lần đầu gọi: fetch đồng bộ để có dữ liệu ngay
-            self._blocking_news_fetch()
+    @staticmethod
+    def _clean_html(value: str) -> str:
+        text = re.sub(r"<[^>]+>", " ", value or "")
+        text = html.unescape(text)
+        return re.sub(r"\s+", " ", text).strip()
+
+    @staticmethod
+    def _parse_price(value: Any) -> float | None:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        if re.fullmatch(r"\d{1,3}(?:\.\d{3})+", text):
+            digits = text.replace(".", "")
+        elif re.fullmatch(r"\d{1,3}(?:,\d{3})+", text):
+            digits = text.replace(",", "")
         else:
-            # Cache cũ: refresh nền, trả dữ liệu cũ luôn
-            self._trigger_background_fetch("news")
-        return ThiTruongNongSanClient._news_items
-
-    def _blocking_news_fetch(self) -> None:
-        """Fetch đồng bộ lần đầu (gọi từ sync thread, không block event loop)."""
-        if ThiTruongNongSanClient._fetching.get("news"):
-            return
-        ThiTruongNongSanClient._fetching["news"] = True
+            digits = re.sub(r"[^\d.]", "", text.replace(",", ""))
         try:
-            items = self._fetch_news_page()
-            if items:
-                ThiTruongNongSanClient._news_items = items
-                ThiTruongNongSanClient._news_fetched_at = time.time()
-        except Exception:
-            pass
-        finally:
-            ThiTruongNongSanClient._fetching["news"] = False
-
-    def _fetch_news_page(self) -> list[dict]:
-        try:
-            with self._make_client() as client:
-                resp = client.get(NEWS_URL)
-                resp.raise_for_status()
-                return self._parse_news_html(resp.text)
-        except Exception:
-            return []
-
-    def _parse_news_html(self, html: str) -> list[dict]:
-        try:
-            soup = BeautifulSoup(html, "html.parser")
-        except Exception:
-            return []
-
-        items: list[dict] = []
-
-        # Thử nhiều selector phổ biến của trang tin tức Việt Nam
-        candidates = []
-        for sel in [
-            "article", ".news-item", ".item-news", ".article-item",
-            ".list-news li", "ul.list li", ".tin-tuc-item",
-            ".content-news li", "div.row div.col",
-        ]:
-            found = soup.select(sel)
-            if len(found) >= 2:
-                candidates = found
-                break
-
-        if not candidates:
-            # Fallback: lấy tất cả thẻ <a> trỏ đến bài viết
-            candidates = soup.find_all("a", href=re.compile(r"\.html|\.aspx|/tin-|/news|/bai-viet"))
-
-        for el in candidates[:30]:
-            item = self._extract_news_item(el)
-            if item:
-                items.append(item)
-
-        return items
-
-    def _extract_news_item(self, el) -> dict | None:
-        # Lấy link
-        link = el if el.name == "a" else el.find("a", href=True)
-        if not link:
+            price = float(digits)
+        except ValueError:
             return None
-        href = link.get("href", "").strip()
-        if not href:
+        return price if price > 0 else None
+
+    @staticmethod
+    def _parse_date(value: Any) -> date | None:
+        text = str(value or "").strip()
+        if not text:
             return None
-        if href.startswith("/"):
-            href = BASE_URL + href
-        elif not href.startswith("http"):
-            href = BASE_URL + "/" + href
+        for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(text[:10], fmt).date()
+            except ValueError:
+                continue
+        return None
 
-        # Tiêu đề
-        title_el = el.find(["h1", "h2", "h3", "h4"]) or link
-        title = re.sub(r"\s+", " ", title_el.get_text(" ", strip=True)).strip()
-        if not title or len(title) < 8:
-            return None
-
-        # Tóm tắt
-        summary_el = el.find("p") or el.find(class_=re.compile(r"summary|desc|mo-ta|sapo"))
-        summary = re.sub(r"\s+", " ", summary_el.get_text(" ", strip=True)).strip() if summary_el else ""
-
-        # Ngày
-        date_el = (
-            el.find("time")
-            or el.find(class_=re.compile(r"date|ngay|time"))
-            or el.find(attrs={"datetime": True})
-        )
-        date_str = ""
-        if date_el:
-            date_str = date_el.get("datetime") or date_el.get_text(strip=True)
-        pub_at = _parse_vn_date(date_str)
-
-        # Tự động phân loại sentiment đơn giản
-        text_lower = _norm(title + " " + summary)
-        positive = sum(w in text_lower for w in ["tang", "xuat khau", "don hang", "duoc gia", "co hoi", "tich cuc"])
-        negative = sum(w in text_lower for w in ["giam", "dich", "bao", "han hán", "rui ro", "sut giam"])
-        sentiment = "positive" if positive > negative else "negative" if negative > positive else "neutral"
-
+    @staticmethod
+    def _headers() -> dict[str, str]:
         return {
-            "title": title,
-            "summary": summary or title,
-            "content": None,
-            "url": href,
-            "source_url": href,
-            "source_name": "Thị trường nông sản Việt Nam (gov.vn)",
-            "published_at": pub_at.isoformat(),
-            "fetched_at": datetime.now().isoformat(),
-            "region": None,
-            "sentiment": sentiment,
-            "impact_level": "medium",
-            "impact_score": 0.65 if sentiment != "neutral" else 0.5,
-            "crop_tags": [],
-            "region_tags": [],
-            "is_realtime": True,
+            "User-Agent": "Mozilla/5.0 (compatible; NongNghiepAI/1.0)",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.7",
         }
 
-    # ──────────────────────────── helpers ────────────────────────────
+    @staticmethod
+    def _categories_for_crop(crop_name: str | None) -> list[str]:
+        crop = normalize_text(crop_name or "")
+        if not crop:
+            return ["C\u00e0 ph\u00ea", "L\u00faa g\u1ea1o", "Rau, qu\u1ea3"]
+        if any(token in crop for token in ("ca phe", "coffee")):
+            return ["C\u00e0 ph\u00ea"]
+        if any(token in crop for token in ("lua", "gao", "rice")):
+            return ["L\u00faa g\u1ea1o"]
+        return ["Rau, qu\u1ea3"]
 
-    def _make_client(self) -> httpx.Client:
-        timeout = httpx.Timeout(
-            connect=float(getattr(settings, "EXTERNAL_CONNECT_TIMEOUT_SECONDS", 5)),
-            read=float(getattr(settings, "EXTERNAL_READ_TIMEOUT_SECONDS", 15)),
-            write=float(getattr(settings, "EXTERNAL_WRITE_TIMEOUT_SECONDS", 10)),
-            pool=float(getattr(settings, "EXTERNAL_POOL_TIMEOUT_SECONDS", 5)),
-        )
-        return httpx.Client(headers=_HEADERS, timeout=timeout, follow_redirects=True)
+    @staticmethod
+    def _canonical_crop_for_category(category: str) -> str:
+        key = normalize_text(category)
+        if "ca phe" in key:
+            return "ca phe"
+        if "lua" in key or "gao" in key:
+            return "lua"
+        return "rau qua"
 
-
-# ── helpers độc lập ────────────────────────────────────────────────────────────
-
-def _parse_price_str(text: str) -> float | None:
-    if not text:
-        return None
-    clean = text.replace(".", "").replace(",", "").replace("\xa0", "").replace(" ", "")
-    m = re.search(r"\d{3,8}", clean)
-    if m:
-        val = int(m.group())
-        if 500 <= val <= 20_000_000:
-            return float(val)
-    return None
-
-
-def _parse_vn_date(text: str) -> datetime:
-    text = (text or "").strip()
-    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%d.%m.%Y", "%Y-%m-%dT%H:%M:%S"):
-        try:
-            return datetime.strptime(text[:len(fmt)], fmt)
-        except (ValueError, IndexError):
-            pass
-    return datetime.now()
+    @staticmethod
+    def _infer_crop_tags(text: str) -> list[str]:
+        normalized = normalize_text(text)
+        tags = []
+        for label, tokens in {
+            "lua": ("lua", "gao", "rice"),
+            "ca phe": ("ca phe", "coffee"),
+            "rau qua": ("rau", "qua", "trai cay"),
+            "ho tieu": ("ho tieu", "tieu"),
+        }.items():
+            if any(token in normalized for token in tokens):
+                tags.append(label)
+        return tags
 
 
 thitruongnongsan_client = ThiTruongNongSanClient()

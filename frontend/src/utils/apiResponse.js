@@ -1,121 +1,110 @@
-export function dedupeMessages(messages = []) {
-  return [
-    ...new Set(
-      messages
-        .filter(Boolean)
-        .map((message) => String(message).trim())
-        .filter(Boolean)
-    ),
-  ];
+export const API_FAILURE_MESSAGE = 'Không thể tải dữ liệu từ nguồn chính thức.';
+
+export function isApiSuccess(response) {
+  if (!response) {
+    return false;
+  }
+
+  if (typeof response === 'object' && 'success' in response) {
+    return Boolean(response.success);
+  }
+
+  if (typeof response === 'object' && 'status' in response) {
+    return String(response.status).toLowerCase() === 'success';
+  }
+
+  return true;
 }
 
-export function normalizeApiResponse(response) {
-  const payload = response?.data ?? response;
-  if (!payload || typeof payload !== 'object') {
+export function getApiErrorMessage(error, fallbackMessage = API_FAILURE_MESSAGE) {
+  if (!error) {
+    return fallbackMessage;
+  }
+
+  if (typeof error === 'string') {
+    return error.trim() || fallbackMessage;
+  }
+
+  if (typeof error === 'object') {
+    const candidates = [
+      error.detail,
+      error.message,
+      error.error,
+      error.response?.data?.detail,
+      error.response?.data?.message,
+      error.response?.data?.error,
+      error.data?.detail,
+      error.data?.message,
+      error.data?.error,
+    ];
+
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string' && candidate.trim()) {
+        return candidate.trim();
+      }
+    }
+  }
+
+  return fallbackMessage;
+}
+
+export function normalizeApiResponse(response, fallbackData = null) {
+  if (response == null) {
     return {
       success: false,
-      data: null,
-      source: 'unknown',
-      isRealtime: false,
-      isCache: false,
-      isMock: false,
-      warning: null,
-      error: {
-        code: 'INVALID_RESPONSE',
-        message: 'Không thể tải dữ liệu realtime.',
-      },
+      data: fallbackData,
+      message: API_FAILURE_MESSAGE,
     };
   }
 
-  const metadata = {
-    ...(payload.metadata || {}),
-    ...(payload.meta || {}),
-  };
-  const hasEnvelope = Object.prototype.hasOwnProperty.call(payload, 'success')
-    || Object.prototype.hasOwnProperty.call(payload, 'data')
-    || Object.prototype.hasOwnProperty.call(payload, 'meta')
-    || Object.prototype.hasOwnProperty.call(payload, 'metadata')
-    || Object.prototype.hasOwnProperty.call(payload, 'error');
-  const data = Object.prototype.hasOwnProperty.call(payload, 'data')
-    ? payload.data ?? null
-    : (hasEnvelope ? null : payload);
-  const warnings = [
-    ...(Array.isArray(payload.warning) ? payload.warning : [payload.warning]),
-    ...(Array.isArray(metadata.warning) ? metadata.warning : [metadata.warning]),
-  ];
-  const source = payload.source ?? metadata.source ?? metadata.source_type ?? data?.source ?? 'unknown';
-  const rawSource = String(source).toLowerCase();
-  const cacheStatus = String(payload.cache_status ?? metadata.cache_status ?? data?.cache_status ?? '').toLowerCase();
-  const sourceName = payload.source_name ?? metadata.source_name ?? data?.source_name ?? source;
-  const isRealtime = payload.is_realtime === true || metadata.is_realtime === true || data?.is_realtime === true;
-  const isCache = payload.is_cache === true
-    || metadata.is_cache === true
-    || data?.is_cache === true
-    || ['cache', 'cached', 'fallback'].includes(rawSource)
-    || ['cached', 'hit', 'from_cache', 'stale'].includes(cacheStatus);
-  const isMock = payload.is_mock === true || metadata.is_mock === true || data?.is_mock === true || rawSource === 'mock';
+  if (isApiSuccess(response)) {
+    if (typeof response === 'object' && response !== null && 'data' in response) {
+      return {
+        success: true,
+        data: response.data,
+        message: response.message || response.detail || '',
+      };
+    }
 
-  const normalized = {
-    success: payload.success === true || (payload.success === undefined && data !== null),
-    data,
-    source,
-    sourceName,
-    source_name: sourceName,
-    isRealtime,
-    is_realtime: isRealtime,
-    isCache,
-    is_cache: isCache,
-    isMock,
-    is_mock: isMock,
-    warning: dedupeMessages(warnings).join(' | ') || null,
-    error: payload.error ?? metadata.error ?? null,
-    message: payload.message,
-    fetched_at: payload.fetched_at ?? metadata.fetched_at ?? data?.fetched_at,
-    updated_at: payload.updated_at ?? metadata.updated_at ?? data?.updated_at,
-    confidence: payload.confidence ?? metadata.confidence ?? data?.confidence,
-    cache_status: cacheStatus,
-    meta: metadata,
-  };
-
-  if (data && typeof data === 'object' && !Array.isArray(data)) {
     return {
-      ...data,
-      ...normalized,
-      data,
-      meta: {
-        ...metadata,
-        ...(data.meta || {}),
-      },
+      success: true,
+      data: response,
+      message: '',
     };
   }
-
-  if (Array.isArray(data)) {
-    return Object.assign([...data], normalized, {
-      data,
-      meta: metadata,
-    });
-  }
-
-  return normalized;
-}
-
-export function normalizeApiError(error) {
-  if (error?.success === false && error?.error) return error;
-
-  const payload = error?.response?.data;
-  const message =
-    payload?.error?.message ||
-    payload?.message ||
-    error?.friendlyMessage ||
-    error?.message ||
-    'Không thể tải dữ liệu realtime.';
 
   return {
     success: false,
+    data: fallbackData,
+    message: getApiErrorMessage(response, API_FAILURE_MESSAGE),
+  };
+}
+
+export function unwrapApiResponse(response, fallbackData = null) {
+  const normalized = normalizeApiResponse(response, fallbackData);
+  return normalized.success ? normalized.data : fallbackData;
+}
+
+export function getResponseData(response, fallbackData = null) {
+  return unwrapApiResponse(response, fallbackData);
+}
+
+export function toApiErrorResponse(error, fallbackData = null, fallbackMessage = API_FAILURE_MESSAGE) {
+  return {
+    success: false,
+    data: fallbackData,
+    message: getApiErrorMessage(error, fallbackMessage),
+  };
+}
+
+export function normalizeApiError(error, fallbackMessage = API_FAILURE_MESSAGE) {
+  const message = getApiErrorMessage(error, fallbackMessage);
+  return {
+    success: false,
     data: null,
-    source: payload?.source || 'realtime_api',
-    sourceName: payload?.source_name || payload?.source || 'realtime_api',
-    source_name: payload?.source_name || payload?.source || 'realtime_api',
+    source: error?.response?.data?.source || 'realtime_api',
+    sourceName: error?.response?.data?.source_name || error?.response?.data?.source || 'realtime_api',
+    source_name: error?.response?.data?.source_name || error?.response?.data?.source || 'realtime_api',
     isRealtime: false,
     is_realtime: false,
     isCache: false,
@@ -124,17 +113,29 @@ export function normalizeApiError(error) {
     is_mock: false,
     warning: null,
     error: {
-      code: payload?.error?.code || error?.code || 'API_ERROR',
+      code: error?.response?.data?.error?.code || error?.code || 'API_ERROR',
       message,
     },
     message,
   };
 }
 
-export function ensureApiSuccess(response) {
-  const normalized = normalizeApiResponse(response);
-  if (normalized.success === false) {
-    throw normalized;
-  }
-  return normalized;
+export function createApiSuccessResponse(data, message = '') {
+  return {
+    success: true,
+    data,
+    message,
+  };
 }
+
+export default {
+  API_FAILURE_MESSAGE,
+  isApiSuccess,
+  getApiErrorMessage,
+  normalizeApiResponse,
+  unwrapApiResponse,
+  getResponseData,
+  toApiErrorResponse,
+  normalizeApiError,
+  createApiSuccessResponse,
+};

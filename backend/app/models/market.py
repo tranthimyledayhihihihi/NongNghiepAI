@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import synonym
 from sqlalchemy.sql import func
 
@@ -59,3 +59,69 @@ class MarketChannel(Base):
     is_active = synonym("IsActive")
     created_at = synonym("CreatedAt")
     updated_at = synonym("UpdatedAt")
+
+
+class RetailPriceSnapshot(Base):
+    __tablename__ = "RetailPriceSnapshots"
+
+    SnapshotID = Column("SnapshotID", Integer, primary_key=True, index=True)
+    CropName = Column("CropName", String(100), nullable=False, index=True)
+    ProductName = Column("ProductName", String(300), nullable=True)
+    Region = Column("Region", String(100), nullable=True, index=True)
+    RetailerName = Column("RetailerName", String(120), nullable=False, index=True)
+    PricePerKg = Column("PricePerKg", Float, nullable=False)
+    Unit = Column("Unit", String(50), nullable=True, default="VND/kg")
+    SourceName = Column("SourceName", String(120), nullable=False)
+    SourceURL = Column("SourceURL", String(500), nullable=False)
+    ObservedAt = Column("ObservedAt", DateTime, nullable=True)
+    FetchedAt = Column("FetchedAt", DateTime, nullable=False)
+    IsRealtime = Column("IsRealtime", Boolean, nullable=False, default=False)
+    IsMock = Column("IsMock", Boolean, nullable=False, default=False)
+    Metadata = Column("Metadata", JSON, nullable=True)
+    CreatedAt = Column("CreatedAt", DateTime, server_default=func.now(), nullable=False)
+
+    id = synonym("SnapshotID")
+    crop_name = synonym("CropName")
+    product_name = synonym("ProductName")
+    region = synonym("Region")
+    retailer_name = synonym("RetailerName")
+    price_per_kg = synonym("PricePerKg")
+    unit = synonym("Unit")
+    source_name = synonym("SourceName")
+    source_url = synonym("SourceURL")
+    observed_at = synonym("ObservedAt")
+    fetched_at = synonym("FetchedAt")
+    is_realtime = synonym("IsRealtime")
+    is_mock = synonym("IsMock")
+    metadata_json = synonym("Metadata")
+    created_at = synonym("CreatedAt")
+
+
+class MarketAnalysisResult(Base):
+    __tablename__ = "MarketAnalysisResults"
+
+    AnalysisID = Column("AnalysisID", Integer, primary_key=True, index=True)
+    CropName = Column("CropName", String(100), nullable=False, index=True)
+    Region = Column("Region", String(100), nullable=False, index=True)
+    PayloadJSON = Column("PayloadJSON", Text, nullable=False)
+    SourceName = Column("SourceName", String(120), nullable=False)
+    SourceURL = Column("SourceURL", String(500), nullable=False)
+    FetchedAt = Column("FetchedAt", DateTime, nullable=False, index=True)
+    IsRealtime = Column("IsRealtime", Boolean, nullable=False, default=False)
+    IsMock = Column("IsMock", Boolean, nullable=False, default=False)
+    Status = Column("Status", String(30), nullable=False, default="ready")
+    ErrorMessage = Column("ErrorMessage", Text, nullable=True)
+    CreatedAt = Column("CreatedAt", DateTime, server_default=func.now(), nullable=False)
+
+    id = synonym("AnalysisID")
+    crop_name = synonym("CropName")
+    region = synonym("Region")
+    payload_json = synonym("PayloadJSON")
+    source_name = synonym("SourceName")
+    source_url = synonym("SourceURL")
+    fetched_at = synonym("FetchedAt")
+    is_realtime = synonym("IsRealtime")
+    is_mock = synonym("IsMock")
+    status = synonym("Status")
+    error_message = synonym("ErrorMessage")
+    created_at = synonym("CreatedAt")

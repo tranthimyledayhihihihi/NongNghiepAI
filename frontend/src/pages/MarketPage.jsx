@@ -311,7 +311,7 @@ const MarketPage = () => {
                 <p className="mt-2 text-2xl font-bold text-gray-900">
                   {Number(analysis.global_reference.price || 0).toLocaleString('vi-VN')} {analysis.global_reference.unit || 'USD/ton'}
                 </p>
-                <p className="mt-1 text-xs text-gray-500">{analysis.global_reference.source_name || 'thitruongnongsan.gov.vn'}</p>
+                <p className="mt-1 text-xs text-gray-500">{analysis.global_reference.source_name || 'Nguồn tham chiếu quốc tế'}</p>
               </>
             ) : (
               <p className="mt-2 text-sm text-gray-500">Chưa có dữ liệu tham chiếu quốc tế.</p>
@@ -331,7 +331,11 @@ const MarketPage = () => {
           <span>Nguồn dữ liệu: {marketPrice.source_name || marketPrice.source || 'Database'}</span>
           <span>Loại nguồn: {marketPrice.source_type || marketPrice.source || 'database'}</span>
           {marketPrice.last_updated && <span>Cập nhật: {new Date(marketPrice.last_updated).toLocaleString('vi-VN')}</span>}
-          {marketPrice.is_mock && <span className="font-medium text-amber-700">Dữ liệu này là mô phỏng, chưa phải giá thị trường thực tế.</span>}
+          {marketPrice._api_error ? (
+            <span className="font-medium text-amber-700">Không thể tải dữ liệu thực tế hiện tại. Vui lòng thử lại sau.</span>
+          ) : marketPrice.is_mock ? (
+            <span className="font-medium text-amber-700">Không thể tải dữ liệu thực tế hiện tại. Vui lòng thử lại sau.</span>
+          ) : null}
           <button
             type="button"
             onClick={handleRefreshPrice}

@@ -6,7 +6,9 @@ from sqlalchemy import desc, or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import SessionLocal
+from app.core.real_data import OFFICIAL_AGRI_SOURCE_NAME, OFFICIAL_NEWS_URL, OFFICIAL_PRICE_URL, OPEN_METEO_FORECAST_URL, OPEN_METEO_SOURCE_NAME, external_circuit_breaker, realtime_error
 from app.core.redis_client import redis_client
 from app.integrations.weather_client import WeatherClient
 from app.models.crop import Crop
@@ -257,6 +259,18 @@ class DashboardService:
             price_aggregator_service.refresh_prices(db, crop_name=selected_crop)
 
         current = pricing_service.get_current_price(db, selected_crop, selected_region)
+        if current.get("_api_error"):
+            current.update(
+                {
+                    "name": selected_crop,
+                    "display_name": self._display_crop(selected_crop),
+                    "location": selected_region,
+                    "price": None,
+                    "unit": "VND/kg",
+                    "trend": None,
+                }
+            )
+            return current
         current_price = float(current["current_price"])
         last_updated = current.get("last_updated") or datetime.now()
         source_name = current.get("source_name") or "pricing_service"
@@ -290,55 +304,122 @@ class DashboardService:
     def get_price_trend(self, db: Session, crop_name: str = "lua", region: str = "Ha Noi", days: int = 7) -> dict:
         selected_crop = self._clean_crop(crop_name)
         selected_region = self._clean_region(region)
+
+        # Strict spec: only use real cached/DB data from official sources.
+        # - No mock
+        # - No synthetic/random forecast if not enough real history
+        # - If forecast exists, it must be derived deterministically from history
         history = pricing_service.get_price_history(db, selected_crop, selected_region, max(days, 7))
         recent = history[-days:] if history else []
-        if not recent and self._realtime_only():
+
+        if not recent:
             return {
                 "crop_name": selected_crop,
                 "region": selected_region,
                 "history": [],
                 "forecast": [],
+                "estimated": [],
                 "trend": None,
                 "is_mock": False,
-                "source": "realtime_api",
-                "source_name": "Pricing forecast engine",
+                "source": "database",
+                "source_name": "Official price history (PriceHistory DB)",
                 "confidence": 0.0,
                 "updated_at": datetime.now(),
-                "error": "Không thể tải dữ liệu giá realtime.",
+                "error": "Không thể tải dữ liệu giá realtime/cache cho 7 ngày.",
                 "cache_status": "miss",
             }
-        base_price = recent[-1]["avg_price"] if recent else pricing_service.get_current_price(db, selected_crop, selected_region)["current_price"]
+
+        if any(item.get("is_mock") for item in recent):
+            return {
+                "crop_name": selected_crop,
+                "region": selected_region,
+                "history": recent,
+                "forecast": [],
+                "estimated": [],
+                "trend": None,
+                "is_mock": True,
+                "source": "database",
+                "source_name": "Official price history (PriceHistory DB)",
+                "confidence": 0.0,
+                "updated_at": datetime.now(),
+                "error": "Phát hiện dữ liệu mock trong history. Tối không thể tạo dự báo.",
+                "cache_status": "miss",
+            }
+
         trend = pricing_service.analyze_price_trend(db, selected_crop, selected_region)
-        forecast = []
-        for offset in range(1, days + 1):
-            direction = 0.006 if trend in {"up", "increasing", "stable"} else -0.003
-            predicted = round(float(base_price) * (1 + offset * direction), 2)
-            forecast.append(
-                {
+
+        # Estimated forecast only if we have enough real points.
+        # Requirement: if not enough (6-7 days close) -> only show history.
+        have_enough = len(recent) >= 6
+
+        forecast: list[dict] = []
+        estimated: list[dict] = []
+
+        if have_enough:
+            prices = [float(item.get("avg_price") or 0) for item in recent]
+
+            # Compute deterministic growth rate from last differences.
+            diffs = []
+            for i in range(1, len(prices)):
+                prev = prices[i - 1]
+                cur = prices[i]
+                if prev != 0:
+                    diffs.append((cur - prev) / prev)
+
+            last_diff = diffs[-1] if diffs else 0.0
+            avg_diff = sum(diffs[-3:]) / max(len(diffs[-3:]), 1) if diffs else 0.0
+
+            if trend in {"up", "increasing"}:
+                growth_rate = (avg_diff + last_diff) / 2
+            elif trend in {"down", "decreasing"}:
+                growth_rate = (avg_diff + last_diff) / 2
+            else:
+                growth_rate = avg_diff / 4 if avg_diff else 0.0
+
+            last_price = prices[-1]
+
+            for offset in range(1, days + 1):
+                est = float(last_price) * ((1 + growth_rate) ** offset)
+                est = round(est, 2)
+
+                conf = "high" if offset <= 3 else "medium"
+                item = {
                     "date": (date.today() + timedelta(days=offset)).isoformat(),
-                    "forecast_price": predicted,
-                    "predicted_price": predicted,
-                    "confidence": "high" if offset <= 3 else "medium",
-                    "trend": "up" if direction > 0 else "down",
-                    "reason_codes": ["db_price_history", "rule_based_trend"],
-                    "source": "ai_generated" if recent and not any(item.get("is_mock") for item in recent) else "mock",
-                    "source_name": "Pricing forecast engine",
+                    "estimated_price": est,
+                    "predicted_price": est,  # backward compatible for UI fields
+                    "forecast_price": est,
+                    "min_price": round(est * 0.92, 2),
+                    "max_price": round(est * 1.08, 2),
+                    "confidence": conf,
+                    "trend": "up" if growth_rate >= 0 else "down",
+                    "reason_codes": ["price_history_db", "deterministic_estimation"],
+                    "source": "estimated_from_history",
+                    "source_name": "PriceHistory DB (estimated)",
                     "updated_at": datetime.now(),
-                    "is_mock": any(item.get("is_mock") for item in recent) if recent else True,
+                    "is_mock": False,
+                    "estimated": True,
                 }
-            )
+                estimated.append(item)
+
+            forecast = estimated
+
         return {
             "crop_name": selected_crop,
             "region": selected_region,
             "history": recent,
             "forecast": forecast,
+            "estimated": estimated,
             "trend": trend,
-            "is_mock": any(item.get("is_mock") for item in recent) if recent else True,
-            "source": "ai_generated" if recent and not any(item.get("is_mock") for item in recent) else "mock",
-            "source_name": "Pricing forecast engine",
-            "confidence": 0.62 if recent else 0.42,
+            "is_mock": False,
+            "source": "database",
+            "source_name": "Official price history (PriceHistory DB)",
+            "confidence": 0.68 if have_enough else 0.42,
             "updated_at": datetime.now(),
+            "cache_status": "from_db" if recent else "miss",
+            "history_points": len(recent),
+            "forecast_status": "estimated" if have_enough else "not_available",
         }
+
 
     def get_weather_overview(self, db: Session, region: str = "Ha Noi", force_refresh: bool = False) -> dict:
         selected_region = self._clean_region(region)
@@ -365,8 +446,34 @@ class DashboardService:
     ) -> dict:
         current = weather_service.get_current_weather(db, region, force_refresh=force_refresh)
         forecast = weather_service.get_weather_forecast(db, region, 7)
-        hourly = weather_service.get_hourly_forecast(db, region, 24)
+        hourly_bundle = weather_service.get_hourly_forecast(db, region, 24)
+        hourly = hourly_bundle.get("forecast", []) if isinstance(hourly_bundle, dict) else hourly_bundle
+        if current.get("_api_error") or not forecast:
+            return {
+                "region": self._clean_region(region),
+                "crop_name": self._clean_crop(crop_name),
+                "risk_score": 0,
+                "risk_level": None,
+                "current": current,
+                "forecast": forecast if isinstance(forecast, list) else [],
+                "hourly_forecast": hourly if isinstance(hourly, list) else [],
+                "rain_24h": 0,
+                "alerts": [],
+                "activity_recommendations": [],
+                "source": "realtime_api",
+                "source_name": current.get("source_name") or OPEN_METEO_SOURCE_NAME,
+                "source_url": current.get("source_url") or OPEN_METEO_FORECAST_URL,
+                "is_realtime": False,
+                "is_mock": False,
+                "cache_status": "miss",
+                "fetched_at": current.get("fetched_at"),
+                "last_updated": current.get("last_updated"),
+                "data_age_minutes": current.get("data_age_minutes"),
+                "error": current.get("error_message") or "Weather cache miss.",
+            }
         service_risk = weather_service.get_weather_risk(db, region, crop_name)
+        if service_risk.get("_api_error"):
+            service_risk = {}
         alerts = service_risk.get("alerts") or weather_service.generate_alerts(current, forecast, crop_name=crop_name, growth_stage=growth_stage)
         recommendations = weather_service.build_activity_recommendations(current, forecast, hourly, crop_name, growth_stage)
         risk_score = service_risk.get("risk_score") or self._weather_risk_score(current, forecast, alerts)
@@ -395,7 +502,9 @@ class DashboardService:
             "is_realtime": current.get("is_realtime", False),
             "is_mock": current.get("is_mock", False),
             "cache_status": current.get("cache_status", "from_db"),
+            "fetched_at": current.get("fetched_at"),
             "last_updated": current.get("last_updated"),
+            "data_age_minutes": current.get("data_age_minutes"),
         }
 
     def get_regional_prices(
@@ -439,8 +548,7 @@ class DashboardService:
         featured = self.get_featured_crop(db, crop_name=crop_name, region=region, force_refresh=force_refresh)
         return {
             "featured_crop": featured,
-            "global_references": price_aggregator_service.latest_global_references(db, limit=6),
-            "exchange_rate": price_aggregator_service.exchange_rate(live=False),
+            "retail_references": [],
             "cache_status": featured.get("cache_status", "from_db"),
             "last_updated": featured.get("last_updated"),
         }
@@ -458,16 +566,33 @@ class DashboardService:
         return market_news_service.get_market_news(db, limit=limit, crop=crop_name, region=region)
 
     def get_data_health(self, db: Session, region: str = "Ha Noi", crop_name: str = "lua") -> dict:
-        weather_count = db.query(WeatherData).filter(WeatherData.Region == self._clean_region(region)).count()
-        news_count = db.query(MarketNews).count()
-        price_count = db.query(MarketPrice).count()
+        weather_count = db.query(WeatherData).filter(
+            WeatherData.Region == self._clean_region(region),
+            WeatherData.SourceURL.isnot(None),
+            WeatherData.FetchedAt.isnot(None),
+            WeatherData.IsMock == False,  # noqa: E712
+        ).count()
+        news_count = db.query(MarketNews).filter(
+            MarketNews.SourceURL.isnot(None),
+            MarketNews.FetchedAt.isnot(None),
+            MarketNews.IsMock == False,  # noqa: E712
+        ).count()
+        price_count = db.query(MarketPrice).filter(
+            MarketPrice.SourceURL.isnot(None),
+            MarketPrice.FetchedAt.isnot(None),
+            MarketPrice.IsMock == False,  # noqa: E712
+        ).count()
         score = min(100, weather_count * 8 + min(news_count, 20) + min(price_count, 20))
+        ai_status = "active" if settings.AI_API_KEY or settings.CLAUDE_API_KEY else "not_configured"
         return {
             "score": score,
             "sources": [
-                {"name": "Open-Meteo Forecast", "status": "OK" if weather_count else "EMPTY", "role": "Weather forecast"},
-                {"name": "Market RSS", "status": "OK" if news_count else "EMPTY", "role": "Market news"},
-                {"name": "Market Price APIs", "status": "OK" if price_count else "EMPTY", "role": "Price references"},
+                {"name": "Open-Meteo", "status": "active" if weather_count else external_circuit_breaker.status("open_meteo_forecast"), "role": "weather", "source_url": OPEN_METEO_FORECAST_URL},
+                {"name": "Gia thi truong nong san Viet Nam", "status": "active" if price_count else external_circuit_breaker.status("thitruongnongsan_price:C\u00e0 ph\u00ea"), "role": "official_price", "source_url": OFFICIAL_PRICE_URL},
+                {"name": "Tin tuc thi truong nong san Viet Nam", "status": "active" if news_count else external_circuit_breaker.status("thitruongnongsan_news"), "role": "market_news", "source_url": OFFICIAL_NEWS_URL},
+                {"name": "Gia ban le tham khao Viet Nam", "status": "cache" if price_count else "error", "role": "retail_price"},
+                {"name": "AI provider", "status": ai_status, "role": "ai"},
+                {"name": "Database cache", "status": "active" if (weather_count or news_count or price_count) else "empty", "role": "cache"},
             ],
         }
 
@@ -486,7 +611,18 @@ class DashboardService:
 
     def get_ai_recommendation(self, db: Session, crop_name: str = "lua", region: str = "Ha Noi") -> dict:
         current_price = pricing_service.get_current_price(db, crop_name, region)
+        if current_price.get("_api_error"):
+            return current_price
         weather = self.get_weather_overview(db, region)
+        if weather.get("current", {}).get("_api_error"):
+            payload = realtime_error(
+                code="DASHBOARD_AI_INPUT_CACHE_MISS",
+                message="Dashboard AI recommendation input cache miss.",
+                source_name="Dashboard AI recommendation",
+                source_url=OPEN_METEO_FORECAST_URL,
+            )
+            payload.update({"crop_name": crop_name, "region": region})
+            return payload
         trend = current_price.get("price_trend", "stable")
         rainy_days = sum(1 for item in weather["forecast"] if float(item.get("rainfall") or 0) >= 5)
 
@@ -743,7 +879,11 @@ class DashboardService:
             WeatherCode=current.get("weather_code"),
             WeatherDesc=current.get("condition"),
             SourceName=current.get("source_name") or "Open-Meteo",
+            SourceURL=current.get("source_url") or OPEN_METEO_FORECAST_URL,
             SourceUpdatedAt=current.get("source_updated_at"),
+            FetchedAt=datetime.now(),
+            IsRealtime=True,
+            IsMock=False,
         )
         db.add(observation)
 
@@ -764,7 +904,11 @@ class DashboardService:
                     UVIndex=item.get("uv_index"),
                     WeatherCode=item.get("weather_code"),
                     SourceName=item.get("source_name") or "Open-Meteo",
+                    SourceURL=item.get("source_url") or OPEN_METEO_FORECAST_URL,
                     SourceUpdatedAt=item.get("last_updated") or datetime.now(),
+                    FetchedAt=datetime.now(),
+                    IsRealtime=True,
+                    IsMock=False,
                 )
             )
         db.commit()

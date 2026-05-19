@@ -1,75 +1,146 @@
-const SOURCE_LABELS = {
-  realtime_api: 'Dữ liệu thời gian thực',
-  database: 'Dữ liệu hệ thống',
-  cached: 'Dữ liệu cache',
-  ai_generated: 'Dữ liệu do AI tạo',
-  mock: 'Dữ liệu mô phỏng',
-  legacy: 'Dữ liệu cũ',
+const SOURCE_META = {
+  official: {
+    label: 'Nguồn chính thức Bộ Nông nghiệp Việt Nam',
+    shortLabel: 'Chính thức',
+    tone: 'official',
+  },
+  realtime: {
+    label: 'Realtime',
+    shortLabel: 'Realtime',
+    tone: 'realtime',
+  },
+  cache: {
+    label: 'Cache',
+    shortLabel: 'Cache',
+    tone: 'cache',
+  },
+  retail: {
+    label: 'Giá tham chiếu bán lẻ',
+    shortLabel: 'Bán lẻ',
+    tone: 'retail',
+  },
+  ai: {
+    label: 'AI phân tích',
+    shortLabel: 'AI',
+    tone: 'ai',
+  },
+  openMeteo: {
+    label: 'Open-Meteo',
+    shortLabel: 'Open-Meteo',
+    tone: 'weather',
+  },
 };
 
-const SOURCE_KEYS = {
-  realtime_api: 'realtime',
-  database: 'database',
-  cached: 'cached',
-  ai_generated: 'ai',
-  mock: 'mock',
-  legacy: 'legacy',
+const SOURCE_ALIASES = {
+  official: 'official',
+  realtime: 'realtime',
+  cache: 'cache',
+  retail: 'retail',
+  ai: 'ai',
+  openmeteo: 'openMeteo',
+  'open-meteo': 'openMeteo',
 };
 
-export const normalizeSourceMeta = (item = {}, defaultSource = 'database') => {
-  const meta = item?.meta || {};
-  const source = String(item?.source || meta.source || defaultSource).toLowerCase();
-  const cacheStatus = String(item?.cache_status || meta.cache_status || '').toLowerCase();
-  const fallbackUsed = Boolean(item?.fallback_used || meta.fallback_used);
-  const timeout = Boolean(item?.timeout || meta.timeout);
-  const isMock = Boolean(item?.is_mock || meta.is_mock);
-  const isCache = Boolean(item?.is_cache || meta.is_cache);
-  const isRealtime = Boolean(item?.is_realtime || meta.is_realtime);
+const TONE_CLASS_MAP = {
+  official: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  realtime: 'border-sky-200 bg-sky-50 text-sky-700',
+  cache: 'border-slate-200 bg-slate-100 text-slate-700',
+  retail: 'border-amber-200 bg-amber-50 text-amber-700',
+  ai: 'border-violet-200 bg-violet-50 text-violet-700',
+  weather: 'border-cyan-200 bg-cyan-50 text-cyan-700',
+  default: 'border-slate-200 bg-slate-50 text-slate-700',
+};
 
-  let normalized = source;
-  if (isMock || source === 'mock' || cacheStatus === 'mock') normalized = 'mock';
-  else if (
-    isCache ||
-    fallbackUsed ||
-    timeout ||
-    ['cache', 'cached', 'fallback'].includes(source) ||
-    ['hit', 'from_cache', 'stale', 'cached'].includes(cacheStatus)
-  ) normalized = 'cached';
-  else if (isRealtime || cacheStatus === 'live' || ['realtime', 'realtime_api', 'open-meteo', 'rss'].includes(source)) normalized = 'realtime_api';
-  else if (['from_db', 'db', 'db_fresh'].includes(cacheStatus)) normalized = 'database';
-  else if (['db', 'market_db'].includes(source)) normalized = 'database';
-  else if (['ai', 'rule_based_ai', 'explainable_rule_ai'].includes(source)) normalized = 'ai_generated';
-  else if (source === 'legacy') normalized = 'legacy';
-  else if (!SOURCE_LABELS[normalized]) normalized = defaultSource;
+const TONE_ICON_CLASS_MAP = {
+  official: 'text-emerald-600',
+  realtime: 'text-sky-600',
+  cache: 'text-slate-600',
+  retail: 'text-amber-600',
+  ai: 'text-violet-600',
+  weather: 'text-cyan-600',
+  default: 'text-slate-500',
+};
+
+export function resolveSourceKey(source) {
+  if (!source) {
+    return '';
+  }
+
+  if (typeof source === 'string') {
+    const normalized = source.trim().toLowerCase();
+    return SOURCE_ALIASES[normalized] || normalized;
+  }
+
+  if (typeof source === 'object') {
+    const candidate =
+      source.sourceType ||
+      source.type ||
+      source.kind ||
+      source.sourceName ||
+      source.name ||
+      source.source ||
+      source.label;
+
+    return resolveSourceKey(candidate);
+  }
+
+  return '';
+}
+
+export function getSourceMeta(source) {
+  const key = resolveSourceKey(source);
+
+  if (!key) {
+    return {
+      key: '',
+      label: '',
+      shortLabel: '',
+      tone: 'default',
+      badgeClassName: TONE_CLASS_MAP.default,
+      iconClassName: TONE_ICON_CLASS_MAP.default,
+    };
+  }
+
+  const meta = SOURCE_META[key];
+
+  if (meta) {
+    return {
+      key,
+      ...meta,
+      badgeClassName: TONE_CLASS_MAP[meta.tone] || TONE_CLASS_MAP.default,
+      iconClassName: TONE_ICON_CLASS_MAP[meta.tone] || TONE_ICON_CLASS_MAP.default,
+    };
+  }
 
   return {
-    source: normalized,
-    source_name: item?.source_name || meta.source_name || SOURCE_LABELS[normalized] || normalized,
-    fetched_at: item?.fetched_at || meta.fetched_at,
-    updated_at: item?.updated_at || item?.last_updated || item?.created_at || meta.updated_at || meta.last_updated,
-    confidence: item?.confidence ?? meta.confidence,
-    cache_status: cacheStatus,
-    fallback_used: fallbackUsed,
-    timeout,
-    error: item?.error || meta.error,
-    is_mock: isMock || normalized === 'mock',
-    is_cache: isCache || normalized === 'cached',
-    is_realtime: isRealtime || normalized === 'realtime_api',
+    key,
+    label: source?.label || source?.name || source?.sourceName || source?.sourceType || key,
+    shortLabel: source?.shortLabel || source?.label || key,
+    tone: 'default',
+    badgeClassName: TONE_CLASS_MAP.default,
+    iconClassName: TONE_ICON_CLASS_MAP.default,
   };
-};
+}
 
-export const formatUpdatedTime = (value) => {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString('vi-VN');
-};
+export function getSourceLabel(source) {
+  return getSourceMeta(source).label;
+}
 
-export const getSourceBadgeProps = (item = {}, defaultSource = 'database') => {
-  const meta = normalizeSourceMeta(item, defaultSource);
-  return {
-    key: SOURCE_KEYS[meta.source] || 'unknown',
-    label: SOURCE_LABELS[meta.source] || meta.source_name || 'Không rõ',
-    meta,
-  };
-};
+export function getSourceShortLabel(source) {
+  return getSourceMeta(source).shortLabel;
+}
+
+export function getSourceTone(source) {
+  return getSourceMeta(source).tone;
+}
+
+export function getSourceBadgeClassName(source) {
+  return getSourceMeta(source).badgeClassName;
+}
+
+export function getSourceIconClassName(source) {
+  return getSourceMeta(source).iconClassName;
+}
+
+export { SOURCE_META, TONE_CLASS_MAP, TONE_ICON_CLASS_MAP };
+export default SOURCE_META;

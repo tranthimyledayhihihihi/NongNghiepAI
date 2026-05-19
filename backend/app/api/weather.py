@@ -20,6 +20,9 @@ router = APIRouter(prefix="/api/weather", tags=["weather"])
 @router.get("/current/{region}")
 async def get_current_weather(region: str, db: Session = Depends(get_db)):
     data = weather_service.get_current_weather(db, region)
+    # Nếu realtime miss thì trả thẳng payload theo spec (không bị api_response wrap đổi fields)
+    if data.get("_api_error"):
+        return api_response(data)
     return api_response(
         data,
         source=data.get("source") or "weather",
@@ -30,6 +33,7 @@ async def get_current_weather(region: str, db: Session = Depends(get_db)):
         last_updated=data.get("last_updated"),
         confidence=0.9 if data.get("is_realtime") else 0.72 if not data.get("is_mock") else 0.45,
     )
+
 
 
 @router.post("/refresh/{region}")
@@ -51,7 +55,11 @@ async def refresh_current_weather(region: str, db: Session = Depends(get_db)):
 async def get_weather_forecast(region: str, days: int = 7, db: Session = Depends(get_db)):
     forecast = weather_service.get_forecast(db, region, days)
     if not forecast:
-        return error_response("Không thể tải dữ liệu thời tiết realtime.")
+        return error_response(
+            "Không thể tải dữ liệu thời tiết realtime.",
+            source_name="Open-Meteo",
+            source_url="https://api.open-meteo.com/v1/forecast",
+        )
     is_mock = bool(forecast) and all(item.get("is_mock") for item in forecast)
     is_realtime = any(item.get("is_realtime") for item in forecast)
     fallback_used = any(item.get("fallback_used") for item in forecast)
@@ -80,8 +88,37 @@ async def get_weather_forecast(region: str, days: int = 7, db: Session = Depends
 @router.get("/hourly/{region}")
 async def get_hourly_weather_forecast(region: str, hours: int = 24, db: Session = Depends(get_db)):
     forecast = weather_service.get_hourly_forecast(db, region, hours)
+
+    # realtime miss: forecast là payload error theo spec
+    if isinstance(forecast, dict) and forecast.get("_api_error"):
+        return api_response(forecast)
+
+    # Nếu service trả về dict (theo implement mới) hoặc list: chuẩn hoá theo expectations API
+    if isinstance(forecast, dict):
+        payload = forecast
+        data = {
+            "region": payload.get("region") or region,
+            "hours": hours,
+            "forecast": payload.get("forecast") or [],
+        }
+        return api_response(
+            data,
+            source_name=payload.get("source_name") or "Open-Meteo",
+            source=payload.get("source_url") or "Open-Meteo",
+            is_realtime=payload.get("is_realtime", False),
+            is_mock=payload.get("is_mock", False),
+            cache_status=payload.get("cache_status", "unknown"),
+            last_updated=payload.get("last_updated"),
+            confidence=0.82,
+        )
+
     if not forecast:
-        return error_response("Không thể tải dữ liệu thời tiết realtime.")
+        return error_response(
+            "Không thể tải dữ liệu thời tiết realtime.",
+            source_name="Open-Meteo",
+            source_url="https://api.open-meteo.com/v1/forecast",
+        )
+
     data = {
         "region": region,
         "hours": hours,
@@ -97,6 +134,7 @@ async def get_hourly_weather_forecast(region: str, hours: int = 24, db: Session 
         last_updated=(forecast[0].get("last_updated") if forecast else None),
         confidence=0.82,
     )
+
 
 
 @router.get("/agriculture/{region}")
@@ -116,21 +154,29 @@ async def get_agriculture_weather(
         days=days,
         include_hourly=include_hourly,
     )
+
+    # Nếu current/forecast/hourly trả error theo spec thì trả thẳng
     current = data.get("current", {})
-    data["fallback_used"] = bool(current.get("fallback_used"))
-    data["timeout"] = bool(current.get("timeout"))
+    if current.get("_api_error"):
+        return api_response(current)
+
+    # Chuẩn hoá metadata nguồn: lấy từ current/forecast/hourly (ưu tiên current)
+    meta_source_name = current.get("source_name") or data.get("source_name") or "Open-Meteo"
+    meta_source_url = current.get("source_url") or data.get("source_url") or "https://api.open-meteo.com/v1/forecast"
+
     return api_response(
         data,
-        source="ai_generated",
-        source_name="AI Weather Advisor",
+        source="cached_or_realtime",
+        source_name=meta_source_name,
         is_realtime=current.get("is_realtime", False),
         is_mock=current.get("is_mock", False),
-        cache_status=current.get("cache_status", "computed"),
+        cache_status=current.get("cache_status", "unknown"),
         last_updated=data.get("generated_at"),
         confidence=0.86 if current.get("is_realtime") else 0.72,
-        fallback_used=data["fallback_used"],
-        timeout=data["timeout"],
+        fallback_used=bool(current.get("fallback_used")),
+        timeout=bool(current.get("timeout")),
     )
+
 
 
 @router.get("/risk-analysis/{region}/{crop}")
