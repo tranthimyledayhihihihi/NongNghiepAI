@@ -161,11 +161,94 @@ def ask_agri_qa(question: str, db_context: str = "") -> Dict:
     }
 
 
+_NEWS_QUERIES = [
+    "tin tức thị trường nông sản Việt Nam hôm nay",
+    "giá nông sản biến động thị trường Việt Nam",
+    "xuất khẩu nông sản Việt Nam mới nhất",
+    "thị trường lúa gạo cà phê hồ tiêu Việt Nam",
+]
+
+
+def search_market_news(
+    crop_name: str | None = None,
+    region: str | None = None,
+    limit: int = 20,
+) -> List[Dict]:
+    """
+    Tìm kiếm tin tức thị trường nông sản qua Tavily Search.
+    Trả về list news items: {title, summary, source_name, source_url, published_at, region, sentiment}.
+    """
+    if not _is_available():
+        logger.warning("[Tavily] API key chưa cấu hình — bỏ qua Tavily news search")
+        return []
+
+    client = _get_client()
+    today = date.today().isoformat()
+
+    queries = list(_NEWS_QUERIES)
+    if crop_name:
+        queries.insert(0, f"tin tức giá {crop_name} thị trường Việt Nam hôm nay {today}")
+    if region:
+        queries.insert(0, f"giá nông sản {region} hôm nay thị trường {today}")
+
+    items: List[Dict] = []
+    seen_urls: set = set()
+
+    for query in queries[:3]:
+        if len(items) >= limit:
+            break
+        try:
+            resp = client.search(
+                query=query,
+                search_depth="basic",
+                max_results=5,
+                include_answer=False,
+            )
+            from datetime import timezone
+            now = datetime.now(tz=timezone.utc).replace(tzinfo=None)
+            for result in resp.get("results", []):
+                url = result.get("url", "")
+                if url in seen_urls:
+                    continue
+                seen_urls.add(url)
+                title = result.get("title", "").strip()
+                content = result.get("content", "").strip()
+                if not title:
+                    continue
+                text_lower = (title + " " + content).lower()
+                sentiment = (
+                    "positive"
+                    if any(w in text_lower for w in ("tăng", "thuận lợi", "xuất khẩu tốt", "được giá", "cơ hội"))
+                    else "negative"
+                    if any(w in text_lower for w in ("giảm", "khó khăn", "dịch bệnh", "hạn hán", "lũ lụt", "rủi ro"))
+                    else "neutral"
+                )
+                items.append({
+                    "title": title,
+                    "summary": content[:500],
+                    "source_name": url,
+                    "source_url": url,
+                    "published_at": now,
+                    "region": _guess_region(url + " " + content[:300]) or region or "Việt Nam",
+                    "sentiment": sentiment,
+                    "is_realtime": True,
+                    "is_mock": False,
+                    "crop_tags": [crop_name] if crop_name else [],
+                })
+        except Exception as e:
+            logger.debug(f"[Tavily news] Lỗi query '{query}': {e}")
+
+    return items[:limit]
+
+
 class TavilySearchClient:
     """Wrapper class cho backward-compatibility — bọc các module-level functions."""
 
     def search_prices(self, max_queries: int = 4) -> List[Dict]:
         return search_prices(max_queries)
+
+    def search_market_news(self, crop_name: str | None = None, region: str | None = None, limit: int = 20) -> List[Dict]:
+        return search_market_news(crop_name, region, limit)
 
     def ask_price_qa(self, question: str, db_context: Optional[str] = None) -> Dict:
         return ask_price_qa(question, db_context)

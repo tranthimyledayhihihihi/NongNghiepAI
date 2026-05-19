@@ -553,9 +553,14 @@ const ForecastPage = () => {
           {/* ── AI recommendation + data flow ── */}
           <div className="grid gap-6 xl:grid-cols-3">
             <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Bot className="h-5 w-5 text-indigo-600" />
                 <h2 className="text-lg font-bold text-slate-950">Khuyến nghị canh tác</h2>
+                {data.ai_recommendation?.ai_generated && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-700">
+                    <Bot className="h-3 w-3" /> AI Gemini
+                  </span>
+                )}
                 <DataSourceBadge data={data.farming_recommendation || data.risk_analysis || {}} />
               </div>
               <p className="mt-3 text-sm leading-6 text-slate-700">{translateUiText(data.ai_recommendation.summary)}</p>

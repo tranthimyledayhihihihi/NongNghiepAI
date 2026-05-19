@@ -495,6 +495,47 @@ class PricingService:
             return "decreasing"
         return "stable"
 
+    # ─── Seasonality factors cho các nhóm cây trồng Việt Nam ────────────────
+    _SEASONALITY: dict[str, dict[int, float]] = {
+        "lua":       {1: 1.04, 2: 1.06, 3: 1.03, 4: 1.00, 5: 0.98, 6: 0.97,
+                      7: 0.97, 8: 0.99, 9: 1.01, 10: 1.05, 11: 1.04, 12: 1.02},
+        "gao":       {1: 1.04, 2: 1.05, 3: 1.03, 4: 1.00, 5: 0.98, 6: 0.97,
+                      7: 0.97, 8: 0.99, 9: 1.01, 10: 1.04, 11: 1.04, 12: 1.02},
+        "ca phe":    {1: 0.97, 2: 0.97, 3: 0.99, 4: 1.01, 5: 1.02, 6: 1.02,
+                      7: 1.02, 8: 1.01, 9: 1.00, 10: 0.99, 11: 0.96, 12: 0.97},
+        "ho tieu":   {1: 1.02, 2: 1.04, 3: 1.05, 4: 1.04, 5: 1.02, 6: 1.00,
+                      7: 0.99, 8: 0.98, 9: 0.98, 10: 0.99, 11: 1.00, 12: 1.01},
+        "sau rieng": {1: 0.96, 2: 0.97, 3: 0.99, 4: 1.01, 5: 1.03, 6: 1.06,
+                      7: 1.08, 8: 1.07, 9: 1.04, 10: 1.02, 11: 0.99, 12: 0.97},
+        "xoai":      {1: 1.00, 2: 1.02, 3: 1.05, 4: 1.06, 5: 1.04, 6: 1.02,
+                      7: 1.00, 8: 0.99, 9: 0.98, 10: 0.98, 11: 0.99, 12: 1.00},
+        "thanh long":{1: 0.97, 2: 0.98, 3: 1.00, 4: 1.02, 5: 1.05, 6: 1.06,
+                      7: 1.06, 8: 1.05, 9: 1.04, 10: 1.03, 11: 1.01, 12: 0.98},
+    }
+    _DEFAULT_SEASONALITY = {m: 1.0 for m in range(1, 13)}
+
+    def _seasonality_factor(self, crop_name: str, month: int) -> float:
+        table = self._SEASONALITY.get(self._clean_crop(crop_name), self._DEFAULT_SEASONALITY)
+        return table.get(month, 1.0)
+
+    @staticmethod
+    def _news_sentiment_factor(news_items: list[dict]) -> tuple[float, str]:
+        """Tính hệ số tác động từ sentiment tin tức → (factor, label)."""
+        if not news_items:
+            return 1.0, "Chưa có dữ liệu tin tức."
+        pos = sum(1 for n in news_items if (n.get("sentiment") or "").lower() == "positive")
+        neg = sum(1 for n in news_items if (n.get("sentiment") or "").lower() == "negative")
+        total = len(news_items)
+        net = (pos - neg) / total
+        factor = round(1.0 + net * 0.03, 4)
+        if net > 0.2:
+            label = f"Tin tức tích cực ({pos}/{total} bài): kỳ vọng giá nhích tăng."
+        elif net < -0.2:
+            label = f"Tin tức tiêu cực ({neg}/{total} bài): rủi ro giá giảm, nên bán sớm."
+        else:
+            label = "Tin tức thị trường trung lập, biến động ít."
+        return factor, label
+
     def build_pricing_engine(
         self,
         db: Session,
@@ -505,6 +546,7 @@ class PricingService:
         quality_grade: str = "grade_1",
         days: int = 7,
     ) -> dict:
+        from datetime import date as _date
         current = self.get_current_price(db, crop_name, region, quality_grade)
         if current.get("_api_error"):
             return current
@@ -521,29 +563,93 @@ class PricingService:
             ),
         )
         history = self.get_price_history(db, crop_name, region, 30)
-        trend = current.get("price_trend") or forecast.get("trend") or "stable"
+
+        # ── Yếu tố 1: giá thị trường hiện tại (thitruongnongsan + Tavily) ──
         market_price = float(current["current_price"])
-        forecast_price_7d = float(forecast.get("forecast_price_7d") or market_price)
-        suggested_price = float(suggestion.get("weather_suggested_price") or suggestion.get("suggested_price") or market_price)
         source_label = current.get("source_name") or "hệ thống"
+        trend = current.get("price_trend") or forecast.get("trend") or "stable"
         trend_label = {"stable": "ổn định", "increasing": "tăng", "decreasing": "giảm"}.get(trend, trend)
+
+        # ── Yếu tố 2: mùa vụ ──────────────────────────────────────────────
+        month = _date.today().month
+        seasonality = self._seasonality_factor(crop_name, month)
+        season_label = (
+            f"Tháng {month} là cao điểm mùa vụ cho {crop_name}, kỳ vọng giá cao hơn."
+            if seasonality > 1.02
+            else f"Tháng {month} ngoài mùa vụ cao điểm, giá có thể thấp hơn."
+            if seasonality < 0.98
+            else f"Tháng {month} ở mức trung bình theo mùa vụ."
+        )
+
+        # ── Yếu tố 3: tin tức thị trường (Tavily + thitruongnongsan) ──────
+        try:
+            from app.services.market_news_service import market_news_service as _news_svc
+            news_bundle = _news_svc.get_market_news(db, crop=self._clean_crop(crop_name), region=region, limit=10)
+            news_items = news_bundle.get("news", [])
+        except Exception:
+            news_items = []
+        news_factor, news_label = self._news_sentiment_factor(news_items)
+
+        # ── Yếu tố 4: giá tốt nhất nhiều sàn (Tavily multi-platform) ──────
+        best_platform_price = None
+        best_platform_source = None
+        try:
+            from app.integrations.tavily_client import search_prices as _tavily_px
+            from app.services.price_aggregator_service import PriceAggregatorService
+            raw = _tavily_px(max_queries=2)
+            candidates = PriceAggregatorService._tavily_raw_to_results(raw, crop_name, region)
+            if candidates:
+                best = max(candidates, key=lambda r: r.price)
+                best_platform_price = best.price
+                best_platform_source = best.source_name or "sàn nông sản trực tuyến"
+        except Exception:
+            pass
+
+        # ── Yếu tố 5: thời tiết ───────────────────────────────────────────
+        weather_factor = float(suggestion.get("weather_factor", 1.0))
+
+        # ── Tổng hợp giá đề xuất cuối ─────────────────────────────────────
+        combined_factor = round(seasonality * news_factor * weather_factor, 4)
+        suggested_price = float(
+            suggestion.get("weather_suggested_price")
+            or suggestion.get("suggested_price")
+            or market_price
+        )
+        ai_suggested_price = round(market_price * combined_factor, 2)
+        forecast_price_7d_raw = float(forecast.get("forecast_price_7d") or market_price)
+        ai_forecast_7d = round(forecast_price_7d_raw * seasonality * news_factor, 2)
+
+        # ── Lý do phân tích ───────────────────────────────────────────────
         reasons = [
             f"Giá thị trường từ {source_label}: {market_price:,.0f} VNĐ/kg",
             f"Xu hướng {trend_label} dựa trên tín hiệu lịch sử giá gần đây.",
-            f"Chất lượng {quality_grade} và sản lượng {quantity:g} kg được dùng để điều chỉnh giá bán.",
+            season_label,
+            news_label,
         ]
+        if best_platform_price and abs(best_platform_price - market_price) / max(market_price, 1) > 0.05:
+            reasons.append(
+                f"Sàn nông sản trực tuyến ({best_platform_source}) có giá {best_platform_price:,.0f} VNĐ/kg"
+                f" — chênh lệch {(best_platform_price - market_price) / market_price * 100:+.1f}%."
+            )
         if suggestion.get("weather_summary"):
             reasons.append(suggestion["weather_summary"])
-
-        recommendation = (
-            "Nên bán theo từng đợt nhỏ và bật cảnh báo giá."
-            if trend == "stable"
-            else "Có thể giữ lại một phần hàng trong 7 ngày nếu bảo quản được."
-            if trend == "increasing"
-            else "Nên ưu tiên bán sớm hoặc chốt cam kết với người mua."
+        reasons.append(
+            f"Hệ số tổng hợp (mùa vụ × tin tức × thời tiết) = {combined_factor:.3f}."
         )
+
+        recommendation_map = {
+            "stable":     "Thị trường ổn định: nên bán theo từng đợt nhỏ, bật cảnh báo giá để không bỏ lỡ đỉnh.",
+            "increasing": "Xu hướng tăng: có thể giữ lại một phần hàng 5-7 ngày nếu bảo quản được.",
+            "decreasing": "Xu hướng giảm: nên ưu tiên bán sớm hoặc chốt cam kết giá với người mua ngay hôm nay.",
+        }
+        recommendation = recommendation_map.get(trend, recommendation_map["stable"])
+        if seasonality > 1.02:
+            recommendation += " Đang vào mùa cao điểm — có lợi cho bên bán."
+        elif seasonality < 0.98:
+            recommendation += " Ngoài mùa vụ chính — nên đa dạng kênh tiêu thụ."
+
         is_mock = bool(current.get("is_mock")) or bool(forecast.get("is_mock"))
-        confidence = 0.76 if not is_mock else 0.48
+        confidence = min(0.88, 0.62 + (0.08 if not is_mock else 0) + (0.08 if news_items else 0) + (0.05 if best_platform_price else 0))
 
         return {
             "crop": crop_name,
@@ -551,17 +657,25 @@ class PricingService:
             "region": region,
             "market_price": market_price,
             "current_price": market_price,
-            "forecast_price_7d": forecast_price_7d,
-            "suggested_price": suggested_price,
+            "forecast_price_7d": ai_forecast_7d,
+            "suggested_price": ai_suggested_price,
             "trend": trend,
-            "confidence": confidence,
+            "confidence": round(confidence, 2),
+            "factors": {
+                "seasonality": seasonality,
+                "news_sentiment": news_factor,
+                "weather": weather_factor,
+                "combined": combined_factor,
+                "best_platform_price": best_platform_price,
+                "best_platform_source": best_platform_source,
+            },
             "reasons": reasons,
             "recommendation": recommendation,
             "history": history,
             "forecast": forecast.get("forecast_data", []),
             "nearby_region_prices": suggestion.get("nearby_region_prices", []),
             "source": "ai_generated" if not is_mock else "mock",
-            "source_name": "AI Pricing Engine rule fallback",
+            "source_name": "AI Pricing Engine (thitruongnongsan + Tavily + weather + seasonality)",
             "is_mock": is_mock,
             "cache_status": current.get("cache_status", "computed"),
             "last_updated": datetime.now().isoformat(),

@@ -216,11 +216,27 @@ const AIChatPage = () => {
 
   const getFriendlyAiError = (error) => {
     const status = error?.response?.status;
-    const message = error?.message || '';
-    if (status === 504 || error?.isTimeout) {
-      return 'Trợ lý AI phản hồi quá lâu. Vui lòng thử lại sau ít phút.';
+    const errorCode = error?.error?.code || error?.code || '';
+    const message = error?.message || error?.error?.message || '';
+    const isTimeout = (
+      status === 504 ||
+      error?.isTimeout ||
+      errorCode === 'ECONNABORTED' ||
+      errorCode === 'AI_TIMEOUT' ||
+      message === 'Dữ liệu realtime đang chậm. Hệ thống sẽ hiển thị dữ liệu cache nếu có.' ||
+      message.toLowerCase().includes('timeout')
+    );
+    if (isTimeout) return 'Trợ lý AI phản hồi quá lâu. Vui lòng thử lại sau ít phút.';
+    if (errorCode === 'AI_QUOTA_EXCEEDED' || message.includes('hết quota') || message.includes('đang bận')) {
+      return 'Trợ lý AI đang bận (hết quota). Vui lòng thử lại sau vài phút.';
     }
-    if (message.includes('GOOGLE_API_KEY') || error?.response?.data?.error === 'missing_google_api_key') {
+    if (
+      errorCode === 'AI_NOT_CONFIGURED' ||
+      status === 503 ||
+      message.includes('GOOGLE_API_KEY') ||
+      message.includes('chưa được cấu hình') ||
+      error?.response?.data?.error === 'missing_google_api_key'
+    ) {
       return 'Hệ thống chưa cấu hình khóa gọi trợ lý AI nên chưa thể trả lời bằng AI.';
     }
     return message || 'Trợ lý AI đang tạm thời gián đoạn. Vui lòng thử lại sau.';

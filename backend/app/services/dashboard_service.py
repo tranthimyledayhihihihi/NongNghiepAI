@@ -1,3 +1,4 @@
+import json
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
@@ -47,6 +48,17 @@ class DashboardService:
     ) -> dict:
         selected_region = self._clean_region(region)
         selected_crop = self._clean_crop(crop_name)
+        force_refresh = force_refresh_weather or force_refresh_market or force_refresh_news
+
+        cache_key = f"dashboard:summary:{selected_region}:{selected_crop}:{user_id or 'anon'}"
+        if not force_refresh:
+            try:
+                cached = redis_client.get(cache_key)
+                if cached:
+                    return json.loads(cached)
+            except Exception:
+                pass
+
         module_status: list[dict] = []
 
         if force_refresh_market:
@@ -112,9 +124,17 @@ class DashboardService:
             module_status,
         )
         regional_prices = regional_price_data.get("regions", [])
+
+        # Reuse featured instead of calling get_featured_crop() again inside get_realtime_market()
         realtime_market = self._safe_dashboard_call(
             "realtime_market",
-            lambda: self.get_realtime_market(db, crop_name=selected_crop, region=selected_region),
+            lambda: {
+                "featured_crop": featured,
+                "global_references": price_aggregator_service.latest_global_references(db, limit=6),
+                "exchange_rate": price_aggregator_service.exchange_rate(live=False),
+                "cache_status": featured.get("cache_status", "from_db"),
+                "last_updated": featured.get("last_updated"),
+            },
             lambda: self._fallback_realtime_market(featured),
             module_status,
         )
@@ -171,16 +191,30 @@ class DashboardService:
             db.rollback()
             active_seasons = quality_checks = unread_notifications = 0
 
-        return {
+        # Derive weather overview from already-computed weather_risk (no extra DB calls)
+        weather_overview = {
+            "current": weather_risk.get("current", {}),
+            "forecast": weather_risk.get("forecast", []),
+            "alerts": weather_risk.get("alerts", []),
+            "is_mock": weather_risk.get("is_mock", False),
+            "is_realtime": weather_risk.get("is_realtime", False),
+            "cache_status": weather_risk.get("cache_status", "from_db"),
+            "last_updated": weather_risk.get("last_updated"),
+        }
+
+        # Compute ai_recommendation from already-fetched featured + weather_risk (no extra service calls)
+        ai_recommendation = self._safe_dashboard_call(
+            "ai_recommendation",
+            lambda: self._compute_ai_recommendation_inline(featured, weather_risk, selected_crop, selected_region),
+            lambda: self._fallback_ai_recommendation(selected_crop, selected_region),
+            module_status,
+        )
+
+        result = {
             "region": selected_region,
             "crop_name": selected_crop,
             "featured_crop": featured,
-            "weather": self._safe_dashboard_call(
-                "weather_overview",
-                lambda: self.get_weather_overview(db, selected_region, force_refresh=False),
-                lambda: self._fallback_weather_overview(weather_risk),
-                module_status,
-            ),
+            "weather": weather_overview,
             "weather_risk": weather_risk,
             "forecast": trend.get("forecast", []),
             "price_trend": trend,
@@ -190,12 +224,7 @@ class DashboardService:
             "alert_center": active_alerts,
             "alert_count": len(active_alerts),
             "notifications": notification_summary,
-            "ai_recommendation": self._safe_dashboard_call(
-                "ai_recommendation",
-                lambda: self.get_ai_recommendation(db, selected_crop, selected_region),
-                lambda: self._fallback_ai_recommendation(selected_crop, selected_region),
-                module_status,
-            ),
+            "ai_recommendation": ai_recommendation,
             "active_seasons": active_seasons,
             "quality_checks": quality_checks,
             "unread_notifications": unread_notifications,
@@ -204,6 +233,13 @@ class DashboardService:
             "module_status": module_status,
             "fallback_used": any(not item.get("ok") for item in module_status),
         }
+
+        try:
+            redis_client.setex(cache_key, 180, json.dumps(result, default=str))
+        except Exception:
+            pass
+
+        return result
 
     def reset_and_load_dashboard(
         self,
@@ -796,6 +832,36 @@ class DashboardService:
         }
 
     @staticmethod
+    def _compute_ai_recommendation_inline(featured: dict, weather_risk: dict, crop_name: str, region: str) -> dict:
+        current_price = float(featured.get("price") or 0)
+        trend = featured.get("trend") or "stable"
+        rainy_days = sum(1 for item in weather_risk.get("forecast", []) if float(item.get("rainfall") or 0) >= 5)
+
+        if trend in {"increasing", "up"} and rainy_days <= 2:
+            action, title, confidence = "hold", "Nên giữ hàng", 0.78
+            description = "Xu hướng giá đang cải thiện và rủi ro thời tiết ở mức chấp nhận được."
+        elif rainy_days >= 4:
+            action, title, confidence = "sell_sooner", "Nên bán sớm hơn", 0.72
+            description = "Rủi ro mưa cao, nên giảm thời gian tồn kho để hạn chế hao hụt."
+        else:
+            action, title, confidence = "sell_in_batches", "Bán theo nhiều đợt", 0.70
+            description = "Tín hiệu thị trường trung tính; chia nhỏ sản lượng giúp giảm rủi ro giá và thời tiết."
+
+        return {
+            "crop_name": crop_name,
+            "region": region,
+            "action": action,
+            "title": title,
+            "description": description,
+            "confidence": confidence,
+            "expected_price": round(current_price * 1.02, 2) if current_price else None,
+            "period": "7 ngày tới",
+            "source": "rule_based_ai",
+            "is_mock": bool(featured.get("is_mock")) or bool(weather_risk.get("is_mock")),
+            "last_updated": datetime.now(),
+        }
+
+    @staticmethod
     def _fallback_ai_recommendation(crop_name: str, region: str) -> dict:
         return {
             "crop_name": crop_name,
@@ -839,6 +905,11 @@ class DashboardService:
             redis_client.delete("market_news:latest:agriculture")
             for limit in (4, 6, 20):
                 redis_client.delete(f"market_news:latest:agriculture:{limit}")
+            try:
+                for key in redis_client.scan_iter(f"dashboard:summary:{region}:{crop_name}:*"):
+                    redis_client.delete(key)
+            except Exception:
+                pass
         except Exception:
             db.rollback()
 

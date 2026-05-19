@@ -123,12 +123,20 @@ _WEATHER_EVENT_PHRASES = (
     "bao so",
     "bao lon",
     "lu lut",
+    "neu co lu",
+    "co lu",
+    "khi lu",
+    "bi lu",
+    "mua lu",
     "han han",
     "ngap lut",
+    "ngap nuoc",
     "thien tai",
     "mua lon",
     "lu quet",
     "gio lon",
+    "gio bao",
+    "bao lut",
 )
 
 
@@ -258,6 +266,90 @@ def _local_market_reply_extended(context: dict, message: str) -> str | None:
             lines.append(f"Khuyến nghị: {recommendation}")
 
     return "\n".join(lines)
+
+
+_FERTILIZER_KEYWORDS = ("bon phan", "phan bon", "lich bon", "lich phan", "dam", "lan", "kali", "npk", "phan huu co", "phan vi sinh")
+_PEST_KEYWORDS = ("sau benh", "thuoc bvtv", "thuoc tru sau", "benh", "nam", "sau", "rot", "heo", "vang la", "dot la", "moc suong", "than thu", "bac la")
+_TECHNIQUE_KEYWORDS = ("ky thuat", "trong cach nao", "cach trong", "cach cham soc", "bao quan", "thu hoach", "gieo", "uom hat", "ghep cay", "dat trong")
+
+_CROP_FERTILIZER_GUIDE: dict[str, str] = {
+    "ca chua": (
+        "Lịch bón phân cho cà chua (tham khảo):\n"
+        "- Bón lót: 20–30 tấn phân chuồng + 300–500 kg lân/ha trước khi trồng.\n"
+        "- Lần 1 (7–10 ngày sau trồng): 50 kg ure + 30 kg kali/ha — kích thích bén rễ.\n"
+        "- Lần 2 (khi ra hoa đầu): 80 kg NPK 16-16-8 hoặc 20-20-15/ha — nuôi hoa.\n"
+        "- Lần 3 (khi đậu quả đợt 1): 60 kg NPK + 30 kg kali/ha — nuôi quả.\n"
+        "- Lần 4 trở đi: 2 tuần/lần, tăng kali giảm đạm để quả chắc, ngọt.\n"
+        "Tháng 5: mùa mưa bắt đầu ở miền Nam/Trung — lưu ý thoát nước, tránh ngập úng làm thối rễ."
+    ),
+    "lua": (
+        "Lịch bón phân cho lúa (tham khảo theo vụ Hè Thu/Mùa tháng 5):\n"
+        "- Bón lót: phân lân (200–300 kg/ha) + 1/3 đạm trước khi cấy/gieo.\n"
+        "- Bón thúc đẻ nhánh (7–10 ngày sau sạ/cấy): 1/3 đạm + kali.\n"
+        "- Bón đón đòng (35–45 ngày sau sạ): 1/3 đạm còn lại + kali.\n"
+        "- Không bón đạm muộn sau thời kỳ trổ để tránh lép hạt, sâu bệnh."
+    ),
+    "rau": (
+        "Lịch bón phân rau ăn lá/củ/quả chung:\n"
+        "- Bón lót: phân chuồng hoai mục + lân vi sinh trước khi trồng.\n"
+        "- Định kỳ 7–10 ngày: phân NPK hòa loãng hoặc phân bón lá.\n"
+        "- Tháng 5 (đầu mùa mưa): giảm bón đạm, tăng kali để rau cứng cây."
+    ),
+}
+
+_DEFAULT_FERTILIZER = (
+    "Lịch bón phân chung khi AI không khả dụng:\n"
+    "- Bón lót trước trồng: phân hữu cơ + lân.\n"
+    "- Bón thúc giai đoạn sinh trưởng: đạm + kali cân đối.\n"
+    "- Giai đoạn ra hoa/quả: tăng kali, giảm đạm.\n"
+    "Để có lịch bón phân chính xác theo giống/vùng, vui lòng thử lại khi AI hoạt động trở lại."
+)
+
+
+def _local_knowledge_fallback(context: dict, message: str, intent: str) -> str | None:
+    if intent not in {"harvest_analysis", "quality_analysis", "full_farm_analysis"}:
+        return None
+    text = normalize_user_text(message)
+    crop = (context.get("crop_name") or "").lower()
+    region = context.get("region") or "khu vực của bạn"
+
+    if any(kw in text for kw in _FERTILIZER_KEYWORDS):
+        guide = next(
+            (v for k, v in _CROP_FERTILIZER_GUIDE.items() if k in crop or crop in k),
+            None,
+        )
+        if not guide:
+            # fallback by partial match
+            if "dua" in crop or "bau" in crop or "bi" in crop:
+                guide = _CROP_FERTILIZER_GUIDE.get("ca chua")
+            elif "rau" in crop or "cai" in crop or "xanh" in crop:
+                guide = _CROP_FERTILIZER_GUIDE.get("rau")
+            else:
+                guide = _DEFAULT_FERTILIZER
+        season_ctx = _current_season_context()
+        return (
+            f"⚠️ Trợ lý AI đang tạm thời bận (hết quota). Thông tin tham khảo:\n\n"
+            f"{guide}\n\n"
+            f"--- Lịch mùa vụ tháng này ---\n{season_ctx}"
+        )
+
+    if any(kw in text for kw in _PEST_KEYWORDS):
+        return (
+            f"⚠️ Trợ lý AI tạm không khả dụng. Với câu hỏi về sâu bệnh trên {crop or 'cây trồng'} tại {region}:\n"
+            "- Quan sát triệu chứng cụ thể (màu lá, vị trí vết bệnh, thời điểm xuất hiện).\n"
+            "- Liên hệ trạm khuyến nông địa phương hoặc cửa hàng vật tư nông nghiệp gần nhất.\n"
+            "- Tránh phun thuốc khi chưa xác định đúng bệnh.\n"
+            "Vui lòng thử lại sau vài phút để được tư vấn chi tiết hơn từ AI."
+        )
+
+    if any(kw in text for kw in _TECHNIQUE_KEYWORDS):
+        return (
+            f"⚠️ Trợ lý AI tạm không khả dụng. Để biết kỹ thuật canh tác {crop or 'cây trồng'} tại {region}, "
+            f"vui lòng thử lại sau ít phút hoặc tham khảo khuyến nông địa phương.\n\n"
+            f"--- Lịch mùa vụ tháng này ---\n{_current_season_context()}"
+        )
+
+    return None
 
 
 def _get_google_api_key() -> str | None:
@@ -515,6 +607,26 @@ PHONG CÁCH: Như người cán bộ khuyến nông địa phương — am hiể
     return system_instruction, prompt
 
 
+async def _call_claude(request: AIChatMessageRequest, context: dict) -> tuple[str, str]:
+    from app.integrations.claude_client import ai_client
+    if not ai_client.client:
+        raise RuntimeError("missing_claude_api_key")
+    system_instruction, prompt = _build_gemini_prompt(request, context)
+    response = await asyncio.wait_for(
+        ai_client.client.messages.create(
+            model=ai_client.model,
+            max_tokens=1500,
+            system=system_instruction,
+            messages=[{"role": "user", "content": prompt}],
+        ),
+        timeout=settings.AI_TIMEOUT_SECONDS,
+    )
+    reply = (response.content[0].text if response.content else "").strip()
+    if not reply:
+        raise RuntimeError("empty_claude_response")
+    return reply, ai_client.model
+
+
 async def _call_gemini(request: AIChatMessageRequest, context: dict) -> tuple[str, str]:
     api_key = _get_google_api_key()
     if not api_key:
@@ -639,6 +751,9 @@ def _success_payload(
     if provider == "gemini":
         data["source"] = "gemini"
         data["source_name"] = "Google Gemini"
+    elif provider == "claude":
+        data["source"] = "claude"
+        data["source_name"] = "Anthropic Claude"
     return {
         "success": True,
         "reply": reply,
@@ -765,13 +880,36 @@ async def ai_chat_message(
         response_payload["data"]["suggested_actions"] = response_payload["data"]["recommendations"]
         return response_payload
 
+    provider = "gemini"
+    reply = model_name = None
+    final_exc: Exception | None = None
+
     try:
         reply, model_name = await _call_gemini(request, context)
-    except (RuntimeError, asyncio.TimeoutError, Exception) as exc:
-        exc_str = str(exc)
-        # Fallback nội bộ khi Gemini không khả dụng — ưu tiên local reply nếu có pricing
+    except (RuntimeError, asyncio.TimeoutError, Exception) as gemini_exc:
+        gemini_str = str(gemini_exc)
+        gemini_quota_fail = (
+            "429" in gemini_str or "RESOURCE_EXHAUSTED" in gemini_str
+            or "quota" in gemini_str.lower() or "all_gemini_models_failed" in gemini_str
+        )
+        if gemini_quota_fail:
+            # Thử Claude khi Gemini hết quota
+            try:
+                reply, model_name = await _call_claude(request, context)
+                provider = "claude"
+            except Exception:
+                final_exc = gemini_exc
+        else:
+            final_exc = gemini_exc
+
+    if final_exc is not None:
+        exc_str = str(final_exc)
+        # Fallback 1: market/weather local reply
         if intent in ANALYSIS_INTENTS:
             _fallback_reply = _local_market_reply_extended(context, request.message)
+            if not _fallback_reply:
+                # Fallback 2: knowledge-based reply
+                _fallback_reply = _local_knowledge_fallback(context, request.message, intent)
             if _fallback_reply:
                 _save_gemini_conversation(
                     db,
@@ -799,30 +937,15 @@ async def ai_chat_message(
                 payload["data"]["recommendations"] = _build_recommendations(context, {"is_mock": True})
                 return payload
 
-        # Không có fallback nội bộ khả dụng → trả lỗi tường minh
-        if isinstance(exc, asyncio.TimeoutError) or "timeout" in exc_str.lower():
-            return JSONResponse(
-                status_code=504,
-                content={
-                    "success": False, "data": None,
-                    "error": {"code": "AI_API_TIMEOUT", "message": f"Gemini API timeout sau {settings.AI_TIMEOUT_SECONDS:g} giây."},
-                },
-            )
+        # Không có fallback → trả lỗi user-friendly (KHÔNG lộ raw API error)
+        if isinstance(final_exc, asyncio.TimeoutError) or "timeout" in exc_str.lower():
+            user_msg = f"Trợ lý AI phản hồi quá lâu (timeout {settings.AI_TIMEOUT_SECONDS:g}s). Vui lòng thử lại."
+            return JSONResponse(status_code=504, content={"success": False, "data": None, "error": {"code": "AI_TIMEOUT", "message": user_msg}})
         if exc_str == "missing_google_api_key":
-            return JSONResponse(
-                status_code=503,
-                content={
-                    "success": False, "data": None,
-                    "error": {"code": "AI_API_KEY_MISSING", "message": "Trợ lý AI chưa được cấu hình. Vui lòng liên hệ quản trị viên."},
-                },
-            )
-        return JSONResponse(
-            status_code=502,
-            content={
-                "success": False, "data": None,
-                "error": {"code": "AI_API_FAILED", "message": f"Gemini API đang lỗi: {exc_str[:120]}"},
-            },
-        )
+            return JSONResponse(status_code=503, content={"success": False, "data": None, "error": {"code": "AI_NOT_CONFIGURED", "message": "Trợ lý AI chưa được cấu hình. Vui lòng liên hệ quản trị viên."}})
+        if "429" in exc_str or "RESOURCE_EXHAUSTED" in exc_str or "quota" in exc_str.lower():
+            return JSONResponse(status_code=503, content={"success": False, "data": None, "error": {"code": "AI_QUOTA_EXCEEDED", "message": "Trợ lý AI đang bận (hết quota). Vui lòng thử lại sau vài phút."}})
+        return JSONResponse(status_code=502, content={"success": False, "data": None, "error": {"code": "AI_UNAVAILABLE", "message": "Trợ lý AI đang gặp sự cố tạm thời. Vui lòng thử lại sau."}})
 
     result = {"answer": reply, "is_mock": False}
     recommendations = _build_recommendations(context, result) if intent in ANALYSIS_INTENTS else []
@@ -833,7 +956,7 @@ async def ai_chat_message(
         crop=crop or context.get("crop_name"),
         region=region or context.get("region"),
         model_name=model_name,
-        provider="gemini",
+        provider=provider,
         context=context,
         confidence=0.82,
     )

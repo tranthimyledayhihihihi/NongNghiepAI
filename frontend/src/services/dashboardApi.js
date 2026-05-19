@@ -187,22 +187,48 @@ dashboardApi.getDashboardActionToday = dashboardApi.getActionToday;
 
 dashboardApi.getDashboardFullData = async (region, { cropName = 'lua' } = {}) => {
   const results = await Promise.allSettled([
-    dashboardApi.getDashboardOverview(region, { cropName }),
+    dashboardApi.getSummary(region, { cropName }),
     dashboardApi.getRealtimeStatus(region, { cropName }),
-    dashboardApi.getAIInsights(region, { cropName }),
-    dashboardApi.getRiskSummary(region, { cropName }),
-    dashboardApi.getActionToday(region, { cropName }),
   ]);
+
+  const summary = settledValue(results[0], null);
+  const realtimeStatus = settledValue(results[1], null);
+
+  let actionToday = null;
+  if (summary) {
+    const aiRec = summary.ai_recommendation || {};
+    const actRecs = summary.weather_risk?.activity_recommendations || [];
+    actionToday = {
+      region: summary.region,
+      crop_name: summary.crop_name,
+      actions: [
+        aiRec.description || aiRec.title,
+        ...actRecs.slice(0, 3).map((r) => r.reason).filter(Boolean),
+      ].filter(Boolean),
+      priority: summary.weather_risk?.risk_level || 'medium',
+      confidence: Math.min(parseFloat(aiRec.confidence || 0.7), 0.78),
+      is_mock: !!(aiRec.is_mock || summary.weather_risk?.is_mock),
+      last_updated: aiRec.last_updated,
+    };
+  }
+
   const errors = results
-    .map((result, index) => ({ result, key: ['overview', 'realtimeStatus', 'aiInsights', 'riskSummary', 'actionToday'][index] }))
+    .map((result, index) => ({ result, key: ['overview', 'realtimeStatus'][index] }))
     .filter(({ result }) => result.status === 'rejected')
     .map(({ result, key }) => ({ key, message: getApiErrorMessage(result.reason, `Không tải được ${key}`) }));
+
   return {
-    overview: settledValue(results[0], null),
-    realtimeStatus: settledValue(results[1], null),
-    aiInsights: settledValue(results[2], null),
-    riskSummary: settledValue(results[3], null),
-    actionToday: settledValue(results[4], null),
+    overview: summary,
+    realtimeStatus,
+    aiInsights: summary?.ai_recommendation || null,
+    riskSummary: summary?.weather_risk
+      ? {
+          ...summary.weather_risk,
+          confidence: 0.72,
+          recommendations: summary.weather_risk.activity_recommendations || [],
+        }
+      : null,
+    actionToday,
     errors,
   };
 };
