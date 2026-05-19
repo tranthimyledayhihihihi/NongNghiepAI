@@ -8,6 +8,7 @@ from .ingestion import DataIngestionLog
 from .market_news import MarketNews
 from .notification import Notification, NotificationDelivery
 from .price import MarketPrice, PriceForecastResult, PriceHistory, PricingRequest
+from .store_price import StorePrice
 from .quality import QualityCheck, QualityRecord
 from .season import Season
 from .settings import NotificationPreference, UserSettings
@@ -50,6 +51,7 @@ __all__ = [
     "QualityRecord",
     "RegionalPriceSnapshot",
     "Season",
+    "StorePrice",
     "User",
     "UserSettings",
     "CropWeatherRule",

@@ -2,17 +2,18 @@
 Lấy giá nông sản tại các chuỗi cửa hàng lớn Việt Nam.
 
 Ưu tiên:
-  1. Scrape trực tiếp từng trang web chuỗi (httpx + BeautifulSoup)
-  2. Fallback: Gemini 2.0 Flash + Google Search grounding
-  3. Fallback cuối: ước tính từ giá sỉ + markup thông thường
+  1. DB cache (StorePrices, TTL 2h) — trả ngay
+  2. Gemini + Google Search grounding → lưu DB (background)
+  3. Scrape trực tiếp (fallback nếu Gemini thất bại) → lưu DB
+  4. Ước tính markup (luôn available khi không có API)
 """
 from __future__ import annotations
 
 import asyncio
 import os
 import re
-import time
-from datetime import date
+import threading
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -87,9 +88,8 @@ _SCRAPE_HEADERS = {
     "Accept-Encoding": "gzip, deflate, br",
 }
 
-# ── In-memory cache TTL = 30 phút ─────────────────────────────────────────────
+# In-memory set để tránh clear cache trùng lặp khi background fetch xong
 _CACHE: dict[str, tuple[dict, float]] = {}
-_CACHE_TTL = 1800
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -295,128 +295,201 @@ async def _fetch_via_gemini(crop_name: str, region: str, timeout: float | None =
     return {"error": last_error}
 
 
-# ── Public entry point ─────────────────────────────────────────────────────────
+# ── DB helpers ─────────────────────────────────────────────────────────────────
 
-async def fetch_store_prices(crop_name: str, region: str, base_price: int = 0) -> dict:
-    """
-    Lấy giá bán lẻ nông sản tại các chuỗi lớn:
-      1. Scrape trực tiếp từng trang web chuỗi
-      2. Gemini + Google Search (nếu scrape thất bại)
-      3. Ước tính markup (nếu cả hai thất bại)
-    """
-    cache_key = f"{crop_name.lower().strip()}::{region.lower().strip()}"
-    now = time.time()
-    if cache_key in _CACHE:
-        data, ts = _CACHE[cache_key]
-        if now - ts < _CACHE_TTL:
-            return {**data, "cache_status": "fresh", "from_cache": True}
+_DB_TTL_HOURS = 2  # dữ liệu DB còn hạn nếu FetchedAt < 2 giờ trước
 
-    today = date.today().strftime("%d/%m/%Y")
-    last_error: str | None = None
 
-    # Nếu không có Gemini API key, bỏ qua scraping và Gemini → trả ước tính ngay
-    if not _get_gemini_key():
-        if base_price <= 0:
-            try:
-                from app.services.pricing_service import pricing_service  # noqa: PLC0415
-                entry = pricing_service.crop_base_prices.get(crop_name) or {}
-                raw = entry.get("price") or entry.get("base_price") or 0
-                base_price = int(float(raw) * 1000) if raw < 1000 else int(float(raw))
-            except Exception:
-                pass
-        if base_price <= 0:
-            base_price = 25_000
-        return _markup_fallback(crop_name, region, base_price, "no_api_key_configured")
-
-    # ── Bước 1 + 2: scrape + Gemini trong budget tổng 13s ────────────────────
-    # Frontend timeout = 18s; để lại 5s cho overhead mạng + DB
-    _BUDGET = 13.0
-    _deadline = time.time() + _BUDGET
-
-    loop = asyncio.get_running_loop()
-    scraped: dict[str, int] = {}
+def _load_from_db(crop_name: str, region: str) -> dict | None:
+    """Đọc giá chuỗi cửa hàng từ DB nếu còn trong TTL."""
     try:
-        scrape_timeout = min(5.0, max(1.0, _deadline - time.time()))
-        scraped = await asyncio.wait_for(
-            loop.run_in_executor(None, _scrape_all_stores_sync, crop_name),
-            timeout=scrape_timeout,
-        )
-    except Exception as exc:
-        last_error = str(exc)[:80]
+        from app.core.database import SessionLocal  # noqa: PLC0415
+        from app.models.store_price import StorePrice  # noqa: PLC0415
 
-    stores_out = []
-    for store in STORES:
-        price = scraped.get(store["id"])
-        if price:
-            stores_out.append({
-                "id": store["id"],
-                "name": store["name"],
-                "type": store["type"],
-                "price": price,
-                "unit": "đ/kg",
-                "source": "direct_scrape",
-            })
-
-    if len(stores_out) >= 2:
-        result = {
-            "stores": stores_out,
-            "crop_name": crop_name,
-            "region": region,
-            "fetched_at": today,
-            "source": "direct_scrape",
-            "source_name": "Scraped trực tiếp từ trang web chuỗi cửa hàng",
-            "confidence": 0.78,
-            "cache_status": "miss",
-            "from_cache": False,
-        }
-        _CACHE[cache_key] = (result, now)
-        return result
-
-    # ── Bước 2: Gemini fallback (chỉ nếu còn đủ thời gian) ──────────────────
-    gemini_budget = _deadline - time.time()
-    gemini_result: dict = {}
-    if gemini_budget >= 3.0:
-        gemini_result = await _fetch_via_gemini(crop_name, region, timeout=gemini_budget)
-
-    if gemini_result.get("prices"):
-        prices_by_id: dict[str, int] = gemini_result["prices"]
-        for store in STORES:
-            if store["id"] in scraped and store["id"] not in prices_by_id:
-                prices_by_id[store["id"]] = scraped[store["id"]]
-
-        stores_out = []
-        for store in STORES:
-            price = prices_by_id.get(store["id"])
-            if price:
-                stores_out.append({
-                    "id": store["id"],
-                    "name": store["name"],
-                    "type": store["type"],
-                    "price": price,
-                    "unit": "đ/kg",
-                    "source": "gemini_search",
-                })
-
-        if stores_out:
-            result = {
+        db = SessionLocal()
+        try:
+            cutoff = datetime.utcnow() - timedelta(hours=_DB_TTL_HOURS)
+            rows = (
+                db.query(StorePrice)
+                .filter(
+                    StorePrice.CropName == crop_name,
+                    StorePrice.Region == region,
+                    StorePrice.FetchedAt >= cutoff,
+                )
+                .all()
+            )
+            if not rows:
+                return None
+            stores_out = [
+                {
+                    "id": r.StoreID,
+                    "name": r.StoreName,
+                    "type": r.StoreType or "",
+                    "price": r.Price,
+                    "unit": r.Unit or "đ/kg",
+                    "source": r.Source or "db",
+                }
+                for r in rows
+            ]
+            fetched_at = max(r.FetchedAt for r in rows).strftime("%d/%m/%Y %H:%M")
+            source_model = rows[0].SourceModel or ""
+            return {
                 "stores": stores_out,
                 "crop_name": crop_name,
                 "region": region,
-                "fetched_at": today,
-                "source": "gemini_search",
-                "source_name": f"Gemini {gemini_result.get('model', '')} + Google Search",
-                "model": gemini_result.get("model"),
+                "fetched_at": fetched_at,
+                "source": rows[0].Source or "db",
+                "source_name": f"Gemini {source_model} + Google Search (DB cache)" if source_model else "DB cache",
                 "confidence": 0.72,
-                "cache_status": "miss",
-                "from_cache": False,
+                "cache_status": "from_db",
+                "from_cache": True,
             }
-            _CACHE[cache_key] = (result, now)
-            return result
+        finally:
+            db.close()
+    except Exception:
+        return None
 
-    last_error = gemini_result.get("error") or last_error
 
-    # ── Bước 3: ước tính markup (luôn chạy) ──────────────────────────────────
+def _save_to_db(crop_name: str, region: str, stores_out: list[dict], source: str, model_name: str = "") -> None:
+    """Lưu giá chuỗi cửa hàng vào DB (xoá dữ liệu cũ trước)."""
+    try:
+        from app.core.database import SessionLocal  # noqa: PLC0415
+        from app.models.store_price import StorePrice  # noqa: PLC0415
+
+        db = SessionLocal()
+        try:
+            db.query(StorePrice).filter(
+                StorePrice.CropName == crop_name,
+                StorePrice.Region == region,
+            ).delete(synchronize_session=False)
+            now = datetime.utcnow()
+            for s in stores_out:
+                db.add(StorePrice(
+                    CropName=crop_name,
+                    Region=region,
+                    StoreID=s["id"],
+                    StoreName=s["name"],
+                    StoreType=s.get("type", ""),
+                    Price=s["price"],
+                    Unit=s.get("unit", "đ/kg"),
+                    Source=source,
+                    SourceModel=model_name,
+                    FetchedAt=now,
+                    UpdatedAt=now,
+                ))
+            db.commit()
+        finally:
+            db.close()
+    except Exception:
+        pass
+
+
+# Lock để tránh chạy nhiều background fetch cùng lúc cho cùng key
+_BG_FETCHING: set[str] = set()
+
+
+def _background_fetch(crop_name: str, region: str, base_price: int) -> None:
+    """Fetch giá Gemini trong background thread và lưu vào DB."""
+    key = f"{crop_name}::{region}"
+    if key in _BG_FETCHING:
+        return
+    _BG_FETCHING.add(key)
+
+    async def _run():
+        try:
+            # Thử Gemini (8s per model)
+            gemini_result = await _fetch_via_gemini(crop_name, region, timeout=8.0)
+            if gemini_result.get("prices"):
+                prices_by_id = gemini_result["prices"]
+                stores_out = []
+                for store in STORES:
+                    price = prices_by_id.get(store["id"])
+                    if price:
+                        stores_out.append({
+                            "id": store["id"],
+                            "name": store["name"],
+                            "type": store["type"],
+                            "price": price,
+                            "unit": "đ/kg",
+                            "source": "gemini_search",
+                        })
+                if stores_out:
+                    _save_to_db(crop_name, region, stores_out, "gemini_search", gemini_result.get("model", ""))
+                    # Xoá in-memory cache để lần sau đọc từ DB
+                    _CACHE.pop(f"{crop_name.lower().strip()}::{region.lower().strip()}", None)
+                    return
+
+            # Thử scraping nếu Gemini thất bại
+            loop = asyncio.get_running_loop()
+            scraped = await asyncio.wait_for(
+                loop.run_in_executor(None, _scrape_all_stores_sync, crop_name),
+                timeout=10.0,
+            )
+            stores_out = []
+            for store in STORES:
+                price = scraped.get(store["id"])
+                if price:
+                    stores_out.append({
+                        "id": store["id"],
+                        "name": store["name"],
+                        "type": store["type"],
+                        "price": price,
+                        "unit": "đ/kg",
+                        "source": "direct_scrape",
+                    })
+            if len(stores_out) >= 2:
+                _save_to_db(crop_name, region, stores_out, "direct_scrape")
+                _CACHE.pop(f"{crop_name.lower().strip()}::{region.lower().strip()}", None)
+        except Exception:
+            pass
+        finally:
+            _BG_FETCHING.discard(key)
+
+    def _thread():
+        try:
+            asyncio.run(_run())
+        except Exception:
+            pass
+        finally:
+            _BG_FETCHING.discard(key)
+
+    threading.Thread(target=_thread, daemon=True, name=f"store-price-{crop_name}").start()
+
+
+# ── Public entry point (DB-first) ─────────────────────────────────────────────
+
+async def fetch_store_prices(crop_name: str, region: str, base_price: int = 0) -> dict:
+    """
+    1. Trả DB cache ngay nếu còn hạn (< 2h)
+    2. Nếu không có DB data → trả markup + trigger background fetch
+    3. Background fetch lưu vào DB → lần sau request sẽ thấy giá thực
+    """
+    # Bước 1: Đọc DB
+    db_data = _load_from_db(crop_name, region)
+    if db_data:
+        return db_data
+
+    # Bước 2: Trigger background fetch (nếu có API key)
+    if _get_gemini_key():
+        _background_fetch(crop_name, region, base_price)
+
+    # Bước 3: Trả markup ngay (không chờ background)
+    if base_price <= 0:
+        try:
+            from app.services.pricing_service import pricing_service  # noqa: PLC0415
+            entry = pricing_service.crop_base_prices.get(crop_name) or {}
+            raw = entry.get("price") or entry.get("base_price") or 0
+            base_price = int(float(raw) * 1000) if raw < 1000 else int(float(raw))
+        except Exception:
+            pass
     if base_price <= 0:
         base_price = 25_000
 
-    return _markup_fallback(crop_name, region, base_price, last_error)
+    result = _markup_fallback(crop_name, region, base_price, None)
+    # Thêm thông báo về background fetch
+    if _get_gemini_key():
+        result["warning"] = (
+            "Đang tải giá thực từ chuỗi cửa hàng. "
+            "Vui lòng bấm 'Phân tích thị trường' lại sau 15 giây để xem giá cập nhật."
+        )
+    return result
