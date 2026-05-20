@@ -1,9 +1,9 @@
 import api, { getApiErrorMessage } from './api';
-import { normalizeApiError, normalizeApiResponse } from '../utils/apiResponse';
+import { normalizeApiError, unwrapApiResponse } from '../utils/apiResponse';
 import { normalizePriceInput } from '../utils/priceInputs';
 import { pricingApi } from './pricingApi';
 
-const unwrap = (response) => normalizeApiResponse(response);
+const unwrap = (response) => unwrapApiResponse(response);
 const normalizeNewsPayload = (payload) => (
   Array.isArray(payload)
     ? {

@@ -28,6 +28,13 @@ class ThiTruongNongSanNewsClient:
         )
         self.retries = min(max(int(getattr(settings, "EXTERNAL_RETRY_COUNT", 1)), 1), 2)
 
+    @staticmethod
+    def _headers() -> dict[str, str]:
+        return {
+            "User-Agent": "Mozilla/5.0 (compatible; NongNghiepAI/1.0)",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.7",
+        }
 
     def fetch_latest_news(
         self,

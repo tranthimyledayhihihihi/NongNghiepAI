@@ -331,7 +331,7 @@ class WeatherService:
         """
         norm = _normalize_region(region)
 
-        # 1) DB cache (WeatherData) thật
+        # 1) DB cache (WeatherForecasts) thật — chỉ dùng nếu còn fresh/stale và không force_refresh
         if not force_refresh:
             hourly_rows = get_cached_hourly_forecasts(db, norm, hours)
             if hourly_rows:
@@ -349,17 +349,17 @@ class WeatherService:
                                 "forecast_at": row.ForecastAt,
                                 "region": norm,
                                 "temperature": float(row.Temperature) if row.Temperature is not None else None,
-                                "apparent_temperature": None,
+                                "apparent_temperature": float(row.ApparentTemperature) if row.ApparentTemperature is not None else None,
                                 "rainfall": float(row.Rainfall) if row.Rainfall is not None else None,
                                 "rain_probability": float(row.RainProbability) if row.RainProbability is not None else None,
                                 "humidity": float(row.Humidity) if row.Humidity is not None else None,
-                                "dew_point": None,
+                                "dew_point": float(row.DewPoint) if row.DewPoint is not None else None,
                                 "wind_speed": float(row.WindSpeed) if row.WindSpeed is not None else None,
-                                "wind_gusts": None,
+                                "wind_gusts": float(row.WindGusts) if row.WindGusts is not None else None,
                                 "uv_index": float(row.UVIndex) if row.UVIndex is not None else None,
-                                "visibility": None,
-                                "cloud_cover": None,
-                                "pressure": None,
+                                "visibility": float(row.Visibility) if row.Visibility is not None else None,
+                                "cloud_cover": float(row.CloudCover) if row.CloudCover is not None else None,
+                                "pressure": float(row.Pressure) if row.Pressure is not None else None,
                                 "condition": row.WeatherDesc,
                                 "weather_code": row.WeatherCode,
                                 "recommendation": row.Recommendation,
@@ -387,67 +387,7 @@ class WeatherService:
                         "data_age_minutes": age_minutes(fetched),
                     }
 
-        cached = get_latest_weather(db, norm)
-        if cached and not cached.IsMock and not force_refresh:
-            fetched = cached.FetchedAt or cached.SourceUpdatedAt or cached.CreatedAt or datetime.now()
-            cache_status = cache_status_for(fetched, "weather_hourly")
-            if cache_status in {"fresh_cache", "stale_cache"}:
-                age_min = int((datetime.now() - fetched).total_seconds() / 60)
-                # map sang `hours` entries; dùng cùng giá trị cached (vì DB không lưu theo từng giờ)
-                forecast_items = []
-                for _ in range(max(hours, 1)):
-                    forecast_items.append({
-                        "time": fetched.isoformat(),
-                        "date": fetched.date().isoformat(),
-                        "forecast_at": fetched,
-                        "region": norm,
-                        "temperature": None,
-                        "apparent_temperature": None,
-                        "rainfall": float(cached.Rainfall or 0) if cached.Rainfall is not None else None,
-                        "rain_probability": None,
-                        "humidity": float(cached.Humidity or 70) if cached.Humidity is not None else None,
-                        "dew_point": None,
-                        "wind_speed": float(cached.WindSpeed) if cached.WindSpeed is not None else None,
-                        "wind_gusts": None,
-                        "uv_index": float(cached.UVIndex) if cached.UVIndex is not None else None,
-                        "visibility": None,
-                        "cloud_cover": None,
-                        "pressure": float(cached.Pressure) if cached.Pressure is not None else None,
-                        "condition": cached.WeatherDesc,
-                        "weather_code": cached.WeatherCode,
-                        "recommendation": None,
-                        "source_name": cached.SourceName or OPEN_METEO_SOURCE_NAME,
-                        "is_realtime": False,
-                        "is_mock": False,
-                        "cache_status": cache_status,
-                        "last_updated": fetched,
-                    })
-
-                return {
-                    "region": norm,
-                    "hours": hours,
-                    "forecast": forecast_items,
-                    "source_name": OPEN_METEO_SOURCE_NAME,
-                    "source_url": OPEN_METEO_FORECAST_URL,
-                    "is_realtime": False,
-                    "is_mock": False,
-                    "cache_status": cache_status,
-                    "fetched_at": fetched,
-                    "last_updated": fetched,
-                    "data_age_minutes": age_min,
-                }
-
-        if not force_refresh:
-            payload = realtime_error(
-                code="WEATHER_HOURLY_CACHE_MISS",
-                message="Weather hourly cache miss. Background refresh has not fetched fresh real data yet.",
-                source_name=OPEN_METEO_SOURCE_NAME,
-                source_url=OPEN_METEO_FORECAST_URL,
-            )
-            payload.update({"region": norm, "hours": hours, "forecast": []})
-            return payload
-
-        # 2) Call realtime Open-Meteo
+        # 2) Cache miss hoặc force_refresh — gọi Open-Meteo trực tiếp
         try:
             live_items = _weather_client.get_hourly_forecast(norm, hours)
             if not live_items:
@@ -492,11 +432,17 @@ class WeatherService:
                     forecast_at=forecast_at,
                     forecast_type="hourly",
                     temperature=item.get("temperature"),
+                    apparent_temperature=item.get("apparent_temperature"),
                     humidity=item.get("humidity"),
+                    dew_point=item.get("dew_point"),
                     rainfall=item.get("rainfall"),
                     rain_probability=item.get("rain_probability"),
                     wind_speed=item.get("wind_speed"),
+                    wind_gusts=item.get("wind_gusts"),
                     uv_index=item.get("uv_index"),
+                    visibility=item.get("visibility"),
+                    cloud_cover=item.get("cloud_cover"),
+                    pressure=item.get("pressure"),
                     weather_code=item.get("weather_code"),
                     condition=item.get("condition"),
                     source_name=item.get("source_name") or OPEN_METEO_SOURCE_NAME,
@@ -607,6 +553,9 @@ class WeatherService:
     ) -> dict:
         current = self.get_current_weather(db, region)
         if current.get("_api_error"):
+            # Cache miss — try a live fetch before giving up
+            current = self.get_current_weather(db, region, force_refresh=True)
+        if current.get("_api_error"):
             return current
 
         # Forecast 7 ngày (DB cache thật)
@@ -618,7 +567,7 @@ class WeatherService:
         # Alerts từ forecast
         alerts = self._build_alerts(forecast, crop_name, growth_stage)
 
-        hourly_bundle = self.get_hourly_forecast(db, region, 24) if include_hourly else {"forecast": []}
+        hourly_bundle = self.get_hourly_forecast(db, region, 168) if include_hourly else {"forecast": []}
         hourly = hourly_bundle.get("forecast", []) if isinstance(hourly_bundle, dict) else hourly_bundle
 
         # Activity recommendations
@@ -906,7 +855,8 @@ class WeatherService:
             if cached and cache_status in {"fresh_cache", "stale_cache"} and not force_refresh:
                 return cached
 
-        if not force_refresh:
+        # Only bail out early if DB had rows (even stale) — empty cache always tries live fetch
+        if not force_refresh and rows:
             return []
 
         # Live fetch
@@ -1005,6 +955,7 @@ class WeatherService:
                 "temp_max": temp_max,
                 "humidity": round(hum, 1),
                 "rainfall": round(rain, 1),
+                "rain_probability": min(100, int(rain / 0.3)) if rain > 0 else 0,
                 "condition": w.WeatherDesc or "unknown",
                 "wind_speed": float(w.WindSpeed) if w.WindSpeed is not None else None,
                 "uv_index": float(w.UVIndex) if w.UVIndex is not None else None,
@@ -1077,7 +1028,7 @@ class WeatherService:
         forecast = self.get_forecast(db, region, 7)
         if not forecast:
             return self._miss_weather_error(region, "forecast_7_days")
-        hourly = self.get_hourly_forecast(db, region, 24)
+        hourly = self.get_hourly_forecast(db, region, 168)
         recommendations = self.build_activity_recommendations(current, forecast, hourly, crop_name=crop_name)
         risk = self.analyze_agriculture_risk(db, region, crop_name)
         should_irrigate = next((item for item in recommendations if item.get("action_type") == "irrigation"), None)

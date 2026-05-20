@@ -1,7 +1,7 @@
 ﻿import api, { getApiErrorMessage } from './api';
-import { normalizeApiError, normalizeApiResponse } from '../utils/apiResponse';
+import { normalizeApiError, unwrapApiResponse } from '../utils/apiResponse';
 
-const unwrap = (response) => normalizeApiResponse(response);
+const unwrap = (response) => unwrapApiResponse(response);
 const request = async (factory, fallback) => {
   try {
     return unwrap(await factory());

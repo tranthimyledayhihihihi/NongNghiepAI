@@ -1,24 +1,24 @@
 import api from './api';
-import { normalizeApiResponse } from '../utils/apiResponse';
+import { unwrapApiResponse } from '../utils/apiResponse';
 
 export const weatherApi = {
   getCurrentWeather: async (region) => {
     const response = await api.get(`/api/weather/current/${encodeURIComponent(region)}`);
-    return normalizeApiResponse(response);
+    return unwrapApiResponse(response);
   },
 
   getForecast: async (region, days = 7) => {
     const response = await api.get(`/api/weather/forecast/${encodeURIComponent(region)}`, {
       params: { days },
     });
-    return normalizeApiResponse(response);
+    return unwrapApiResponse(response);
   },
 
   getHourlyForecast: async (region, hours = 24) => {
     const response = await api.get(`/api/weather/hourly/${encodeURIComponent(region)}`, {
       params: { hours },
     });
-    return normalizeApiResponse(response);
+    return unwrapApiResponse(response);
   },
 
   getAgricultureWeather: async ({ region, cropName, growthStage, days = 7, includeHourly = true }) => {
@@ -30,21 +30,21 @@ export const weatherApi = {
         include_hourly: includeHourly,
       },
     });
-    return normalizeApiResponse(response);
+    return unwrapApiResponse(response);
   },
 
   getRiskAnalysis: async ({ region, cropName }) => {
     const response = await api.get(
       `/api/weather/risk-analysis/${encodeURIComponent(region)}/${encodeURIComponent(cropName || 'lua')}`
     );
-    return normalizeApiResponse(response);
+    return unwrapApiResponse(response);
   },
 
   getFarmingRecommendation: async ({ region, cropName }) => {
     const response = await api.get(
       `/api/weather/farming-recommendation/${encodeURIComponent(region)}/${encodeURIComponent(cropName || 'lua')}`
     );
-    return normalizeApiResponse(response);
+    return unwrapApiResponse(response);
   },
 
   getAlerts: async ({ region, cropName, growthStage, days = 7 }) => {
@@ -55,8 +55,8 @@ export const weatherApi = {
         days,
       },
     });
-    const data = normalizeApiResponse(response);
-    return data.alerts || data;
+    const data = unwrapApiResponse(response);
+    return data?.alerts || data;
   },
 
   getRecommendations: async ({ region, cropName, growthStage }) => {
@@ -66,17 +66,17 @@ export const weatherApi = {
         growth_stage: growthStage || undefined,
       },
     });
-    const data = normalizeApiResponse(response);
-    return data.recommendations || data;
+    const data = unwrapApiResponse(response);
+    return data?.recommendations || data;
   },
 
   refreshCurrentWeather: async (region) => {
     const response = await api.post(`/api/weather/refresh/${encodeURIComponent(region)}`);
-    return normalizeApiResponse(response);
+    return unwrapApiResponse(response);
   },
 
   createWeather: async (payload) => {
     const response = await api.post('/api/weather/', payload);
-    return normalizeApiResponse(response);
+    return unwrapApiResponse(response);
   },
 };

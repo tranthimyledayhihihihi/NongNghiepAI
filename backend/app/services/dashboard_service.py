@@ -50,7 +50,7 @@ class DashboardService:
         selected_crop = self._clean_crop(crop_name)
         force_refresh = force_refresh_weather or force_refresh_market or force_refresh_news
 
-        cache_key = f"dashboard:summary:{selected_region}:{selected_crop}:{user_id or 'anon'}"
+        cache_key = f"dashboard:summary:v2:{selected_region}:{selected_crop}:{user_id or 'anon'}"
         if not force_refresh:
             try:
                 cached = redis_client.get(cache_key)
@@ -482,7 +482,7 @@ class DashboardService:
     ) -> dict:
         current = weather_service.get_current_weather(db, region, force_refresh=force_refresh)
         forecast = weather_service.get_weather_forecast(db, region, 7)
-        hourly_bundle = weather_service.get_hourly_forecast(db, region, 24)
+        hourly_bundle = weather_service.get_hourly_forecast(db, region, 168)
         hourly = hourly_bundle.get("forecast", []) if isinstance(hourly_bundle, dict) else hourly_bundle
         if current.get("_api_error") or not forecast:
             return {

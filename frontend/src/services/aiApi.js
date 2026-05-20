@@ -1,9 +1,9 @@
 import api, { getApiErrorMessage, withApiTimeout } from './api';
-import { normalizeApiError, normalizeApiResponse } from '../utils/apiResponse';
+import { normalizeApiError, unwrapApiResponse } from '../utils/apiResponse';
 
 const request = async (factory, fallback) => {
   try {
-    return normalizeApiResponse(await factory());
+    return unwrapApiResponse(await factory());
   } catch (error) {
     throw normalizeApiError({ ...error, message: getApiErrorMessage(error, fallback) });
   }

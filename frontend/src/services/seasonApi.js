@@ -1,7 +1,7 @@
 import api from './api';
-import { normalizeApiResponse } from '../utils/apiResponse';
+import { unwrapApiResponse } from '../utils/apiResponse';
 
-const unwrap = (response) => normalizeApiResponse(response);
+const unwrap = (response) => unwrapApiResponse(response);
 
 export const seasonApi = {
   getSeasons: async (params = {}) => {

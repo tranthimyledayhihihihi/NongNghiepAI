@@ -11,9 +11,12 @@ from typing import Any
 from unicodedata import normalize as unicode_normalize
 import unicodedata
 
+from datetime import date as date_type
+
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.models.price import MarketPrice
 from app.repositories.common import ensure_crop, normalize_text, to_db_grade
 from app.repositories.price_repository import (
     create_pricing_request,
@@ -456,23 +459,73 @@ class PricingService:
 
     def get_price_history(self, db: Session, crop_name: str, region: str, days: int = 30) -> list[dict]:
         history = get_price_history(db, crop_name, region, days)
-        if not history:
+        if history:
+            return [
+                {
+                    "date": item.record_date.isoformat(),
+                    "avg_price": float(item.avg_price),
+                    "min_price": float(item.min_price or item.avg_price),
+                    "max_price": float(item.max_price or item.avg_price),
+                    "source": "database",
+                    "source_name": "PriceHistory DB",
+                    "fetched_at": datetime.now().isoformat(),
+                    "updated_at": item.record_date.isoformat(),
+                    "confidence": 0.7,
+                    "is_mock": False,
+                }
+                for item in history
+            ]
+        return self._market_price_history(db, crop_name, region, days)
+
+    def _market_price_history(self, db: Session, crop_name: str, region: str, days: int) -> list[dict]:
+        """Aggregate MarketPrice rows by PriceDate as fallback when PriceHistory is empty."""
+        try:
+            start = date_type.today() - timedelta(days=days)
+            crop = ensure_crop(db, crop_name)
+            target_region = normalize_text(region)
+            rows = (
+                db.query(MarketPrice)
+                .filter(
+                    MarketPrice.CropID == crop.CropID,
+                    MarketPrice.PriceDate >= start,
+                    MarketPrice.IsMock == False,  # noqa: E712
+                )
+                .order_by(MarketPrice.PriceDate)
+                .all()
+            )
+            # Filter by region (exact match first, then all)
+            region_rows = [r for r in rows if normalize_text(r.Region) == target_region]
+            if not region_rows:
+                region_rows = rows  # fallback: any region
+
+            # Group by PriceDate
+            by_date: dict[date_type, list[float]] = {}
+            for row in region_rows:
+                key = row.PriceDate
+                if key is None:
+                    continue
+                by_date.setdefault(key, []).append(float(row.PricePerKg))
+
+            result = []
+            for d in sorted(by_date):
+                prices = by_date[d]
+                avg = sum(prices) / len(prices)
+                result.append({
+                    "date": d.isoformat(),
+                    "avg_price": round(avg, 2),
+                    "min_price": round(min(prices), 2),
+                    "max_price": round(max(prices), 2),
+                    "source": "database",
+                    "source_name": "MarketPrices DB",
+                    "fetched_at": datetime.now().isoformat(),
+                    "updated_at": d.isoformat(),
+                    "confidence": 0.65,
+                    "is_mock": False,
+                })
+            return result
+        except Exception:
+            db.rollback()
             return []
-        return [
-            {
-                "date": item.record_date.isoformat(),
-                "avg_price": float(item.avg_price),
-                "min_price": float(item.min_price or item.avg_price),
-                "max_price": float(item.max_price or item.avg_price),
-                "source": "database",
-                "source_name": "PriceHistory DB",
-                "fetched_at": datetime.now().isoformat(),
-                "updated_at": item.record_date.isoformat(),
-                "confidence": 0.7,
-                "is_mock": False,
-            }
-            for item in history
-        ]
 
     def analyze_price_trend(self, db: Session, crop_name: str, region: str) -> str:
         recent_prices = get_recent_market_prices(db, crop_name, region)

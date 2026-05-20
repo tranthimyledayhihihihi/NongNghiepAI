@@ -139,13 +139,28 @@ class MarketNewsService:
             since=since,
         )
 
-        # If realtime miss: try refresh once.
-        # If still no realtime data but cache exists, return cache.
+        # If realtime miss: try a live refresh once, then fall back to general news.
+        if not rows:
+            try:
+                self.refresh_news()
+                db.expire_all()
+                rows = self._filter_relevant_news(
+                    list_market_news(db, limit=fetch_limit, crop_name=crop_name, region=region, since=since),
+                    since=since,
+                )
+            except Exception as exc:
+                logger.warning("[MarketNewsService] inline refresh failed: %s", exc)
+
+        # If crop/region filtered news is still empty, fall back to general agriculture news
+        if not rows and (crop_name or region):
+            rows = self._filter_relevant_news(
+                list_market_news(db, limit=fetch_limit, since=since),
+                since=since,
+            )
+
         if not rows:
             if cached:
-                # cached already returned earlier; keep for safety
-                return cached
-            # No cache => required error payload
+                return {**cached, "cache_status": "fresh_cache"}
             payload = realtime_error(
                 code="MARKET_NEWS_CACHE_MISS",
                 message="Market news cache miss. Background refresh has not fetched fresh real data yet.",
@@ -159,14 +174,37 @@ class MarketNewsService:
         newest_fetched = rows[0].FetchedAt or rows[0].CreatedAt or datetime.utcnow()
         cache_status = cache_status_for(newest_fetched, "market_news")
         if cache_status == "miss":
-            payload = realtime_error(
-                code="MARKET_NEWS_CACHE_EXPIRED",
-                message="Market news cache expired. Background refresh has not fetched fresh real data yet.",
-                source_name=rows[0].SourceName or OFFICIAL_AGRI_SOURCE_NAME,
-                source_url=OFFICIAL_NEWS_URL,
-            )
-            payload["news"] = []
-            return payload
+            # FetchedAt is old but news items are still within publication window — show them with a warning,
+            # and trigger a background refresh so future requests get fresh data.
+            try:
+                self.refresh_news()
+                db.expire_all()
+                fresh_rows = self._filter_relevant_news(
+                    list_market_news(db, limit=fetch_limit, crop_name=crop_name, region=region, since=since),
+                    since=since,
+                )
+                if fresh_rows:
+                    rows = fresh_rows
+                    newest_fetched = rows[0].FetchedAt or rows[0].CreatedAt or datetime.utcnow()
+                    cache_status = cache_status_for(newest_fetched, "market_news")
+            except Exception as exc:
+                logger.warning("[MarketNewsService] expired-cache refresh failed: %s", exc)
+            # Fall back to general news if crop/region filtered fresh rows are empty
+            if cache_status == "miss" and (crop_name or region):
+                try:
+                    general_rows = self._filter_relevant_news(
+                        list_market_news(db, limit=fetch_limit, since=since),
+                        since=since,
+                    )
+                    if general_rows:
+                        rows = general_rows
+                        newest_fetched = rows[0].FetchedAt or rows[0].CreatedAt or datetime.utcnow()
+                        cache_status = cache_status_for(newest_fetched, "market_news")
+                except Exception:
+                    pass
+            # If still miss, show stale data rather than an error
+            if cache_status == "miss":
+                cache_status = "stale_cache"
         response = {
             "news": self._dedupe_and_order_news([self._to_dict(row) for row in rows[:limit]]),
             "source": "cache",
@@ -179,6 +217,7 @@ class MarketNewsService:
             "fetched_at": newest_fetched,
             "last_updated": newest_fetched,
             "data_age_minutes": int((datetime.utcnow() - newest_fetched).total_seconds() // 60) if newest_fetched else None,
+            "warning": "Đang hiển thị tin tức đã lưu. Đang cập nhật tin mới." if cache_status == "stale_cache" else None,
             "metadata": {
                 "source_type": "cache",
                 "source_name": rows[0].SourceName if rows and rows[0].SourceName else OFFICIAL_AGRI_SOURCE_NAME,

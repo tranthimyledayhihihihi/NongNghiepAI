@@ -356,6 +356,10 @@ const ForecastPage = () => {
     setSelectedHour(null);
     setHourlyByDate({});
     try {
+      // Refresh cache trước để đảm bảo có dữ liệu mới nhất
+      await weatherApi.refreshCurrentWeather(region).catch(() => {});
+      await weatherApi.getForecast(region, 7).catch(() => {});
+
       const results = await Promise.allSettled([
         weatherApi.getAgricultureWeather({
           region,
@@ -372,6 +376,12 @@ const ForecastPage = () => {
         throw weatherResult.reason;
       }
       const result = weatherResult.value;
+
+      // Backend trả success:false (cache miss hoặc lỗi nguồn) → báo lỗi rõ
+      if (result?.success === false || !result?.current) {
+        throw new Error(result?.message || result?.error?.message || 'Không có dữ liệu thời tiết. Vui lòng thử lại.');
+      }
+
       const riskAnalysis = riskResult.status === 'fulfilled' ? riskResult.value : result.risk_analysis;
       const farmingRecommendation = recommendationResult.status === 'fulfilled'
         ? recommendationResult.value

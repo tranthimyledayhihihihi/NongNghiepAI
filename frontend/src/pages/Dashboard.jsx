@@ -57,6 +57,71 @@ const REGION_LABELS = {
 
 const displayRegion = (value) => REGION_LABELS[value] || value;
 
+const VIETNAM_PROVINCES = [
+  'Ha Noi', 'Ho Chi Minh', 'Da Nang', 'Hai Phong', 'Can Tho',
+  'An Giang', 'Ba Ria - Vung Tau', 'Bac Giang', 'Bac Kan', 'Bac Lieu',
+  'Bac Ninh', 'Ben Tre', 'Binh Dinh', 'Binh Duong', 'Binh Phuoc',
+  'Binh Thuan', 'Ca Mau', 'Cao Bang', 'Dak Lak', 'Dak Nong',
+  'Dien Bien', 'Dong Nai', 'Dong Thap', 'Gia Lai', 'Ha Giang',
+  'Ha Nam', 'Ha Tinh', 'Hai Duong', 'Hau Giang', 'Hoa Binh',
+  'Hung Yen', 'Khanh Hoa', 'Kien Giang', 'Kon Tum', 'Lai Chau',
+  'Lam Dong', 'Lang Son', 'Lao Cai', 'Long An', 'Nam Dinh',
+  'Nghe An', 'Ninh Binh', 'Ninh Thuan', 'Phu Tho', 'Phu Yen',
+  'Quang Binh', 'Quang Nam', 'Quang Ngai', 'Quang Ninh', 'Quang Tri',
+  'Soc Trang', 'Son La', 'Tay Ninh', 'Thai Binh', 'Thai Nguyen',
+  'Thanh Hoa', 'Thua Thien Hue', 'Tien Giang', 'Tra Vinh', 'Tuyen Quang',
+  'Vinh Long', 'Vinh Phuc', 'Yen Bai',
+];
+
+const PROVINCE_LABELS = {
+  'Ha Noi': 'Hà Nội', 'Ho Chi Minh': 'TP. Hồ Chí Minh', 'Da Nang': 'Đà Nẵng',
+  'Hai Phong': 'Hải Phòng', 'Can Tho': 'Cần Thơ', 'An Giang': 'An Giang',
+  'Ba Ria - Vung Tau': 'Bà Rịa-Vũng Tàu', 'Bac Giang': 'Bắc Giang',
+  'Bac Kan': 'Bắc Kạn', 'Bac Lieu': 'Bạc Liêu', 'Bac Ninh': 'Bắc Ninh',
+  'Ben Tre': 'Bến Tre', 'Binh Dinh': 'Bình Định', 'Binh Duong': 'Bình Dương',
+  'Binh Phuoc': 'Bình Phước', 'Binh Thuan': 'Bình Thuận', 'Ca Mau': 'Cà Mau',
+  'Cao Bang': 'Cao Bằng', 'Dak Lak': 'Đắk Lắk', 'Dak Nong': 'Đắk Nông',
+  'Dien Bien': 'Điện Biên', 'Dong Nai': 'Đồng Nai', 'Dong Thap': 'Đồng Tháp',
+  'Gia Lai': 'Gia Lai', 'Ha Giang': 'Hà Giang', 'Ha Nam': 'Hà Nam',
+  'Ha Tinh': 'Hà Tĩnh', 'Hai Duong': 'Hải Dương', 'Hau Giang': 'Hậu Giang',
+  'Hoa Binh': 'Hòa Bình', 'Hung Yen': 'Hưng Yên', 'Khanh Hoa': 'Khánh Hòa',
+  'Kien Giang': 'Kiên Giang', 'Kon Tum': 'Kon Tum', 'Lai Chau': 'Lai Châu',
+  'Lam Dong': 'Lâm Đồng', 'Lang Son': 'Lạng Sơn', 'Lao Cai': 'Lào Cai',
+  'Long An': 'Long An', 'Nam Dinh': 'Nam Định', 'Nghe An': 'Nghệ An',
+  'Ninh Binh': 'Ninh Bình', 'Ninh Thuan': 'Ninh Thuận', 'Phu Tho': 'Phú Thọ',
+  'Phu Yen': 'Phú Yên', 'Quang Binh': 'Quảng Bình', 'Quang Nam': 'Quảng Nam',
+  'Quang Ngai': 'Quảng Ngãi', 'Quang Ninh': 'Quảng Ninh', 'Quang Tri': 'Quảng Trị',
+  'Soc Trang': 'Sóc Trăng', 'Son La': 'Sơn La', 'Tay Ninh': 'Tây Ninh',
+  'Thai Binh': 'Thái Bình', 'Thai Nguyen': 'Thái Nguyên', 'Thanh Hoa': 'Thanh Hóa',
+  'Thua Thien Hue': 'Thừa Thiên Huế', 'Tien Giang': 'Tiền Giang',
+  'Tra Vinh': 'Trà Vinh', 'Tuyen Quang': 'Tuyên Quang', 'Vinh Long': 'Vĩnh Long',
+  'Vinh Phuc': 'Vĩnh Phúc', 'Yen Bai': 'Yên Bái',
+};
+
+const PROVINCE_LABEL_TO_KEY = Object.fromEntries(
+  Object.entries(PROVINCE_LABELS).map(([k, v]) => [v.toLowerCase(), k]),
+);
+
+const normalizeToProvince = (r) => {
+  if (!r) return 'Ha Noi';
+  if (VIETNAM_PROVINCES.includes(r)) return r;
+  const key = PROVINCE_LABEL_TO_KEY[r.toLowerCase()];
+  if (key) return key;
+  const stripped = r.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd');
+  return VIETNAM_PROVINCES.find((p) => p.toLowerCase() === stripped.toLowerCase()) || 'Ha Noi';
+};
+
+const CROP_OPTIONS = [
+  { value: 'lua', label: 'Lúa' },
+  { value: 'ca phe', label: 'Cà phê' },
+  { value: 'ho tieu', label: 'Hồ tiêu' },
+  { value: 'sau rieng', label: 'Sầu riêng' },
+  { value: 'ngo', label: 'Ngô' },
+  { value: 'san', label: 'Sắn' },
+  { value: 'cao su', label: 'Cao su' },
+  { value: 'dua', label: 'Dừa' },
+];
+
 const STATUS_NAME_LABELS = {
   Weather: 'Thời tiết',
   Market: 'Thị trường',
@@ -127,20 +192,23 @@ const SentimentBadge = ({ value }) => {
 const MiniHourlyChart = ({ hourly = [] }) => {
   const points = hourly.slice(0, 12);
   if (!points.length) return <EmptyState text="Chưa có dự báo theo giờ." />;
-  const maxRain = Math.max(...points.map((item) => Number(item.rainfall || item.rain_probability || 0)), 1);
+
+  const probValues = points.map((item) => Number(item.rain_probability || 0));
+  const maxProb = Math.max(...probValues, 1);
+
   return (
     <div className="flex h-28 items-end gap-2">
       {points.map((item, index) => {
-        const value = Number(item.rainfall || 0);
-        const probability = Number(item.rain_probability || 0);
-        const height = Math.max(12, Math.round(((value || probability / 10) / maxRain) * 92));
+        const rain = Number(item.rainfall || 0);
+        const prob = Number(item.rain_probability || 0);
+        const height = Math.max(6, Math.round((prob / maxProb) * 92));
         const label = item.time ? item.time.slice(11, 16) : `${index + 1}h`;
         return (
           <div key={`${label}-${index}`} className="flex min-w-0 flex-1 flex-col items-center gap-1">
             <div
               className="w-full rounded-t bg-sky-500"
               style={{ height }}
-              title={`${label}: mưa ${formatNumber(value, 1)} mm, xác suất ${formatNumber(probability)}%`}
+              title={`${label}: mưa ${formatNumber(rain, 1)} mm, xác suất ${formatNumber(prob)}%`}
             />
             <span className="text-[10px] text-slate-500">{label}</span>
           </div>
@@ -157,7 +225,44 @@ const Dashboard = () => {
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [weatherRegion, setWeatherRegion] = useState(() => normalizeToProvince(region));
+  const [marketCrop, setMarketCrop] = useState('lua');
+  const [weatherData, setWeatherData] = useState(null);
+  const [featuredCropData, setFeaturedCropData] = useState(null);
+  const [forecastData, setForecastData] = useState(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  const [marketLoading, setMarketLoading] = useState(false);
   const loadedKeyRef = useRef(null);
+  const prevWeatherRegionRef = useRef(normalizeToProvince(region));
+  const prevMarketCropRef = useRef('lua');
+
+  const loadWeatherForRegion = useCallback(async (targetRegion) => {
+    setWeatherLoading(true);
+    try {
+      const data = await dashboardApi.getWeatherRisk({ region: targetRegion });
+      setWeatherData(data);
+    } catch {
+      // silent — keep existing panel data
+    } finally {
+      setWeatherLoading(false);
+    }
+  }, []);
+
+  const loadMarketForCrop = useCallback(async (targetCrop) => {
+    setMarketLoading(true);
+    try {
+      const [featuredResult, trendResult] = await Promise.allSettled([
+        dashboardApi.getFeaturedCrop(region, { cropName: targetCrop }),
+        dashboardApi.getPriceTrend({ cropName: targetCrop, region }),
+      ]);
+      if (featuredResult.status === 'fulfilled') setFeaturedCropData(featuredResult.value);
+      if (trendResult.status === 'fulfilled') setForecastData(trendResult.value?.forecast || []);
+    } catch {
+      // silent — keep existing panel data
+    } finally {
+      setMarketLoading(false);
+    }
+  }, [region]);
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -215,10 +320,22 @@ const Dashboard = () => {
     return undefined;
   }, [cropName, loadDashboard, region]);
 
-  const featured = summary?.featured_crop || {};
-  const weatherRisk = summary?.weather_risk || {};
+  useEffect(() => {
+    if (prevWeatherRegionRef.current === weatherRegion) return;
+    prevWeatherRegionRef.current = weatherRegion;
+    loadWeatherForRegion(weatherRegion);
+  }, [weatherRegion, loadWeatherForRegion]);
+
+  useEffect(() => {
+    if (prevMarketCropRef.current === marketCrop) return;
+    prevMarketCropRef.current = marketCrop;
+    loadMarketForCrop(marketCrop);
+  }, [marketCrop, loadMarketForCrop]);
+
+  const featured = featuredCropData || summary?.featured_crop || {};
+  const weatherRisk = weatherData || summary?.weather_risk || {};
   const weatherCurrent = weatherRisk.current || summary?.weather?.current || {};
-  const forecast = summary?.forecast || [];
+  const forecast = forecastData ?? summary?.forecast ?? [];
   const regionalPrices = summary?.regional_prices || [];
   const news = summary?.news || [];
   const realtimeMarket = summary?.realtime_market || {};
@@ -348,7 +465,20 @@ const Dashboard = () => {
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
         <Panel>
-          <PanelHeader icon={TrendingUp} title="Giá thị trường" />
+          <PanelHeader icon={TrendingUp} title="Giá thị trường">
+            <div className="flex items-center gap-2">
+              {marketLoading && <span className="text-xs text-slate-400">đang tải...</span>}
+              <select
+                value={marketCrop}
+                onChange={(e) => setMarketCrop(e.target.value)}
+                className="rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 focus:outline-none"
+              >
+                {CROP_OPTIONS.map((c) => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
+              </select>
+            </div>
+          </PanelHeader>
 
           <div className="space-y-4">
             <div>
@@ -356,7 +486,9 @@ const Dashboard = () => {
                 <MapPin className="h-4 w-4" />
                 {displayRegion(featured.location || region)}
               </div>
-              <h2 className="mt-1 text-2xl font-bold text-slate-950">{featured.display_name || featured.name || cropName}</h2>
+              <h2 className="mt-1 text-2xl font-bold text-slate-950">
+                {featured.display_name || featured.name || CROP_OPTIONS.find((c) => c.value === marketCrop)?.label || marketCrop}
+              </h2>
               <div className="mt-3 flex items-end gap-2">
                 <span className="text-4xl font-bold text-slate-950">{formatNumber(featured.price)}</span>
                 <span className="pb-1 text-sm font-medium text-slate-500">{featured.unit || 'VND/kg'}</span>
@@ -393,7 +525,19 @@ const Dashboard = () => {
 
         <Panel>
           <PanelHeader icon={CloudRain} title="Thời tiết hiện tại">
-            <RiskBadge level={weatherRisk.risk_level} />
+            <div className="flex items-center gap-2">
+              {weatherLoading && <span className="text-xs text-slate-400">đang tải...</span>}
+              <select
+                value={weatherRegion}
+                onChange={(e) => setWeatherRegion(e.target.value)}
+                className="rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 focus:outline-none"
+              >
+                {VIETNAM_PROVINCES.map((p) => (
+                  <option key={p} value={p}>{PROVINCE_LABELS[p] || p}</option>
+                ))}
+              </select>
+              <RiskBadge level={weatherRisk.risk_level} />
+            </div>
           </PanelHeader>
 
           <div className="grid grid-cols-2 gap-3">

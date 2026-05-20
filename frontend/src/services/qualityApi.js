@@ -1,5 +1,5 @@
 import api, { withApiTimeout } from './api';
-import { normalizeApiResponse } from '../utils/apiResponse';
+import { unwrapApiResponse } from '../utils/apiResponse';
 
 export const qualityApi = {
   checkQuality: async (imageFile, cropName = 'ca chua', region = 'Ha Noi') => {
@@ -13,7 +13,7 @@ export const qualityApi = {
         'Content-Type': 'multipart/form-data',
       },
     }));
-    return normalizeApiResponse(response);
+    return unwrapApiResponse(response);
   },
 
   checkWithPrice: async (imageFile, cropName = 'ca chua', region = 'Ha Noi') => {
@@ -27,18 +27,18 @@ export const qualityApi = {
         'Content-Type': 'multipart/form-data',
       },
     }));
-    return normalizeApiResponse(response);
+    return unwrapApiResponse(response);
   },
 
   getQualityGrades: async () => {
     const response = await api.get('/api/quality/grades');
-    return normalizeApiResponse(response);
+    return unwrapApiResponse(response);
   },
 
   getHistory: async (userId = 1, limit = 50) => {
     const response = await api.get(`/api/quality/history/${encodeURIComponent(userId)}`, {
       params: { limit },
     });
-    return normalizeApiResponse(response);
+    return unwrapApiResponse(response);
   },
 };

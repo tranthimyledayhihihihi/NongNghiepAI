@@ -54,7 +54,7 @@ def _refresh_weather_current(regions: list[str]) -> None:
 def _refresh_weather_hourly(regions: list[str]) -> None:
     _run_with_db(
         "weather_hourly",
-        lambda db: [weather_service.get_hourly_forecast(db, region, 24, force_refresh=True) for region in regions],
+        lambda db: [weather_service.get_hourly_forecast(db, region, 168, force_refresh=True) for region in regions],
     )
 
 

@@ -1,8 +1,8 @@
 import api from './api';
-import { normalizeApiResponse } from '../utils/apiResponse';
+import { unwrapApiResponse } from '../utils/apiResponse';
 import { buildPriceQuery, normalizePriceInput } from '../utils/priceInputs';
 
-const unwrap = (response) => normalizeApiResponse(response);
+const unwrap = (response) => unwrapApiResponse(response);
 
 const request = async (factory) => unwrap(await factory());
 

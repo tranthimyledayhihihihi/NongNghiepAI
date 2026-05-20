@@ -5,6 +5,17 @@ export function isApiSuccess(response) {
     return false;
   }
 
+  // Axios response object: has numeric .status and .data, but no .success at top level.
+  // Delegate to the actual JSON body.
+  if (
+    typeof response === 'object' &&
+    typeof response.status === 'number' &&
+    'data' in response &&
+    !('success' in response)
+  ) {
+    return isApiSuccess(response.data);
+  }
+
   if (typeof response === 'object' && 'success' in response) {
     return Boolean(response.success);
   }
@@ -128,6 +139,11 @@ export function createApiSuccessResponse(data, message = '') {
   };
 }
 
+export function dedupeMessages(messages) {
+  if (!Array.isArray(messages)) return [];
+  return [...new Set(messages.filter((m) => typeof m === 'string' && m.trim()))];
+}
+
 export default {
   API_FAILURE_MESSAGE,
   isApiSuccess,
@@ -138,4 +154,5 @@ export default {
   toApiErrorResponse,
   normalizeApiError,
   createApiSuccessResponse,
+  dedupeMessages,
 };

@@ -108,27 +108,20 @@ class PriceAggregatorService:
 
         if cached_row:
             status = cache_status_for(cached_row.FetchedAt, "official_price")
-            if status == "fresh_cache":
-                return self._row_to_current_response(
-                    db,
-                    cached_row,
-                    crop_name=selected_crop,
-                    region=selected_region,
-                    cache_status="fresh_cache",
-                    refresh_result=refresh_result,
-                    warning=None,
-                )
+            warning = None
             if status == "stale_cache":
-                return self._row_to_current_response(
-                    db,
-                    cached_row,
-                    crop_name=selected_crop,
-                    region=selected_region,
-                    cache_status="stale_cache",
-                    refresh_result=refresh_result,
-                    warning="Dữ liệu realtime chậm, đang hiển thị cache thật gần nhất.",
-                )
-
+                warning = "Dữ liệu realtime chậm, đang hiển thị cache thật gần nhất."
+            elif status == "miss":
+                warning = "Không lấy được giá mới nhất. Đang hiển thị dữ liệu từ cơ sở dữ liệu."
+            return self._row_to_current_response(
+                db,
+                cached_row,
+                crop_name=selected_crop,
+                region=selected_region,
+                cache_status=status if status != "miss" else "stale_cache",
+                refresh_result=refresh_result,
+                warning=warning,
+            )
 
         return self._no_realtime_price_response(
             crop_name=selected_crop,
@@ -233,6 +226,7 @@ class PriceAggregatorService:
                 .all()
             )
             target_region = normalize_text(region or "")
+            fallback_row = None
             for row in rows:
                 if not self._is_valid_price_cache(row):
                     continue
@@ -240,7 +234,9 @@ class PriceAggregatorService:
                     continue
                 if not target_region or normalize_text(row.Region) == target_region:
                     return row
-            return None
+                if fallback_row is None:
+                    fallback_row = row  # keep nearest match as fallback
+            return fallback_row  # return any-region data if no exact region match
         except Exception:
             db.rollback()
             return None

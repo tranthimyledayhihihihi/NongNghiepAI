@@ -238,7 +238,7 @@ async def get_weather_activity_recommendations(
 ):
     current = weather_service.get_current_weather(db, region)
     forecast = weather_service.get_forecast(db, region, 7)
-    hourly = weather_service.get_hourly_forecast(db, region, 24)
+    hourly = weather_service.get_hourly_forecast(db, region, 168)
     recommendations = weather_service.build_activity_recommendations(
         current,
         forecast,

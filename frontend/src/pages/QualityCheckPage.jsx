@@ -243,7 +243,7 @@ const QualityCheckPage = () => {
                 <div className="flex items-center justify-between p-3 bg-black/15 rounded-xl">
                   <span className="text-sm">Độ tin cậy</span>
                   <span className="font-bold">
-                    {(analysisResult.confidence * 100).toFixed(1)}%
+                    {((analysisResult.confidence ?? 0) * 100).toFixed(1)}%
                   </span>
                 </div>
               </div>
@@ -251,7 +251,9 @@ const QualityCheckPage = () => {
               <div className="border-t border-white/25 pt-4">
                 <div className="text-sm opacity-80 mb-2">Giá trị ước tính</div>
                 <div className="text-3xl font-bold">
-                  {analysisResult.suggested_price.toLocaleString()} VND/kg
+                  {analysisResult.suggested_price != null
+                    ? analysisResult.suggested_price.toLocaleString()
+                    : 'N/A'} VND/kg
                 </div>
               </div>
             </div>

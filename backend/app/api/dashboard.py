@@ -76,9 +76,10 @@ async def get_dashboard_realtime_status(
         region=_region_from(current_user, region),
         crop_name=crop_name,
     )
+    _ok = {"OK", "active", "ok"}
     channels = [
-        {"name": "Thời tiết", "status": "Hoạt động" if any(s["name"].startswith("Open-Meteo") and s["status"] == "OK" for s in health["sources"]) else "Dữ liệu dự phòng"},
-        {"name": "Thị trường", "status": "Hoạt động" if any(s["name"].startswith("Market Price") and s["status"] == "OK" for s in health["sources"]) else "Dữ liệu dự phòng"},
+        {"name": "Thời tiết", "status": "Hoạt động" if any(s.get("role") == "weather" and s.get("status") in _ok for s in health["sources"]) else "Dữ liệu dự phòng"},
+        {"name": "Thị trường", "status": "Hoạt động" if any(s.get("role") == "official_price" and s.get("status") in _ok for s in health["sources"]) else "Dữ liệu dự phòng"},
         {"name": "Trợ lý AI", "status": "Đã cấu hình / dự phòng"},
         {"name": "Cơ sở dữ liệu", "status": "Hoạt động"},
         {"name": "Zalo / Email / SMS", "status": "Đã cấu hình / mô phỏng"},
