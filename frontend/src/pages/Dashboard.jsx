@@ -276,7 +276,14 @@ const Dashboard = () => {
       const freshWeather = settledValue(results[1], null);
       const seasonSummary = settledValue(results[2], null);
       if (!dashboardData) {
-        throw results[0].reason;
+        const err = results[0].reason;
+        const isTimeout = err?.isTimeout || err?.code === 'ECONNABORTED' ||
+          String(err?.message || '').toLowerCase().includes('timeout');
+        if (isTimeout) {
+          setError('Dữ liệu đang chậm (timeout). Vui lòng đợi hoặc thử lại sau ít phút.');
+          return; // giữ nguyên data cũ nếu có, không clear summary
+        }
+        throw err;
       }
       if (dashboardData.errors?.length) {
         setError(dedupeMessages(dashboardData.errors.map((item) => item.message)).join(' | '));

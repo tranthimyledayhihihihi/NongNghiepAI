@@ -186,7 +186,19 @@ class WeatherService:
                 "warnings": self._analyze_warnings(temp_max or 30, temp_min or 20, rain, hum),
             }
         except Exception as exc:
-            # realtime miss => ERROR (no mock fallback)
+            is_timeout = "timeout" in str(exc).lower() or "timed out" in str(exc).lower()
+            # Emergency fallback: serve any cached row even if expired, rather than a hard error.
+            if cached_weather and not cached_weather.IsMock:
+                emergency = self._weather_row_to_current(cached_weather, fallback_used=True)
+                emergency["cache_status"] = "stale_emergency"
+                emergency["timeout"] = is_timeout
+                emergency["warning"] = (
+                    "Dữ liệu realtime đang chậm (timeout), hiển thị cache cũ nhất có sẵn."
+                    if is_timeout
+                    else "Kết nối Open-Meteo thất bại, hiển thị cache cũ nhất có sẵn."
+                )
+                return emergency
+            # No cached data at all — return hard error.
             payload = realtime_error(
                 code="REALTIME_WEATHER_FAILED",
                 message="Không thể tải dữ liệu thời tiết thực tế từ Open-Meteo.",

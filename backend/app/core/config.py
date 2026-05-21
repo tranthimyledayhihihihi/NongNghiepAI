@@ -37,18 +37,23 @@ class Settings(BaseSettings):
     WEATHER_API_BASE_URL: str = ""
     OPEN_METEO_BASE_URL: str = "https://api.open-meteo.com"
     WEATHER_CACHE_TTL_SECONDS: int = 1800
-    WEATHER_TIMEOUT_SECONDS: float = 8.0
-    WEATHER_CONNECT_TIMEOUT_SECONDS: float = 3.0
-    WEATHER_READ_TIMEOUT_SECONDS: float = 6.0
-    WEATHER_RETRY_COUNT: int = 1
+    WEATHER_TIMEOUT_SECONDS: float = 10.0
+    WEATHER_CONNECT_TIMEOUT_SECONDS: float = 4.0
+    WEATHER_READ_TIMEOUT_SECONDS: float = 9.0
+    WEATHER_RETRY_COUNT: int = 0
     REGION_COORDINATES_JSON: str = json.dumps(
         {
             "Ha Noi": {"latitude": 21.0285, "longitude": 105.8542},
+            "Hà Nội": {"latitude": 21.0285, "longitude": 105.8542},
             "TP.HCM": {"latitude": 10.8231, "longitude": 106.6297},
             "Da Nang": {"latitude": 16.0544, "longitude": 108.2022},
+            "Đà Nẵng": {"latitude": 16.0544, "longitude": 108.2022},
             "Can Tho": {"latitude": 10.0452, "longitude": 105.7469},
+            "Cần Thơ": {"latitude": 10.0452, "longitude": 105.7469},
             "Lam Dong": {"latitude": 11.9404, "longitude": 108.4583},
+            "Lâm Đồng": {"latitude": 11.9404, "longitude": 108.4583},
             "Hai Phong": {"latitude": 20.8449, "longitude": 106.6881},
+            "Hải Phòng": {"latitude": 20.8449, "longitude": 106.6881},
         }
     )
 
@@ -135,8 +140,15 @@ class Settings(BaseSettings):
     BACKEND_CORS_ORIGINS: list[str] = [
         "http://localhost:3000",
         "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:5175",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+        "http://127.0.0.1:5175",
+        "http://172.17.176.1:5173",
+        "http://172.17.176.1:5174",
+        "http://172.17.176.1:5175",
     ]
 
     ENVIRONMENT: str = "development"

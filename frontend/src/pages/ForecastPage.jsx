@@ -373,6 +373,7 @@ const ForecastPage = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [staleWarning, setStaleWarning] = useState('');
 
   // Drill-down state
   const [selectedDate, setSelectedDate] = useState(null);
@@ -383,11 +384,12 @@ const ForecastPage = () => {
   const fetchWeather = useCallback(async () => {
     setLoading(true);
     setError('');
+    setStaleWarning('');
     setSelectedDate(null);
     setSelectedHour(null);
     setHourlyByDate({});
     try {
-      // Refresh cache trước để đảm bảo có dữ liệu mới nhất
+      // Refresh cache trước (silent — timeout không block page)
       await weatherApi.refreshCurrentWeather(region).catch(() => {});
       await weatherApi.getForecast(region, 7).catch(() => {});
 
@@ -404,13 +406,31 @@ const ForecastPage = () => {
       ]);
       const [weatherResult, riskResult, recommendationResult] = results;
       if (weatherResult.status === 'rejected') {
-        throw weatherResult.reason;
+        const err = weatherResult.reason;
+        const isTimeout = err?.isTimeout || err?.code === 'ECONNABORTED' ||
+          String(err?.message || '').toLowerCase().includes('timeout');
+        if (isTimeout) {
+          setError('Dữ liệu realtime đang chậm (timeout). Vui lòng thử lại sau ít phút.');
+        } else {
+          throw err;
+        }
+        return;
       }
       const result = weatherResult.value;
 
-      // Backend trả success:false (cache miss hoặc lỗi nguồn) → báo lỗi rõ
+      // Backend trả success:false (cache miss hoàn toàn, không có cache nào) → báo lỗi rõ
       if (result?.success === false || !result?.current) {
         throw new Error(result?.message || result?.error?.message || 'Không có dữ liệu thời tiết. Vui lòng thử lại.');
+      }
+
+      // Phát hiện dữ liệu cũ (stale_emergency hoặc stale_cache) từ current weather
+      const currentCacheStatus = result?.current?.cache_status;
+      const currentTimeout = result?.current?.timeout;
+      const currentWarning = result?.current?.warning;
+      if (currentCacheStatus === 'stale_emergency') {
+        setStaleWarning(currentWarning || 'Dữ liệu thời tiết đang dùng cache cũ do kết nối chậm. Sẽ tự cập nhật khi có mạng.');
+      } else if (currentTimeout) {
+        setStaleWarning('Kết nối realtime chậm, một số dữ liệu có thể chưa được cập nhật mới nhất.');
       }
 
       const riskAnalysis = riskResult.status === 'fulfilled' ? riskResult.value : result.risk_analysis;
@@ -423,7 +443,11 @@ const ForecastPage = () => {
         farming_recommendation: farmingRecommendation,
       });
       if (riskResult.status === 'rejected' || recommendationResult.status === 'rejected') {
-        setError('Một số khối khuyến nghị phản hồi chậm, dự báo chính vẫn đang hiển thị nếu có cache hợp lệ.');
+        setStaleWarning((prev) =>
+          prev
+            ? prev
+            : 'Một số khối khuyến nghị phản hồi chậm, dự báo chính vẫn hiển thị từ cache.'
+        );
       }
     } catch (err) {
       setData(null);
@@ -564,6 +588,19 @@ const ForecastPage = () => {
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div>
+      )}
+
+      {staleWarning && !error && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          <span className="mt-0.5 shrink-0 text-base">⚠</span>
+          <span>{staleWarning}</span>
+          <button
+            type="button"
+            onClick={() => setStaleWarning('')}
+            className="ml-auto shrink-0 text-amber-600 hover:text-amber-800"
+            aria-label="Đóng"
+          >✕</button>
+        </div>
       )}
 
       {loading && !data && (
