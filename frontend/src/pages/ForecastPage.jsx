@@ -52,17 +52,43 @@ const priorityStyles = {
 };
 
 const CONDITION_EMOJI = {
-  clear: '☀️', mostly_clear: '🌤️', partly_cloudy: '⛅',
-  cloudy: '☁️', foggy: '🌫️', drizzle: '🌦️',
-  rainy: '🌧️', heavy_rain: '🌧️', rain_showers: '🌦️',
-  thunderstorm: '⛈️', unknown: '🌡️',
+  clear: '☀️',
+  mostly_clear: '🌤️',
+  partly_cloudy: '⛅',
+  cloudy: '☁️',
+  foggy: '🌫️',
+  drizzle: '🌦️',
+  heavy_drizzle: '🌧️',
+  light_rain: '🌦️',
+  rainy: '🌧️',
+  heavy_rain: '🌧️',
+  light_showers: '🌦️',
+  rain_showers: '🌦️',
+  heavy_showers: '🌧️',
+  thunderstorm: '⛈️',
+  thunderstorm_hail: '⛈️',
+  cold_unusual: '❄️',
+  unknown: '🌡️',
 };
 
 const CONDITION_LABELS = {
-  clear: 'Quang đãng', mostly_clear: 'Khá quang', partly_cloudy: 'Ít mây',
-  cloudy: 'Nhiều mây', foggy: 'Sương mù', drizzle: 'Mưa phùn',
-  rainy: 'Có mưa', heavy_rain: 'Mưa lớn', rain_showers: 'Mưa rào',
-  thunderstorm: 'Giông bão', unknown: '—',
+  clear: 'Quang đãng',
+  mostly_clear: 'Khá quang',
+  partly_cloudy: 'Ít mây',
+  cloudy: 'Nhiều mây',
+  foggy: 'Sương mù',
+  drizzle: 'Mưa phùn',
+  heavy_drizzle: 'Mưa phùn dày',
+  light_rain: 'Mưa nhẹ',
+  rainy: 'Có mưa',
+  heavy_rain: 'Mưa lớn',
+  light_showers: 'Mưa rào nhẹ',
+  rain_showers: 'Mưa rào',
+  heavy_showers: 'Mưa rào mạnh',
+  thunderstorm: 'Giông bão',
+  thunderstorm_hail: 'Giông kèm mưa đá',
+  cold_unusual: 'Lạnh bất thường',
+  unknown: '—',
 };
 
 const formatNumber = (value, suffix = '', digits = 1) => {
@@ -251,9 +277,10 @@ const HourDetail = ({ hour }) => {
   const visScore = hour.visibility != null
     ? hour.visibility >= 10000 ? 'Rất tốt' : hour.visibility >= 5000 ? 'Tốt' : hour.visibility >= 2000 ? 'Trung bình' : 'Kém'
     : '—';
-  const isThunderstorm = [95, 96, 99].includes(hour.weather_code) || hour.condition === 'thunderstorm';
-  const thunderRisk = isThunderstorm ? 'Đang xảy ra' : hour.condition === 'heavy_rain' ? 'Nguy cơ cao' : 'Không có';
-  const thunderColor = isThunderstorm ? 'text-red-600' : hour.condition === 'heavy_rain' ? 'text-orange-500' : 'text-green-600';
+  const isThunderstorm = [95, 96, 99].includes(hour.weather_code) || hour.condition === 'thunderstorm' || hour.condition === 'thunderstorm_hail';
+  const isHeavyRainRisk = ['heavy_rain', 'heavy_showers'].includes(hour.condition);
+  const thunderRisk = isThunderstorm ? 'Đang xảy ra' : isHeavyRainRisk ? 'Nguy cơ cao' : 'Không có';
+  const thunderColor = isThunderstorm ? 'text-red-600' : isHeavyRainRisk ? 'text-orange-500' : 'text-green-600';
   const impacts = cropImpacts(hour);
   const levelColor = { high: 'text-red-600 bg-red-50 border-red-200', medium: 'text-orange-600 bg-orange-50 border-orange-200', ok: 'text-green-700 bg-green-50 border-green-200' };
 
@@ -304,9 +331,13 @@ const HourDetail = ({ hour }) => {
             {isThunderstorm && <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold">⚠ Cảnh báo</span>}
           </div>
           {isThunderstorm ? (
-            <p className="text-xs text-red-600">Giông bão đang xảy ra — không làm việc ngoài trời, tránh cây cao, thu dọn dụng cụ.</p>
-          ) : hour.condition === 'heavy_rain' ? (
-            <p className="text-xs text-orange-600">Mưa lớn có thể kéo theo giông. Theo dõi sát, chuẩn bị thoát nước đồng ruộng.</p>
+            <p className="text-xs text-red-600">
+              {hour.condition === 'thunderstorm_hail'
+                ? 'Giông kèm mưa đá — không ra ngoài, che chắn nhà kính và thiết bị nông nghiệp.'
+                : 'Giông bão đang xảy ra — không làm việc ngoài trời, tránh cây cao, thu dọn dụng cụ.'}
+            </p>
+          ) : isHeavyRainRisk ? (
+            <p className="text-xs text-orange-600">Mưa lớn/mưa rào mạnh có thể kéo theo giông. Theo dõi sát, chuẩn bị thoát nước đồng ruộng.</p>
           ) : (
             <p className="text-xs text-gray-400">Không có nguy cơ giông lốc trong khung giờ này.</p>
           )}
@@ -549,7 +580,10 @@ const ForecastPage = () => {
           {/* ── Current metrics ── */}
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             <WeatherMetric icon={Thermometer} label="Nhiệt độ" value={formatNumber(current.temperature, '°C')}
-              detail={`${formatNumber(current.temp_min, '°C')} - ${formatNumber(current.temp_max, '°C')}`} tone="rose" />
+              detail={current.apparent_temperature != null
+                ? `Cảm giác ${formatNumber(current.apparent_temperature, '°C')} · ${formatNumber(current.temp_min, '°C')}–${formatNumber(current.temp_max, '°C')}`
+                : `${formatNumber(current.temp_min, '°C')} – ${formatNumber(current.temp_max, '°C')}`}
+              tone="rose" />
             <WeatherMetric icon={Droplets} label="Độ ẩm" value={formatNumber(current.humidity, '%', 0)}
               detail="Theo dõi nấm bệnh khi vượt 85%" tone="sky" />
             <WeatherMetric icon={CloudRain} label="Mưa hiện tại" value={formatNumber(current.rainfall, ' mm')}

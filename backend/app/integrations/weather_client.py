@@ -12,24 +12,44 @@ class WeatherProviderError(RuntimeError):
 
 
 WEATHER_CODE_CONDITIONS = {
+    # Clear / partly cloudy
     0: "clear",
     1: "mostly_clear",
     2: "partly_cloudy",
     3: "cloudy",
+    # Fog
     45: "foggy",
     48: "foggy",
+    # Drizzle
     51: "drizzle",
     53: "drizzle",
-    55: "drizzle",
-    61: "rainy",
+    55: "heavy_drizzle",
+    # Freezing drizzle (Vietnam: rất hiếm — hiển thị như mưa phùn)
+    56: "drizzle",
+    57: "drizzle",
+    # Rain
+    61: "light_rain",
     63: "rainy",
     65: "heavy_rain",
-    80: "rain_showers",
+    # Freezing rain (Vietnam: hiếm — hiển thị như mưa)
+    66: "rainy",
+    67: "heavy_rain",
+    # Snow (Vietnam: không xảy ra — hiển thị như "lạnh bất thường")
+    71: "cold_unusual",
+    73: "cold_unusual",
+    75: "cold_unusual",
+    77: "cold_unusual",
+    # Rain showers
+    80: "light_showers",
     81: "rain_showers",
-    82: "heavy_rain",
+    82: "heavy_showers",
+    # Snow showers (Vietnam: hiếm)
+    85: "rain_showers",
+    86: "heavy_showers",
+    # Thunderstorm
     95: "thunderstorm",
-    96: "thunderstorm",
-    99: "thunderstorm",
+    96: "thunderstorm_hail",
+    99: "thunderstorm_hail",
 }
 
 
@@ -45,15 +65,20 @@ class WeatherClient:
             "current": ",".join(
                 [
                     "temperature_2m",
+                    "apparent_temperature",
                     "relative_humidity_2m",
                     "rain",
                     "precipitation",
                     "weather_code",
                     "wind_speed_10m",
+                    "wind_direction_10m",
+                    "wind_gusts_10m",
                     "pressure_msl",
+                    "cloud_cover",
+                    "visibility",
                 ]
             ),
-            "daily": "temperature_2m_min,temperature_2m_max,precipitation_sum,weather_code,uv_index_max",
+            "daily": "temperature_2m_min,temperature_2m_max,precipitation_sum,precipitation_probability_max,weather_code,uv_index_max",
             "timezone": "auto",
         }
         url = f"{self.base_url}/v1/forecast"
@@ -68,15 +93,21 @@ class WeatherClient:
             "latitude": coordinates["latitude"],
             "longitude": coordinates["longitude"],
             "temperature": current.get("temperature_2m"),
+            "apparent_temperature": current.get("apparent_temperature"),
             "temp_min": self._first(daily.get("temperature_2m_min"), current.get("temperature_2m")),
             "temp_max": self._first(daily.get("temperature_2m_max"), current.get("temperature_2m")),
             "rainfall": current.get("rain") if current.get("rain") is not None else current.get("precipitation"),
+            "rain_probability": self._first(daily.get("precipitation_probability_max")),
             "humidity": current.get("relative_humidity_2m"),
             "condition": WEATHER_CODE_CONDITIONS.get(weather_code, "unknown"),
             "weather_code": weather_code,
             "wind_speed": current.get("wind_speed_10m"),
+            "wind_direction": current.get("wind_direction_10m"),
+            "wind_gusts": current.get("wind_gusts_10m"),
             "uv_index": self._first(daily.get("uv_index_max")),
             "pressure": current.get("pressure_msl"),
+            "cloud_cover": current.get("cloud_cover"),
+            "visibility": current.get("visibility"),
             "source_name": "Open-Meteo",
             "source_url": url,
             "source_updated_at": source_updated_at or datetime.now(),
