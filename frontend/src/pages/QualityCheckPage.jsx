@@ -63,7 +63,8 @@ const QualityCheckPage = () => {
     if (!file || !file.type.startsWith('image/')) return;
     setSelectedFile(file);
     setSelectedImage(URL.createObjectURL(file));
-    analyzeFile(file);
+    setAnalysisResult(null);
+    setError(null);
   };
 
   const handleFileSelect = (event) => {
@@ -201,7 +202,7 @@ const QualityCheckPage = () => {
                     disabled={isAnalyzing}
                     className="flex-1 px-6 py-3 bg-green-700 text-white rounded-xl hover:bg-green-800 transition font-medium disabled:bg-gray-300"
                   >
-                    Phân Tích Lại
+                    {analysisResult ? 'Phân Tích Lại' : 'Phân Tích'}
                   </button>
                 </div>
               </div>

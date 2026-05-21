@@ -57,6 +57,10 @@ api.interceptors.response.use(
     }
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
+      const current = window.location.pathname + window.location.search;
+      if (current !== '/login') {
+        sessionStorage.setItem('returnUrl', current);
+      }
       window.location.href = '/login';
     }
     return Promise.reject(error);

@@ -403,7 +403,7 @@ class AlertService:
             TriggerValue=threshold,
             TriggerUnit=payload.get("unit") or meta["unit"],
             Source="manual_subscription",
-            DedupKey=f"manual:{owner.UserID}:{location_service.region_key(region)}:{condition}:{threshold:g}:{datetime.now().timestamp()}",
+            DedupKey=f"manual:{owner.UserID}:{location_service.region_key(region)}:{condition}:{threshold:g}",
             NotifyMethod=self._db_channel(channel),
             Receiver=receiver,
             LastValue=current_value,

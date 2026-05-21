@@ -238,7 +238,7 @@ async def ask_farming_advice(
         )
         if request.context_data:
             context["legacy_context_data"] = request.context_data
-        result = claude_service.answer_question(
+        result = await claude_service.answer_question(
             db,
             question=q,
             user_id=current_user.UserID if current_user else request.user_id,
@@ -364,7 +364,7 @@ async def price_qa(
             crop=crop,
             intent="price_query",
         )
-        result = claude_service.answer_question(
+        result = await claude_service.answer_question(
             db,
             question=q,
             user_id=current_user.UserID if current_user else None,
@@ -571,7 +571,7 @@ async def ask_agri(
             crop=extract_crop_from_message(q) or _detect_crop(q),
             intent=topic,
         )
-        result = claude_service.answer_question(
+        result = await claude_service.answer_question(
             db,
             question=q,
             user_id=current_user.UserID if current_user else request.user_id,

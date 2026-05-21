@@ -88,7 +88,9 @@ export default function LoginPage() {
         setSuccess("Đăng nhập thành công. Đang chuyển vào hệ thống...");
       }
 
-      setTimeout(() => navigate("/dashboard"), 450);
+      const returnUrl = sessionStorage.getItem('returnUrl');
+      sessionStorage.removeItem('returnUrl');
+      setTimeout(() => navigate(returnUrl || '/dashboard'), 450);
     } catch (err) {
       const status = err?.response?.status;
       const detail = err?.response?.data?.detail || err?.response?.data?.message;

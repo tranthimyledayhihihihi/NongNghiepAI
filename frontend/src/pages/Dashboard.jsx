@@ -221,7 +221,6 @@ const MiniHourlyChart = ({ hourly = [] }) => {
 const Dashboard = () => {
   const { user } = useAuth();
   const region = user?.region || 'Ha Noi';
-  const cropName = 'lua';
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -269,7 +268,7 @@ const Dashboard = () => {
     setError(null);
     try {
       const results = await Promise.allSettled([
-        dashboardApi.getDashboardFullData(region, { cropName }),
+        dashboardApi.getDashboardFullData(region, { cropName: marketCrop }),
         weatherApi.getCurrentWeather(region),
         seasonApi.getSeasonSummary(),
       ]);
@@ -310,15 +309,15 @@ const Dashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, [cropName, region]);
+  }, [marketCrop, region]);
 
   useEffect(() => {
-    const loadKey = `${region}:${cropName}`;
+    const loadKey = `${region}:${marketCrop}`;
     if (loadedKeyRef.current === loadKey) return undefined;
     loadedKeyRef.current = loadKey;
     loadDashboard();
     return undefined;
-  }, [cropName, loadDashboard, region]);
+  }, [marketCrop, loadDashboard, region]);
 
   useEffect(() => {
     if (prevWeatherRegionRef.current === weatherRegion) return;

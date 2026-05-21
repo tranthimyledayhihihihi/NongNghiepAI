@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import datetime
 
@@ -18,7 +19,7 @@ from app.services.weather_service import weather_service
 
 
 class ClaudeService:
-    def answer_question(
+    async def answer_question(
         self,
         db: Session,
         *,
@@ -84,7 +85,11 @@ class ClaudeService:
         )
         user_prompt = f"Context JSON:\n{json.dumps(context, ensure_ascii=False, default=str)}\n\nQuestion: {question}"
         try:
-            completion = ai_client.complete([{"role": "user", "content": user_prompt}], system_prompt=system_prompt)
+            completion = await asyncio.to_thread(
+                ai_client.complete,
+                [{"role": "user", "content": user_prompt}],
+                system_prompt=system_prompt,
+            )
         except Exception as exc:
             completion = {
                 "answer": "",

@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api/ai", tags=["ai"])
 
 @router.post("/chat", response_model=AIChatResponse)
 async def chat(request: AIChatRequest, db: Session = Depends(get_db)):
-    return claude_service.answer_question(
+    return await claude_service.answer_question(
         db,
         question=request.question,
         user_id=request.user_id,
