@@ -210,7 +210,17 @@ class PricingService:
         )
         if current.get("_api_error"):
             return current
-        base_price = float(current["current_price"])
+        raw_price = current.get("current_price") or current.get("price") or current.get("market_price")
+        if raw_price is None:
+            return {
+                "_api_error": True,
+                "error_code": "PRICE_UNAVAILABLE",
+                "message": "Không có dữ liệu giá để tính toán. Vui lòng thử lại sau.",
+                "crop_name": request.crop_name,
+                "region": request.region,
+                "is_mock": False,
+            }
+        base_price = float(raw_price)
         discount = quantity_discount(request.quantity)
         multiplier = GRADE_MULTIPLIERS.get(request.quality_grade, 0.88)
 

@@ -17,6 +17,8 @@ from app.services.quality_service import quality_service
 
 router = APIRouter(prefix="/api/quality", tags=["quality"])
 
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+
 
 class QualityFeedbackRequest(BaseModel):
     check_id: int
@@ -57,17 +59,27 @@ async def check_quality(
     extension = Path(upload.filename or "").suffix or ".jpg"
     file_path = upload_dir / f"{uuid.uuid4()}{extension}"
 
+    written = 0
     with file_path.open("wb") as buffer:
-        shutil.copyfileobj(upload.file, buffer)
+        while chunk := await upload.read(1024 * 256):
+            written += len(chunk)
+            if written > MAX_UPLOAD_BYTES:
+                file_path.unlink(missing_ok=True)
+                raise HTTPException(status_code=413, detail=f"File vượt quá giới hạn {MAX_UPLOAD_BYTES // (1024*1024)} MB")
+            buffer.write(chunk)
 
-    data = await asyncio.to_thread(
-        quality_service.check_quality,
-        db,
-        image_path=str(file_path),
-        crop_name=crop_name,
-        region=region,
-        user_id=current_user.UserID if current_user else None,
-    )
+    try:
+        data = await asyncio.to_thread(
+            quality_service.check_quality,
+            db,
+            image_path=str(file_path),
+            crop_name=crop_name,
+            region=region,
+            user_id=current_user.UserID if current_user else None,
+        )
+    finally:
+        file_path.unlink(missing_ok=True)
+
     return _quality_response(data)
 
 

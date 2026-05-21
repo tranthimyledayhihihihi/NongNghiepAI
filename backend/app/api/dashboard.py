@@ -34,7 +34,7 @@ async def get_dashboard_summary(
     return api_response(
         data,
         source="cached" if data.get("cache_status") == "hit" else "database",
-        is_mock=data["featured_crop"].get("is_mock", False),
+        is_mock=data.get("featured_crop", {}).get("is_mock", False),
         cache_status=data.get("cache_status", "fresh"),
         last_updated=data.get("generated_at"),
     )
@@ -291,7 +291,7 @@ async def get_regional_prices(
         data,
         source=data.get("source", "database"),
         source_name=data.get("source_name", "Pricing comparison service"),
-        is_mock=all(item.get("is_mock") for item in data["regions"]),
+        is_mock=all(item.get("is_mock") for item in data.get("regions", [])),
         cache_status=data.get("cache_status", "from_db"),
         confidence=data.get("confidence", 0.0),
     )
@@ -313,8 +313,8 @@ async def get_realtime_market(
     )
     return api_response(
         data,
-        source="database" if not data["featured_crop"].get("is_mock", False) else "mock",
-        is_mock=data["featured_crop"].get("is_mock", False),
+        source="database" if not data.get("featured_crop", {}).get("is_mock", False) else "mock",
+        is_mock=data.get("featured_crop", {}).get("is_mock", False),
         cache_status=data.get("cache_status", "unknown"),
         last_updated=data.get("last_updated"),
     )
@@ -394,7 +394,7 @@ async def reset_dashboard(
     return api_response(
         data,
         source="realtime_api",
-        is_mock=data["featured_crop"].get("is_mock", False),
+        is_mock=data.get("featured_crop", {}).get("is_mock", False),
         cache_status=data.get("cache_status", "reset_refreshed"),
         last_updated=data.get("generated_at"),
     )

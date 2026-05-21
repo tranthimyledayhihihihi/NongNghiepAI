@@ -24,7 +24,11 @@ export function isApiSuccess(response) {
     return String(response.status).toLowerCase() === 'success';
   }
 
-  return true;
+  if (typeof response === 'object' && ('error' in response || 'detail' in response)) {
+    return false;
+  }
+
+  return false;
 }
 
 export function getApiErrorMessage(error, fallbackMessage = API_FAILURE_MESSAGE) {
