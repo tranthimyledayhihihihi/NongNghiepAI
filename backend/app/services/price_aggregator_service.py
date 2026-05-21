@@ -5,6 +5,8 @@ from datetime import date, datetime, timedelta
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
+import logging
+
 from app.core.real_data import (
     OFFICIAL_AGRI_SOURCE_NAME,
     OFFICIAL_PRICE_URL,
@@ -14,12 +16,54 @@ from app.core.real_data import (
     is_real_cache_record,
     realtime_error,
 )
+from app.core.redis_client import redis_client
+from app.core.resilience import build_timeout, resilient_request
 from app.integrations.thitruong_nongsan_price_client import thitruong_nongsan_price_client
 from app.models.crop import Crop
 from app.models.price import MarketPrice
 from app.repositories.common import ensure_crop, normalize_text
 from app.repositories.ingestion_repository import finish_ingestion_log, start_ingestion_log
 from app.repositories.price_repository import bulk_upsert_market_prices
+
+logger = logging.getLogger(__name__)
+
+# Tỷ giá USD → VND xấp xỉ (cập nhật định kỳ nếu cần)
+_USD_VND_APPROX = 25_500.0
+_JPY_VND_APPROX = 170.0
+
+_GLOBAL_COMMODITIES = [
+    {
+        "symbol": "KC=F",
+        "crop_name": "Cà phê Arabica",
+        "source_label": "ICE Futures (CBOT)",
+        "unit": "cents/lb",
+        # cents/lb → USD/lb → VND/lb → VND/kg
+        "to_vnd_kg": lambda p: round(p * 0.01 * _USD_VND_APPROX / 0.453592, -2),
+    },
+    {
+        "symbol": "ZR=F",
+        "crop_name": "Gạo thô (CBOT)",
+        "source_label": "CBOT Rough Rice",
+        "unit": "USD/cwt",
+        # USD/cwt → VND/cwt → VND/kg  (1 cwt = 45.36 kg)
+        "to_vnd_kg": lambda p: round(p * _USD_VND_APPROX / 45.36, -2),
+    },
+    {
+        "symbol": "ZC=F",
+        "crop_name": "Ngô",
+        "source_label": "CBOT Corn Futures",
+        "unit": "cents/bu",
+        # cents/bu → USD/bu → VND/bu → VND/kg  (1 bushel corn ≈ 25.4 kg)
+        "to_vnd_kg": lambda p: round(p * 0.01 * _USD_VND_APPROX / 25.4, -2),
+    },
+    {
+        "symbol": "SB=F",
+        "crop_name": "Đường thô",
+        "source_label": "ICE Sugar #11",
+        "unit": "cents/lb",
+        "to_vnd_kg": lambda p: round(p * 0.01 * _USD_VND_APPROX / 0.453592, -2),
+    },
+]
 
 
 class PriceAggregatorService:
@@ -130,11 +174,68 @@ class PriceAggregatorService:
         )
 
     def get_global_reference_price(self, db: Session, crop_name: str) -> dict | None:
+        refs = self.latest_global_references(db, limit=10)
+        target = normalize_text(crop_name)
+        for item in refs:
+            if target in normalize_text(item.get("crop_name", "")):
+                return item
         return None
 
-
     def latest_global_references(self, db: Session, limit: int = 8) -> list[dict]:
-        return []
+        cache_key = "global_commodity_prices:v2"
+        cached = redis_client.get(cache_key)
+        if cached and isinstance(cached, list):
+            return cached[:limit]
+
+        prices = self._fetch_yahoo_commodity_prices()
+        if prices:
+            redis_client.set(cache_key, prices, expire=3600)
+        return prices[:limit]
+
+    def _fetch_yahoo_commodity_prices(self) -> list[dict]:
+        results = []
+        now = datetime.now()
+        timeout = build_timeout(total=8, connect=3, read=6)
+        for item in _GLOBAL_COMMODITIES:
+            symbol = item["symbol"]
+            try:
+                url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+                response = resilient_request(
+                    "GET",
+                    url,
+                    params={"interval": "1d", "range": "5d"},
+                    headers={"User-Agent": "Mozilla/5.0 (compatible; AgriAI/1.0)"},
+                    timeout=timeout,
+                    retries=1,
+                    service_name=f"yahoo_finance_{symbol}",
+                )
+                data = response.json()
+                result_list = (data.get("chart") or {}).get("result") or []
+                if not result_list:
+                    continue
+                quote_data = (result_list[0].get("indicators") or {}).get("quote") or [{}]
+                closes = [c for c in (quote_data[0].get("close") or []) if c is not None]
+                if not closes:
+                    continue
+                raw_price = closes[-1]
+                price_vnd = item["to_vnd_kg"](raw_price)
+                if price_vnd and price_vnd > 0:
+                    results.append({
+                        "crop_name": item["crop_name"],
+                        "price": price_vnd,
+                        "currency": "VND",
+                        "unit": "kg",
+                        "raw_price": round(raw_price, 4),
+                        "raw_unit": item["unit"],
+                        "source_name": item["source_label"],
+                        "source_url": f"https://finance.yahoo.com/quote/{symbol}",
+                        "fetched_at": now,
+                        "is_mock": False,
+                        "is_realtime": True,
+                    })
+            except Exception as exc:
+                logger.warning("[GlobalPrice] Failed to fetch %s: %s", symbol, exc)
+        return results
 
     def get_price_sources_status(self, db: Session) -> dict:
         valid_count = (

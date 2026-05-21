@@ -13,6 +13,7 @@ from app.core.real_data import OFFICIAL_AGRI_SOURCE_NAME, OFFICIAL_NEWS_URL, cac
 from app.core.redis_client import redis_client
 from app.integrations.thitruong_nongsan_news_client import thitruong_nongsan_news_client
 from app.integrations.tavily_news_client import tavily_news_client
+from app.integrations.rss_client import rss_client
 
 from app.repositories.ingestion_repository import finish_ingestion_log, start_ingestion_log
 from app.repositories.market_news_repository import list_market_news, upsert_market_news
@@ -80,21 +81,29 @@ class MarketNewsService:
                 else []
             )
 
+            # RSS feeds (VNExpress, etc.) — không cần API key, luôn khả dụng
+            rss_records: list[dict] = []
+            try:
+                rss_records = rss_client.fetch_market_news()
+            except Exception as exc:
+                logger.warning("[MarketNewsService] RSS failed: %s", exc)
+
             # Tavily chỉ là nguồn bổ sung (không thay nguồn chính).
             tavily_records: list[dict] = []
             try:
                 if getattr(settings, "TAVILY_ENABLED", True):
                     tavily_records = tavily_news_client.search_agriculture_news(limit=20)
             except Exception as exc:
-                logger.exception("[MarketNewsService] Tavily failed: %s", exc)
+                logger.warning("[MarketNewsService] Tavily failed: %s", exc)
                 tavily_records = []
 
-            fetched_records = list(official_records or []) + list(tavily_records or [])
+            fetched_records = list(official_records or []) + list(rss_records or []) + list(tavily_records or [])
 
             official_records = self._filter_relevant_news((official_records or []), since=self._recent_since())
+            rss_records = self._filter_relevant_news((rss_records or []), since=self._recent_since())
             tavily_records = self._filter_relevant_news((tavily_records or []), since=self._recent_since())
 
-            records = self._merge_dedupe_news(official_records, tavily_records)
+            records = self._merge_dedupe_news(official_records + rss_records, tavily_records)
 
             result = upsert_market_news(db, records)
             self._clear_latest_cache()
@@ -102,7 +111,7 @@ class MarketNewsService:
                 db,
                 log,
                 status="success",
-                records_fetched=(len(official_records) + len(tavily_records)),
+                records_fetched=(len(official_records) + len(rss_records) + len(tavily_records)),
                 records_saved=result["records_saved"] + result["records_updated"],
             )
             return {

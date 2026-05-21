@@ -705,7 +705,17 @@ const Dashboard = () => {
             realtimeMarket.global_references.map((item) => (
               <div key={`${item.crop_name}-${item.source_url}`} className="rounded-md border border-slate-200 px-3 py-3">
                 <div className="text-sm font-semibold text-slate-950">{item.crop_name || item.crop_id}</div>
-                <div className="mt-2 text-xl font-bold text-slate-950">{formatNumber(item.price)} VND/kg</div>
+                <div className="mt-2 text-xl font-bold text-slate-950">
+                  {formatNumber(item.price, 0)} <span className="text-sm font-normal text-slate-500">VND/kg</span>
+                </div>
+                {item.raw_price != null && item.raw_unit && (
+                  <div className="mt-1 text-xs text-slate-400">
+                    {item.raw_price} {item.raw_unit}
+                  </div>
+                )}
+                {item.source_name && (
+                  <div className="mt-1 text-xs text-slate-400">{item.source_name}</div>
+                )}
               </div>
             ))
           ) : (

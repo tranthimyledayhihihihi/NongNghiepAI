@@ -132,7 +132,9 @@ class Settings(BaseSettings):
     MARKET_NEWS_RSS_URLS_JSON: str = json.dumps(
         [
             "https://vnexpress.net/rss/kinh-doanh.rss",
-            "https://vnexpress.net/rss/tin-moi-nhat.rss",
+            "https://vnexpress.net/rss/nong-nghiep.rss",
+            "https://dantri.com.vn/kinh-doanh.rss",
+            "https://baomoi.com/nong-nghiep.rss",
         ]
     )
     MARKET_NEWS_CACHE_TTL_SECONDS: int = 1800
