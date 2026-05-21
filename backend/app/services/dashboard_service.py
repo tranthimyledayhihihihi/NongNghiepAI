@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import SessionLocal
-from app.core.real_data import OFFICIAL_AGRI_SOURCE_NAME, OFFICIAL_NEWS_URL, OFFICIAL_PRICE_URL, OPEN_METEO_FORECAST_URL, OPEN_METEO_SOURCE_NAME, external_circuit_breaker, realtime_error
+from app.core.real_data import OFFICIAL_NEWS_URL, WINMART_PRICE_SOURCE_NAME, WINMART_PRICE_URL, OPEN_METEO_FORECAST_URL, OPEN_METEO_SOURCE_NAME, external_circuit_breaker, realtime_error
 from app.core.redis_client import redis_client
 from app.integrations.weather_client import WeatherClient
 from app.models.crop import Crop
@@ -624,7 +624,7 @@ class DashboardService:
             "score": score,
             "sources": [
                 {"name": "Open-Meteo", "status": "active" if weather_count else external_circuit_breaker.status("open_meteo_forecast"), "role": "weather", "source_url": OPEN_METEO_FORECAST_URL},
-                {"name": "Gia thi truong nong san Viet Nam", "status": "active" if price_count else external_circuit_breaker.status("thitruongnongsan_price:C\u00e0 ph\u00ea"), "role": "official_price", "source_url": OFFICIAL_PRICE_URL},
+                {"name": WINMART_PRICE_SOURCE_NAME, "status": "active" if price_count else external_circuit_breaker.status("winmart_price:ca phe"), "role": "official_price", "source_url": WINMART_PRICE_URL},
                 {"name": "Tin tuc thi truong nong san Viet Nam", "status": "active" if news_count else external_circuit_breaker.status("thitruongnongsan_news"), "role": "market_news", "source_url": OFFICIAL_NEWS_URL},
                 {"name": "Gia ban le tham khao Viet Nam", "status": "cache" if price_count else "error", "role": "retail_price"},
                 {"name": "AI provider", "status": ai_status, "role": "ai"},

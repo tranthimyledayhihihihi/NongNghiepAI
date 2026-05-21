@@ -45,20 +45,9 @@ class ThiTruongNongSanPriceClient:
         )
 
     def fetch_prices(self, crop_name: str | None = None, region: str | None = None) -> list[dict]:
-        if not getattr(settings, "ENABLE_THITRUONG_NONGSAN_PRICE", True):
-            return []
+        from app.integrations.winmart_price_client import winmart_price_client
 
-        key = "thitruongnongsan_official_price"
-        external_circuit_breaker.before_call(key)
-        try:
-            page = self._fetch_page()
-            records = self._parse_prices(page, crop_name=crop_name, region=region)
-            external_circuit_breaker.record_success(key)
-            return records
-        except Exception as exc:
-            external_circuit_breaker.record_failure(key, exc)
-            logger.exception("Failed to fetch official agriculture prices: %s", exc)
-            return []
+        return winmart_price_client.fetch_prices(crop_name=crop_name, region=region)
 
     def fetch_current_price(self, crop_name: str, region: str | None = None) -> dict | None:
         records = self.fetch_prices(crop_name=crop_name, region=region)

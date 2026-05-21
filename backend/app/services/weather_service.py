@@ -4,6 +4,7 @@ Weather Service - merged Tien (repository + schema API) + Quang (mock data + for
 - Internal: get_forecast, get_harvest_weather_warning
 """
 import logging
+import unicodedata
 from datetime import date, datetime, timedelta
 
 from sqlalchemy.orm import Session
@@ -516,7 +517,8 @@ class WeatherService:
         growth_stage: str | None = None,
     ) -> list[dict]:
         """Public wrapper cho _build_activity_recommendations (dùng bởi API endpoint)."""
-        return self._build_activity_recommendations(current, forecast, crop_name, growth_stage)
+        hourly = _hourly.get("forecast", []) if isinstance(_hourly, dict) else (_hourly or [])
+        return self._build_activity_recommendations(current, forecast, crop_name, growth_stage, hourly)
 
     # ------------------------------------------------------------------ #
     # Helpers
@@ -571,15 +573,15 @@ class WeatherService:
         hourly = hourly_bundle.get("forecast", []) if isinstance(hourly_bundle, dict) else hourly_bundle
 
         # Activity recommendations
-        activity_recs = self._build_activity_recommendations(current, forecast, crop_name, growth_stage)
+        activity_recs = self._build_activity_recommendations(current, forecast, crop_name, growth_stage, hourly)
 
         # AI/rule recommendation summary
-        ai_rec = self._build_ai_recommendation(current, forecast, alerts, crop_name, growth_stage)
+        ai_rec = self._build_ai_recommendation(current, forecast, alerts, crop_name, growth_stage, activity_recs)
 
         data_flow = [
-            "Open-Meteo API → crawler cào mỗi giờ → lưu vào SQL Server",
-            "Backend tổng hợp dữ liệu DB + rule-based engine",
-            "Sinh khuyến nghị canh tác theo cây trồng và giai đoạn",
+            "Open-Meteo cung cấp thời tiết hiện tại, dự báo 7 ngày và dự báo từng giờ",
+            "Backend chuẩn hóa nhiệt độ, mưa, xác suất mưa, gió, UV, độ ẩm và trạng thái cache",
+            "AI thời tiết sinh cảnh báo và lịch canh tác theo cây trồng, giai đoạn sinh trưởng",
         ]
 
         return {
@@ -605,17 +607,25 @@ class WeatherService:
     _DAY_LABELS = ["Hôm nay", "Ngày mai", "Ngày kia"]
 
     _CROP_ADVICE = {
-        "lúa":       {"spray_rain_limit": 10, "water_temp_limit": 36, "cold_limit": 15},
-        "cà phê":    {"spray_rain_limit": 8,  "water_temp_limit": 35, "cold_limit": 10},
-        "hồ tiêu":   {"spray_rain_limit": 10, "water_temp_limit": 34, "cold_limit": 12},
-        "rau màu":   {"spray_rain_limit": 5,  "water_temp_limit": 33, "cold_limit": 12},
-        "cây ăn trái":{"spray_rain_limit":10, "water_temp_limit": 36, "cold_limit": 10},
+        "lua": {"spray_rain_limit": 10, "water_temp_limit": 36, "cold_limit": 15},
+        "ca phe": {"spray_rain_limit": 8, "water_temp_limit": 35, "cold_limit": 10},
+        "ho tieu": {"spray_rain_limit": 10, "water_temp_limit": 34, "cold_limit": 12},
+        "rau mau": {"spray_rain_limit": 5, "water_temp_limit": 33, "cold_limit": 12},
+        "cay an trai": {"spray_rain_limit": 10, "water_temp_limit": 36, "cold_limit": 10},
     }
+
+    @staticmethod
+    def _text_key(value: str | None) -> str:
+        if not value:
+            return ""
+        normalized = unicodedata.normalize("NFD", value.strip().lower())
+        without_marks = "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
+        return " ".join(without_marks.replace("đ", "d").split())
 
     def _crop_advice(self, crop_name: str | None) -> dict:
         if crop_name:
-            return self._CROP_ADVICE.get(crop_name.lower(), self._CROP_ADVICE["lúa"])
-        return self._CROP_ADVICE["lúa"]
+            return self._CROP_ADVICE.get(self._text_key(crop_name), self._CROP_ADVICE["lua"])
+        return self._CROP_ADVICE["lua"]
 
     def _build_daily_forecast(self, rows, region: str, days: int, crop_name: str | None) -> list[dict]:
         advice = self._crop_advice(crop_name)
@@ -663,44 +673,174 @@ class WeatherService:
         """
         return []
 
+    @staticmethod
+    def _num(value, default: float = 0.0) -> float:
+        try:
+            if value is None:
+                return default
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _dt(value) -> datetime | None:
+        if isinstance(value, datetime):
+            return value
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            return None
+
+    def _day_label(self, forecast_date: str | date | None) -> str:
+        if not forecast_date:
+            return ""
+        try:
+            value = date.fromisoformat(str(forecast_date)[:10])
+        except ValueError:
+            return str(forecast_date)
+        today = date.today()
+        diff = (value - today).days
+        if diff == 0:
+            return "hôm nay"
+        if diff == 1:
+            return "ngày mai"
+        if diff == 2:
+            return "ngày kia"
+        return value.strftime("%d/%m")
+
+    def _format_window(self, start: datetime, end: datetime) -> str:
+        if start.date() == end.date():
+            return f"{start.strftime('%d/%m %H:%M')}–{end.strftime('%H:%M')}"
+        return f"{start.strftime('%d/%m %H:%M')}–{end.strftime('%d/%m %H:%M')}"
+
+    def _find_hour_window(
+        self,
+        hourly: list[dict] | None,
+        *,
+        hours_needed: int = 2,
+        max_lookahead_hours: int = 72,
+        max_rain_probability: float = 30,
+        max_rainfall: float = 0.2,
+        max_wind: float = 18,
+        max_uv: float | None = None,
+        min_temp: float | None = None,
+        max_temp: float | None = None,
+    ) -> str | None:
+        if not hourly:
+            return None
+
+        ordered = sorted(
+            hourly[:max_lookahead_hours],
+            key=lambda item: self._dt(item.get("forecast_at") or item.get("time")) or datetime.max,
+        )
+        run: list[dict] = []
+        for item in ordered:
+            temp = self._num(item.get("temperature"), 28)
+            rain_probability = self._num(item.get("rain_probability"), 0)
+            rainfall = self._num(item.get("rainfall"), 0)
+            wind = self._num(item.get("wind_speed"), 0)
+            uv = self._num(item.get("uv_index"), 0)
+            ok = (
+                rain_probability <= max_rain_probability
+                and rainfall <= max_rainfall
+                and wind <= max_wind
+                and (max_uv is None or uv <= max_uv)
+                and (min_temp is None or temp >= min_temp)
+                and (max_temp is None or temp <= max_temp)
+            )
+            if ok:
+                run.append(item)
+                if len(run) >= hours_needed:
+                    start = self._dt(run[0].get("forecast_at") or run[0].get("time"))
+                    last = self._dt(run[hours_needed - 1].get("forecast_at") or run[hours_needed - 1].get("time"))
+                    if start and last:
+                        return self._format_window(start, last + timedelta(hours=1))
+            else:
+                run = []
+        return None
+
+    @staticmethod
+    def _is_thunderstorm(item: dict) -> bool:
+        return item.get("weather_code") in {95, 96, 99} or item.get("condition") == "thunderstorm"
+
     def _build_alerts(self, forecast: list[dict], crop_name: str | None, growth_stage: str | None = None) -> list[dict]:
         alerts = []
         advice = self._crop_advice(crop_name)
-        cold_limit = advice["cold_limit"] + (2 if growth_stage and "con" in growth_stage.lower() else 0)
+        stage_key = self._text_key(growth_stage)
+        cold_limit = advice["cold_limit"] + (2 if "con" in stage_key else 0)
 
         for item in forecast:
-            temp_max = item.get("temp_max") or 30
-            temp_min = item.get("temp_min") or 20
-            rain = item.get("rainfall") or 0
-            humidity = item.get("humidity") or 70
+            temp_max = self._num(item.get("temp_max"), 30)
+            temp_min = self._num(item.get("temp_min"), 20)
+            rain = self._num(item.get("rainfall"), 0)
+            rain_probability = self._num(item.get("rain_probability"), 0)
+            humidity = self._num(item.get("humidity"), 70)
+            wind = self._num(item.get("wind_speed"), 0)
+            uv = self._num(item.get("uv_index"), 0)
             dt = item.get("date", "")
+            day_label = self._day_label(dt)
 
             if temp_max > ALERT_THRESHOLDS["temp_max_high"]:
                 alerts.append({
                     "alert_type": "heat_stress",
                     "forecast_date": dt,
                     "title": f"Nắng nóng {temp_max:.0f}°C",
-                    "message": "Nhiệt độ cao gây stress nhiệt cho cây trồng.",
-                    "recommendation": "Tăng tần suất tưới, che phủ đất, tưới vào sáng sớm hoặc chiều mát.",
+                    "message": f"Open-Meteo dự báo nhiệt độ tối đa {day_label} vượt ngưỡng chịu nóng của cây.",
+                    "recommendation": "Tăng tưới vào sáng sớm/chiều mát, phủ gốc và che lưới cho cây non.",
                     "severity": "high" if temp_max > 38 else "medium",
+                    "trigger_value": temp_max,
+                    "trigger_unit": "°C",
+                    "source": "open_meteo_rule",
                 })
             if temp_min < cold_limit:
                 alerts.append({
                     "alert_type": "cold_stress",
                     "forecast_date": dt,
                     "title": f"Lạnh {temp_min:.0f}°C",
-                    "message": "Nhiệt độ thấp có thể gây hại cho cây non và mầm hoa.",
-                    "recommendation": "Phủ nilon giữ ấm, tưới nhẹ vào buổi sáng.",
+                    "message": f"Nhiệt độ thấp {day_label} có thể làm chậm sinh trưởng, nhất là giai đoạn cây con.",
+                    "recommendation": "Phủ nilon/rơm giữ ấm, tưới nhẹ buổi sáng và tránh bón đạm mạnh.",
                     "severity": "high" if temp_min < 10 else "medium",
+                    "trigger_value": temp_min,
+                    "trigger_unit": "°C",
+                    "source": "open_meteo_rule",
                 })
-            if rain > ALERT_THRESHOLDS["rainfall_heavy"]:
+            if rain >= 50 or (rain_probability >= 80 and rain >= advice["spray_rain_limit"]):
                 alerts.append({
                     "alert_type": "heavy_rain",
                     "forecast_date": dt,
                     "title": f"Mưa lớn {rain:.0f} mm",
-                    "message": "Mưa lớn nguy cơ ngập úng và rửa trôi phân bón.",
-                    "recommendation": "Kiểm tra hệ thống thoát nước, tạm hoãn bón phân.",
+                    "message": f"Dự báo mưa {rain:.0f} mm, xác suất {rain_probability:.0f}% trong {day_label}.",
+                    "recommendation": "Khơi thông rãnh thoát nước, neo buộc cây, tạm hoãn bón phân và phun thuốc.",
+                    "severity": "high" if rain >= 100 or rain_probability >= 90 else "medium",
+                    "trigger_value": rain,
+                    "trigger_unit": "mm",
+                    "source": "open_meteo_rule",
+                })
+            if self._is_thunderstorm(item):
+                alerts.append({
+                    "alert_type": "thunderstorm",
+                    "forecast_date": dt,
+                    "title": "Nguy cơ giông sét",
+                    "message": f"Open-Meteo ghi nhận mã thời tiết giông trong {day_label}.",
+                    "recommendation": "Không làm việc ngoài đồng khi có giông, thu dọn dụng cụ và tránh trú dưới cây cao.",
                     "severity": "high",
+                    "trigger_value": item.get("weather_code"),
+                    "trigger_unit": "weather_code",
+                    "source": "open_meteo_rule",
+                })
+            if wind >= 22:
+                alerts.append({
+                    "alert_type": "strong_wind",
+                    "forecast_date": dt,
+                    "title": f"Gió mạnh {wind:.0f} km/h",
+                    "message": f"Gió mạnh làm tăng nguy cơ đổ ngã và thất thoát thuốc phun trong {day_label}.",
+                    "recommendation": "Hoãn phun thuốc, kiểm tra giàn/neo buộc và che chắn cây dễ đổ.",
+                    "severity": "high" if wind >= 30 else "medium",
+                    "trigger_value": wind,
+                    "trigger_unit": "km/h",
+                    "source": "open_meteo_rule",
                 })
             if humidity > ALERT_THRESHOLDS["humidity_high"]:
                 alerts.append({
@@ -708,93 +848,258 @@ class WeatherService:
                     "forecast_date": dt,
                     "title": f"Độ ẩm cao {humidity:.0f}%",
                     "message": "Độ ẩm cao tạo điều kiện bùng phát nấm, vi khuẩn gây bệnh.",
-                    "recommendation": "Phun phòng trừ nấm bệnh, đảm bảo thông thoáng.",
+                    "recommendation": "Tăng thông thoáng ruộng/vườn, kiểm tra bệnh lá và chỉ phun khi trời khô, gió nhẹ.",
                     "severity": "medium",
+                    "trigger_value": humidity,
+                    "trigger_unit": "%",
+                    "source": "open_meteo_rule",
                 })
+            if uv >= 8:
+                alerts.append({
+                    "alert_type": "high_uv",
+                    "forecast_date": dt,
+                    "title": f"UV cao {uv:.1f}",
+                    "message": f"UV cao trong {day_label} dễ gây héo lá, cháy mép lá ở cây non.",
+                    "recommendation": "Che lưới, giữ ẩm gốc và tránh tưới/phun vào giữa trưa.",
+                    "severity": "medium",
+                    "trigger_value": uv,
+                    "trigger_unit": "UV",
+                    "source": "open_meteo_rule",
+                })
+
+        rain_3d = sum(self._num(item.get("rainfall"), 0) for item in forecast[:3])
+        if rain_3d >= 80:
+            alerts.append({
+                "alert_type": "rain_accumulation",
+                "forecast_date": forecast[0].get("date") if forecast else "",
+                "title": f"Mưa cộng dồn 3 ngày {rain_3d:.0f} mm",
+                "message": "Mưa cộng dồn cao làm tăng nguy cơ úng rễ, rửa trôi phân và bệnh nấm.",
+                "recommendation": "Ưu tiên thoát nước, giảm tưới, chia nhỏ lần bón phân sau khi đất ráo.",
+                "severity": "high" if rain_3d >= 120 else "medium",
+                "trigger_value": rain_3d,
+                "trigger_unit": "mm/3d",
+                "source": "open_meteo_rule",
+            })
 
         # Loại bỏ trùng lặp theo (alert_type, forecast_date)
         seen = set()
         unique = []
-        for a in alerts:
-            key = (a["alert_type"], a["forecast_date"])
+        severity_rank = {"high": 0, "medium": 1, "low": 2}
+        for alert in sorted(alerts, key=lambda item: (severity_rank.get(item["severity"], 9), str(item.get("forecast_date") or ""))):
+            key = (alert["alert_type"], alert["forecast_date"])
             if key not in seen:
                 seen.add(key)
-                unique.append(a)
-        return unique
+                unique.append(alert)
+        return unique[:6]
 
     def _build_activity_recommendations(
-        self, current: dict, forecast: list[dict], crop_name: str | None, growth_stage: str | None
+        self,
+        current: dict,
+        forecast: list[dict],
+        crop_name: str | None,
+        growth_stage: str | None,
+        hourly: list[dict] | None = None,
     ) -> list[dict]:
-        temp = current.get("temperature") or 28
-        rain = current.get("rainfall") or 0
-        humidity = current.get("humidity") or 70
-        wind = current.get("wind_speed") or 0
+        temp = self._num(current.get("temperature") or current.get("temp_max"), 28)
+        current_rain = self._num(current.get("rainfall"), 0)
+        humidity = self._num(current.get("humidity"), 70)
+        wind = self._num(current.get("wind_speed"), 0)
         advice = self._crop_advice(crop_name)
-        stage = (growth_stage or "").lower()
+        stage_key = self._text_key(growth_stage)
+        today = forecast[0] if forecast else {}
+
+        rain_today = self._num(today.get("rainfall"), current_rain)
+        rain_probability_today = self._num(today.get("rain_probability"), 0)
+        rain_24h = sum(self._num(item.get("rainfall"), 0) for item in (hourly or [])[:24])
+        max_rain_probability_24h = max([self._num(item.get("rain_probability"), 0) for item in (hourly or [])[:24]] or [rain_probability_today])
+        rain_3d = sum(self._num(item.get("rainfall"), 0) for item in forecast[:3])
+        max_wind_24h = max([self._num(item.get("wind_speed"), 0) for item in (hourly or [])[:24]] or [wind])
+        dry_window = self._find_hour_window(
+            hourly,
+            hours_needed=3,
+            max_lookahead_hours=96,
+            max_rain_probability=30,
+            max_rainfall=0.2,
+            max_wind=18,
+            max_uv=7,
+            min_temp=18,
+            max_temp=34,
+        )
+        spray_window = self._find_hour_window(
+            hourly,
+            hours_needed=2,
+            max_lookahead_hours=72,
+            max_rain_probability=25,
+            max_rainfall=0.1,
+            max_wind=15,
+            max_uv=6,
+            min_temp=18,
+            max_temp=32,
+        )
 
         recs = []
 
-        # Tưới
-        if rain > advice["spray_rain_limit"]:
-            recs.append({"action_type": "irrigation", "action": "Tưới nước", "decision": "Hoãn — đủ mưa",
-                         "reason": f"Mưa {rain:.0f} mm đã đủ, tiết kiệm nước.", "priority": "low", "timing": ""})
-        elif temp > advice["water_temp_limit"]:
-            recs.append({"action_type": "irrigation", "action": "Tưới nước", "decision": "Tưới ngay",
-                         "reason": f"Nắng nóng {temp:.0f}°C, cây cần nước gấp.", "priority": "high",
-                         "timing": "Sáng sớm 5–7h hoặc chiều mát 17–19h"})
+        if rain_24h >= 8 or max_rain_probability_24h >= 70:
+            recs.append({
+                "action_type": "irrigation",
+                "action": "Tưới nước",
+                "decision": "Tạm hoãn",
+                "reason": f"Open-Meteo dự báo 24 giờ tới mưa khoảng {rain_24h:.1f} mm, xác suất cao nhất {max_rain_probability_24h:.0f}%.",
+                "priority": "low",
+                "timing": "Kiểm tra ẩm độ đất sau mưa rồi mới tưới bù.",
+                "source": "open_meteo_rule",
+            })
+        elif temp >= advice["water_temp_limit"] or rain_3d < 5:
+            recs.append({
+                "action_type": "irrigation",
+                "action": "Tưới nước",
+                "decision": "Nên tưới",
+                "reason": f"Nhiệt độ {temp:.0f}°C, mưa 3 ngày tới chỉ {rain_3d:.1f} mm nên cây dễ thiếu nước.",
+                "priority": "high" if temp >= advice["water_temp_limit"] else "medium",
+                "timing": "Sáng sớm 5–7h hoặc chiều mát 17–19h.",
+                "source": "open_meteo_rule",
+            })
         else:
-            recs.append({"action_type": "irrigation", "action": "Tưới nước", "decision": "Tưới theo lịch",
-                         "reason": "Thời tiết bình thường, duy trì lịch tưới định kỳ.", "priority": "medium",
-                         "timing": "Sáng sớm 5–7h"})
+            recs.append({
+                "action_type": "irrigation",
+                "action": "Tưới nước",
+                "decision": "Tưới duy trì",
+                "reason": "Lượng mưa và nhiệt độ chưa vượt ngưỡng rủi ro, duy trì lịch tưới nhẹ theo ẩm độ đất.",
+                "priority": "medium",
+                "timing": "Ưu tiên sáng sớm, tránh tưới giữa trưa.",
+                "source": "open_meteo_rule",
+            })
 
-        # Phun thuốc
-        if wind and wind > 25:
-            recs.append({"action_type": "spraying", "action": "Phun thuốc", "decision": "Không nên",
-                         "reason": f"Gió {wind:.0f} km/h làm thuốc bay ngoài ý muốn.", "priority": "low", "timing": ""})
-        elif rain > advice["spray_rain_limit"]:
-            recs.append({"action_type": "spraying", "action": "Phun thuốc", "decision": "Hoãn",
-                         "reason": "Mưa sẽ rửa trôi thuốc, giảm hiệu quả.", "priority": "low", "timing": ""})
+        if max_wind_24h >= 22:
+            recs.append({
+                "action_type": "spraying",
+                "action": "Phun thuốc",
+                "decision": "Không nên",
+                "reason": f"Gió 24 giờ tới có thể đạt {max_wind_24h:.0f} km/h, dễ làm thuốc bay lệch và giảm hiệu quả.",
+                "priority": "high",
+                "timing": "Chờ gió dưới 15 km/h và trời khô.",
+                "source": "open_meteo_rule",
+            })
+        elif rain_24h >= advice["spray_rain_limit"] or max_rain_probability_24h >= 60:
+            recs.append({
+                "action_type": "spraying",
+                "action": "Phun thuốc",
+                "decision": "Hoãn",
+                "reason": f"Mưa 24 giờ tới {rain_24h:.1f} mm/xác suất {max_rain_probability_24h:.0f}% có thể rửa trôi thuốc.",
+                "priority": "high",
+                "timing": dry_window or "Đợi sau mưa 12–24h, lá khô rồi phun.",
+                "source": "open_meteo_rule",
+            })
         else:
-            recs.append({"action_type": "spraying", "action": "Phun thuốc", "decision": "Được phép",
-                         "reason": "Điều kiện thích hợp để phun.", "priority": "medium",
-                         "timing": "Sáng sớm 6–8h khi gió nhẹ"})
+            recs.append({
+                "action_type": "spraying",
+                "action": "Phun thuốc",
+                "decision": "Có thể phun",
+                "reason": "Khung dự báo gần nhất ít mưa, gió không vượt ngưỡng nguy hiểm.",
+                "priority": "medium",
+                "timing": spray_window or "Sáng sớm 6–8h hoặc chiều mát khi gió nhẹ.",
+                "source": "open_meteo_rule",
+            })
 
-        # Bón phân
-        rain3d = sum(f.get("rainfall") or 0 for f in forecast[:3]) / max(len(forecast[:3]), 1)
-        if rain > 50:
-            recs.append({"action_type": "fertilizing", "action": "Bón phân", "decision": "Hoãn",
-                         "reason": "Mưa lớn sẽ rửa trôi phân bón.", "priority": "low", "timing": ""})
-        elif rain3d < 5 and humidity < 50:
-            recs.append({"action_type": "fertilizing", "action": "Bón phân", "decision": "Cân nhắc",
-                         "reason": "Đất khô, phân dễ bị bay hơi — cần kết hợp tưới.", "priority": "medium",
-                         "timing": "Bón kèm tưới nhỏ giọt"})
+        if rain_3d >= 50:
+            recs.append({
+                "action_type": "drainage",
+                "action": "Thoát nước",
+                "decision": "Ưu tiên kiểm tra",
+                "reason": f"Mưa cộng dồn 3 ngày tới {rain_3d:.1f} mm, nguy cơ úng rễ và rửa trôi dinh dưỡng.",
+                "priority": "high",
+                "timing": "Làm trước đợt mưa, khơi rãnh và mở cửa thoát nước.",
+                "source": "open_meteo_rule",
+            })
+
+        if rain_today >= 30 or rain_3d >= 60:
+            recs.append({
+                "action_type": "fertilizing",
+                "action": "Bón phân",
+                "decision": "Hoãn bón",
+                "reason": f"Mưa hôm nay {rain_today:.1f} mm, 3 ngày tới {rain_3d:.1f} mm có thể rửa trôi phân.",
+                "priority": "high",
+                "timing": dry_window or "Bón sau khi đất ráo, chia nhỏ lượng bón.",
+                "source": "open_meteo_rule",
+            })
+        elif rain_3d < 5 and humidity < 55:
+            recs.append({
+                "action_type": "fertilizing",
+                "action": "Bón phân",
+                "decision": "Bón kèm tưới",
+                "reason": "Dự báo khô, độ ẩm thấp làm phân khó tan hoặc dễ thất thoát.",
+                "priority": "medium",
+                "timing": "Bón chiều mát, tưới nhẹ sau bón.",
+                "source": "open_meteo_rule",
+            })
         else:
-            recs.append({"action_type": "fertilizing", "action": "Bón phân", "decision": "Tốt",
-                         "reason": "Độ ẩm phù hợp, phân dễ hòa tan và hấp thu.", "priority": "medium",
-                         "timing": "Chiều mát 16–18h"})
+            recs.append({
+                "action_type": "fertilizing",
+                "action": "Bón phân",
+                "decision": "Có thể bón",
+                "reason": "Độ ẩm và mưa dự báo ở mức phù hợp để cây hấp thu dinh dưỡng.",
+                "priority": "medium",
+                "timing": dry_window or "Chiều mát 16–18h.",
+                "source": "open_meteo_rule",
+            })
 
-        # Thu hoạch
-        if stage in ("thu hoạch", "thu hoach"):
-            if rain > 20:
-                recs.append({"action_type": "harvest", "action": "Thu hoạch", "decision": "Hoãn",
-                             "reason": "Mưa làm ướt nông sản, tăng nguy cơ hư hỏng.", "priority": "high",
-                             "timing": "Chờ thời tiết khô 2–3 ngày"})
+        if stage_key == "thu hoach":
+            if rain_24h >= 3 or rain_probability_today >= 50:
+                recs.append({
+                    "action_type": "harvest",
+                    "action": "Thu hoạch",
+                    "decision": "Hoãn hoặc thu sớm trước mưa",
+                    "reason": f"Dự báo mưa gần {rain_24h:.1f} mm trong 24h làm tăng nguy cơ ướt, dập và khó phơi sấy.",
+                    "priority": "high",
+                    "timing": dry_window or "Chọn khoảng khô ráo gần nhất, chuẩn bị che phủ/sấy.",
+                    "source": "open_meteo_rule",
+                })
             else:
-                recs.append({"action_type": "harvest", "action": "Thu hoạch", "decision": "Nên làm ngay",
-                             "reason": "Thời tiết khô ráo, thuận lợi thu hoạch và phơi sấy.", "priority": "high",
-                             "timing": "Sáng 7–11h"})
+                recs.append({
+                    "action_type": "harvest",
+                    "action": "Thu hoạch",
+                    "decision": "Nên thực hiện",
+                    "reason": "Dự báo gần ít mưa, thuận lợi thu hái, vận chuyển và phơi sấy.",
+                    "priority": "high",
+                    "timing": dry_window or "Sáng 7–11h.",
+                    "source": "open_meteo_rule",
+                })
+
+        stage_notes = {
+            "cay con": "Che nắng nhẹ, giữ ẩm đều và tránh phun/bón nồng độ cao khi nhiệt độ hoặc UV cao.",
+            "ra hoa": "Hạn chế phun thuốc lúc hoa nở; ưu tiên sáng sớm, tránh mưa và gió mạnh để bảo vệ thụ phấn.",
+            "lam dong": "Giữ nước ổn định, không để khô hạn kéo dài vì giai đoạn làm đòng rất nhạy với thiếu nước.",
+            "dau trai": "Giữ ẩm đều, tránh sốc nước sau khô hạn và theo dõi nấm bệnh khi độ ẩm tăng.",
+        }
+        if stage_key in stage_notes:
+            recs.append({
+                "action_type": "crop_stage",
+                "action": "Chăm sóc theo giai đoạn",
+                "decision": "Điều chỉnh kỹ thuật",
+                "reason": stage_notes[stage_key],
+                "priority": "medium",
+                "timing": "Áp dụng trong các khung giờ thời tiết ổn định.",
+                "source": "open_meteo_rule",
+            })
 
         return recs
 
     def _build_ai_recommendation(
-        self, current: dict, forecast: list[dict], alerts: list[dict], crop_name: str | None, growth_stage: str | None
+        self,
+        current: dict,
+        forecast: list[dict],
+        alerts: list[dict],
+        crop_name: str | None,
+        growth_stage: str | None,
+        activity_recs: list[dict] | None = None,
     ) -> dict:
-        temp = current.get("temperature") or 28
-        humidity = current.get("humidity") or 70
-        rain = current.get("rainfall") or 0
+        temp = self._num(current.get("temperature") or current.get("temp_max"), 28)
+        humidity = self._num(current.get("humidity"), 70)
+        rain = self._num(current.get("rainfall"), 0)
         crop_label = crop_name or "cây trồng"
         stage_label = growth_stage or "hiện tại"
         high_alerts = [a for a in alerts if a["severity"] == "high"]
+        priority_actions = [item for item in (activity_recs or []) if item.get("priority") == "high"]
 
         if high_alerts:
             summary = (
@@ -812,7 +1117,7 @@ class WeatherService:
             summary = f"Thời tiết tương đối thuận lợi cho {crop_label} giai đoạn {stage_label}."
             risk = "Không có rủi ro lớn. Duy trì chăm sóc theo lịch thông thường."
 
-        avg_rain = sum(f.get("rainfall") or 0 for f in forecast) / max(len(forecast), 1)
+        avg_rain = sum(self._num(f.get("rainfall"), 0) for f in forecast) / max(len(forecast), 1)
         action_plan = [
             f"Nhiệt độ {temp:.0f}°C — {'tăng tưới, che mát' if temp > 35 else 'theo dõi bình thường'}",
             f"Độ ẩm {humidity:.0f}% — {'phòng nấm bệnh' if humidity > 85 else 'ổn định'}",
@@ -820,6 +1125,9 @@ class WeatherService:
         ]
         if high_alerts:
             action_plan.append(f"Ưu tiên xử lý: {high_alerts[0]['recommendation']}")
+        for item in priority_actions[:2]:
+            timing = f" Thời điểm: {item['timing']}" if item.get("timing") else ""
+            action_plan.append(f"{item['action']}: {item['decision']} — {item['reason']}{timing}")
 
         crop_note = None
         if crop_name:
@@ -828,15 +1136,22 @@ class WeatherService:
                 "ra hoa": f"{crop_label} đang ra hoa — tránh phun thuốc và hạn chế tưới lá.",
                 "làm đòng": f"{crop_label} đang làm đòng — đảm bảo đủ nước và dinh dưỡng.",
                 "thu hoạch": f"{crop_label} sắp thu hoạch — chú ý thời tiết khô ráo để thu và phơi.",
+                "cay con": f"{crop_label} giai đoạn cây con rất nhạy cảm với nhiệt độ và độ ẩm.",
+                "ra hoa": f"{crop_label} đang ra hoa — tránh phun thuốc và hạn chế tưới lá.",
+                "lam dong": f"{crop_label} đang làm đòng — đảm bảo đủ nước và dinh dưỡng.",
+                "thu hoach": f"{crop_label} sắp thu hoạch — chú ý thời tiết khô ráo để thu và phơi.",
             }
-            crop_note = stage_notes.get((growth_stage or "").lower())
+            crop_note = stage_notes.get((growth_stage or "").lower()) or stage_notes.get(self._text_key(growth_stage))
 
         return {
+            "provider": "weather_rule_ai",
+            "provider_label": "AI thời tiết",
+            "ai_generated": True,
             "summary": summary,
             "risk_explanation": risk,
             "action_plan": action_plan,
             "crop_note": crop_note,
-            "data_note": "Dữ liệu thời tiết từ Open-Meteo (nguồn mở, cập nhật mỗi giờ). Khuyến nghị dựa trên rule-based engine.",
+            "data_note": "Dữ liệu đầu vào lấy từ Open-Meteo gồm hiện tại, dự báo ngày và dự báo từng giờ. Lớp AI thời tiết chuyển các ngưỡng khí tượng nông nghiệp thành cảnh báo và lịch thao tác phù hợp.",
         }
 
 

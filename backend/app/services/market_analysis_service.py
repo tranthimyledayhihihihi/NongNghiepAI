@@ -8,7 +8,7 @@ import json
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
-from app.core.real_data import OFFICIAL_AGRI_SOURCE_NAME, OFFICIAL_PRICE_URL, age_minutes, cache_status_for, realtime_error
+from app.core.real_data import WINMART_PRICE_SOURCE_NAME, WINMART_PRICE_URL, age_minutes, cache_status_for, realtime_error
 from app.models.market import MarketAnalysisResult
 from app.services.market_news_service import market_news_service
 from app.services.pricing_service import pricing_service
@@ -72,7 +72,7 @@ class MarketAnalysisService:
         computed.update(
             {
                 "source_name": row.SourceName if row else "Market analysis cache",
-                "source_url": row.SourceURL if row else OFFICIAL_PRICE_URL,
+                "source_url": row.SourceURL if row else WINMART_PRICE_URL,
                 "is_realtime": False,
                 "is_mock": False,
                 "cache_status": "live",
@@ -107,7 +107,7 @@ class MarketAnalysisService:
         computed.update(
             {
                 "source_name": row.SourceName if row else "Market analysis cache",
-                "source_url": row.SourceURL if row else OFFICIAL_PRICE_URL,
+                "source_url": row.SourceURL if row else WINMART_PRICE_URL,
                 "is_realtime": False,
                 "is_mock": False,
                 "cache_status": "live",
@@ -236,7 +236,7 @@ class MarketAnalysisService:
             "recommendations": payload.get("recommendations"),
             "sources": payload.get("sources", []),
             "source_name": payload.get("source_name") or "Market analysis cache",
-            "source_url": payload.get("source_url") or OFFICIAL_PRICE_URL,
+            "source_url": payload.get("source_url") or WINMART_PRICE_URL,
             "is_realtime": bool(payload.get("is_realtime", False)),
             "is_mock": False,
             "cache_status": payload.get("cache_status", "fresh_cache"),
@@ -282,7 +282,7 @@ class MarketAnalysisService:
                 Region=region,
                 PayloadJSON=json.dumps(payload, ensure_ascii=False, default=str),
                 SourceName="Market analysis cache",
-                SourceURL=OFFICIAL_PRICE_URL,
+                SourceURL=WINMART_PRICE_URL,
                 FetchedAt=datetime.utcnow(),
                 IsRealtime=False,
                 IsMock=False,
@@ -302,8 +302,8 @@ class MarketAnalysisService:
         if current.get("source_url"):
             sources.append(
                 {
-                    "source_name": current.get("source_name") or OFFICIAL_AGRI_SOURCE_NAME,
-                    "source_url": current.get("source_url") or OFFICIAL_PRICE_URL,
+                    "source_name": current.get("source_name") or WINMART_PRICE_SOURCE_NAME,
+                    "source_url": current.get("source_url") or WINMART_PRICE_URL,
                 }
             )
 
@@ -318,7 +318,7 @@ class MarketAnalysisService:
         if retail_bundle and retail_bundle.get("source_url"):
             sources.append(
                 {
-                    "source_name": retail_bundle.get("source_name") or "Vietnam retail websites",
+                    "source_name": retail_bundle.get("source_name") or "WinMart",
                     "source_url": retail_bundle.get("source_url"),
                 }
             )

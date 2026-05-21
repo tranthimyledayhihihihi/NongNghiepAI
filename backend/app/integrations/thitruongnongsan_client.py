@@ -35,19 +35,9 @@ class ThiTruongNongSanClient:
         region: str | None = None,
         days: int = 30,
     ) -> list[dict]:
-        categories = self._categories_for_crop(crop_name)
-        all_records: list[dict] = []
-        requested_crop = normalize_text(crop_name or "")
-        for category in categories:
-            all_records.extend(
-                self._fetch_price_category(
-                    category,
-                    requested_crop=requested_crop,
-                    region=region,
-                    days=days,
-                )
-            )
-        return all_records
+        from app.integrations.winmart_price_client import winmart_price_client
+
+        return winmart_price_client.fetch_prices(crop_name=crop_name, region=region)
 
     def fetch_news(self, limit: int = 30) -> list[dict]:
         key = "thitruongnongsan_news"

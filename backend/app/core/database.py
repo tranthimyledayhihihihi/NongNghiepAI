@@ -22,11 +22,18 @@ def _build_engine(database_url: str):
     )
 
 
+def _sqlite_fallback_allowed() -> bool:
+    return bool(settings.SQLITE_FALLBACK_ENABLED) and settings.ENVIRONMENT.lower() not in {
+        "production",
+        "docker",
+    }
+
+
 def _create_configured_engine():
     try:
         return _build_engine(settings.DATABASE_URL), settings.DATABASE_URL
     except (ImportError, ModuleNotFoundError):
-        if settings.ENVIRONMENT.lower() == "production":
+        if not _sqlite_fallback_allowed():
             raise
         return _build_engine(SQLITE_FALLBACK_URL), SQLITE_FALLBACK_URL
 
@@ -404,7 +411,7 @@ def init_db():
         seed_demo_seasons(SessionLocal)
         seed_market_channels(SessionLocal)
     except SQLAlchemyError:
-        if settings.ENVIRONMENT.lower() == "production" or active_database_url.startswith("sqlite"):
+        if not _sqlite_fallback_allowed() or active_database_url.startswith("sqlite"):
             raise
         _switch_to_sqlite_fallback()
         legacy_users_table = _migrate_legacy_sqlite_users()

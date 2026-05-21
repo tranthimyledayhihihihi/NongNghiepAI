@@ -6,9 +6,10 @@ Price Forecast Service - merged Tien (schema/API) + Quang (AI model + rich analy
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.core.real_data import OFFICIAL_AGRI_SOURCE_NAME, OFFICIAL_PRICE_URL, realtime_error
+from app.core.real_data import WINMART_PRICE_SOURCE_NAME, WINMART_PRICE_URL, realtime_error
 from app.schemas.price_schema import PricePredictionRequest
 from app.services.pricing_service import pricing_service  # kept for legacy test monkeypatch compatibility
 
@@ -61,7 +62,7 @@ class PriceForecastService:
                         "warning": self._build_warning(trend, [p["predicted_price"] for p in predicted_prices]),
                         "recommendation": self._get_recommendation(trend),
                         "source_name": "Price forecast model",
-                        "source_url": OFFICIAL_PRICE_URL,
+                        "source_url": WINMART_PRICE_URL,
                         "is_realtime": False,
                         "is_mock": False,
                         "cache_status": "fresh_cache",
@@ -86,8 +87,8 @@ class PriceForecastService:
                 "best_selling_time": self._find_best_selling_time(predicted_prices),
                 "warning": self._build_warning(trend, [p["predicted_price"] for p in predicted_prices]),
                 "recommendation": raw.get("recommendation", self._get_recommendation(trend)),
-                "source_name": "PriceHistory DB",
-                "source_url": OFFICIAL_PRICE_URL,
+                "source_name": "WinMart MarketPrices DB",
+                "source_url": WINMART_PRICE_URL,
                 "is_realtime": False,
                 "is_mock": False,
                 "cache_status": "fresh_cache",
@@ -100,8 +101,8 @@ class PriceForecastService:
         payload = realtime_error(
             code="PRICE_FORECAST_CACHE_MISS",
             message="Price forecast cache/history miss. Background refresh has not fetched enough real data yet.",
-            source_name=OFFICIAL_AGRI_SOURCE_NAME,
-            source_url=OFFICIAL_PRICE_URL,
+            source_name=WINMART_PRICE_SOURCE_NAME,
+            source_url=WINMART_PRICE_URL,
         )
         payload.update(
             {
@@ -121,29 +122,15 @@ class PriceForecastService:
     # ------------------------------------------------------------------ #
 
     def _load_price_history(self, db: Session, crop_name: str, region: str, days: int = 60) -> List[Dict]:
-        """Lấy lịch sử giá: ưu tiên PriceHistory, fallback sang MarketPrices (dữ liệu cào)."""
+        """Lấy lịch sử giá từ MarketPrices WinMart."""
         try:
             from app.models.crop import CropType
-            from app.models.price import MarketPrice, PriceHistory
+            from app.models.price import MarketPrice
             crop = db.query(CropType).filter(CropType.CropName == crop_name).first()
             if not crop:
                 return []
             start = (datetime.now() - timedelta(days=days)).date()
 
-            rows = (
-                db.query(PriceHistory)
-                .filter(
-                    PriceHistory.CropID == crop.CropID,
-                    PriceHistory.Region == region,
-                    PriceHistory.RecordDate >= start,
-                )
-                .order_by(PriceHistory.RecordDate)
-                .all()
-            )
-            if rows:
-                return [{"date": r.RecordDate.isoformat(), "price": float(r.AvgPrice)} for r in rows]
-
-            # Fallback: dùng MarketPrices (dữ liệu cào từ spider)
             market_rows = (
                 db.query(MarketPrice)
                 .filter(
@@ -154,6 +141,12 @@ class PriceForecastService:
                     MarketPrice.SourceName.isnot(None),
                     MarketPrice.FetchedAt.isnot(None),
                     MarketPrice.IsMock == False,  # noqa: E712
+                    or_(
+                        MarketPrice.SourceName == WINMART_PRICE_SOURCE_NAME,
+                        MarketPrice.SourceName == "winmart.vn",
+                        MarketPrice.SourceType == "winmart_retail_price",
+                        MarketPrice.SourceURL.like("%winmart.vn%"),
+                    ),
                 )
                 .order_by(MarketPrice.PriceDate)
                 .all()

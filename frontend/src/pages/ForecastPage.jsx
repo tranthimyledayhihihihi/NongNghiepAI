@@ -568,10 +568,10 @@ const ForecastPage = () => {
                 <h2 className="text-lg font-bold text-slate-950">Khuyến nghị canh tác</h2>
                 {data.ai_recommendation?.ai_generated && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-700">
-                    <Bot className="h-3 w-3" /> AI Gemini
+                    <Bot className="h-3 w-3" /> {data.ai_recommendation.provider_label || 'AI thời tiết'}
                   </span>
                 )}
-                <DataSourceBadge data={data.farming_recommendation || data.risk_analysis || {}} />
+                <DataSourceBadge data={data.ai_recommendation || data.farming_recommendation || data.risk_analysis || {}} />
               </div>
               <p className="mt-3 text-sm leading-6 text-slate-700">{translateUiText(data.ai_recommendation.summary)}</p>
               <p className="mt-2 text-sm leading-6 text-slate-700">{translateUiText(data.ai_recommendation.risk_explanation)}</p>

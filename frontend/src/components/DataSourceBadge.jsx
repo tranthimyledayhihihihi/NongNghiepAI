@@ -25,6 +25,7 @@ const ICON_MAP = {
 };
 
 export function DataSourceBadge({
+  data,
   source,
   type,
   variant,
@@ -34,10 +35,11 @@ export function DataSourceBadge({
   showLabel = true,
   title,
 }) {
-  const meta = getSourceMeta(source || type || variant || label);
+  const sourceInput = data || source || type || variant || label;
+  const meta = getSourceMeta(sourceInput);
   const Icon = ICON_MAP[meta.tone] || ICON_MAP.default;
-  const resolvedLabel = label || meta.label || meta.shortLabel || '';
-  const resolvedTitle = title || resolvedLabel;
+  const resolvedLabel = label || meta.label || data?.provider_label || data?.source_name || data?.sourceName || meta.shortLabel || '';
+  const resolvedTitle = title || data?.provider_label || data?.source_name || data?.sourceName || resolvedLabel;
 
   if (!resolvedLabel && !compact) {
     return null;
@@ -47,7 +49,7 @@ export function DataSourceBadge({
     <span
       className={[
         'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium leading-5',
-        getSourceBadgeClassName(source || type || variant || label),
+        getSourceBadgeClassName(sourceInput),
         className,
       ]
         .filter(Boolean)
@@ -57,7 +59,7 @@ export function DataSourceBadge({
       <Icon
         className={[
           'h-3.5 w-3.5',
-          getSourceIconClassName(source || type || variant || label),
+          getSourceIconClassName(sourceInput),
         ]
           .filter(Boolean)
           .join(' ')}

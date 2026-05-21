@@ -1180,32 +1180,40 @@ def _check_and_trigger_alerts() -> int:
 
 async def run_price_crawler() -> Dict:
     """
-    Pipeline (anti-timeout + no-mock):
-    - Chỉ lưu dữ liệu nếu crawl được dữ liệu thật và pass prefilter.
-    - Nếu không có dữ liệu thật: KHÔNG sinh/simulation; trả saved=0 để frontend nhận cache miss.
+    WinMart-only price refresh.
+    Legacy web crawler parsers are retained for compatibility, but the active
+    background price pipeline writes only WinMart records.
     """
     t0 = datetime.now()
+    crops = [
+        item.strip()
+        for item in os.getenv("REAL_REFRESH_CROPS", "lua,ca phe,ho tieu,rau,ca chua").split(",")
+        if item.strip()
+    ]
+    source_tag = "WinMart"
+    records_fetched = 0
+    saved = 0
+    errors: list[str] = []
 
-    raw_items = await _scrape_web()
-    filtered = prefilter_items(raw_items)
+    from app.core.database import SessionLocal
+    from app.services.price_aggregator_service import price_aggregator_service
 
-    source_tag = "web"
-    if not filtered:
-        logger.warning("[Crawler] Không crawl được dữ liệu giá thật hợp lệ — bỏ qua insert (no-mock).")
-        elapsed = round((datetime.now() - t0).total_seconds(), 2)
-        return {
-            "raw_count": len(raw_items),
-            "filtered_count": 0,
-            "saved": 0,
-            "aggregated": 0,
-            "alerts": 0,
-            "weather_saved": 0,
-            "source": source_tag,
-            "elapsed_s": elapsed,
-        }
+    db = SessionLocal()
+    try:
+        for crop in crops:
+            result = await asyncio.to_thread(
+                price_aggregator_service.refresh_prices,
+                db,
+                crop_name=crop,
+                source_name=source_tag,
+            )
+            records_fetched += int(result.get("records_fetched") or 0)
+            saved += int(result.get("records_saved") or 0) + int(result.get("records_updated") or 0)
+            errors.extend(result.get("errors") or [])
+    finally:
+        db.close()
 
-    saved = await asyncio.to_thread(_save_market_prices, filtered)
-    aggregated = await asyncio.to_thread(_aggregate_to_price_history)
+    aggregated = records_fetched
     alerts = await asyncio.to_thread(_check_and_trigger_alerts)
 
     # Cập nhật thời tiết (Open-Meteo) trong background: không block request trang.
@@ -1214,17 +1222,19 @@ async def run_price_crawler() -> Dict:
 
     elapsed = round((datetime.now() - t0).total_seconds(), 2)
     logger.info(
-        f"[Crawler] ✓ raw={len(raw_items)} filtered={len(filtered)} saved={saved} "
-        f"history={aggregated} alerts={alerts} weather={weather_saved} source={source_tag} | {elapsed}s"
+        f"[Crawler] WinMart raw={records_fetched} saved={saved} "
+        f"history={aggregated} alerts={alerts} weather={weather_saved} errors={len(errors)} | {elapsed}s"
     )
     return {
-        "raw_count": len(raw_items),
-        "filtered_count": len(filtered),
+        "raw_count": records_fetched,
+        "filtered_count": records_fetched,
         "saved": saved,
         "aggregated": aggregated,
         "alerts": alerts,
         "weather_saved": weather_saved,
         "source": source_tag,
+        "source_name": source_tag,
+        "errors": errors,
         "elapsed_s": elapsed,
     }
 

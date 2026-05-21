@@ -1,34 +1,33 @@
 from app.core.database import SessionLocal
 from app.core.redis_client import redis_client
-from app.integrations.market_price_client import market_price_client
 from app.repositories.ingestion_repository import finish_ingestion_log, start_ingestion_log
-from app.repositories.price_repository import bulk_upsert_market_prices
+from app.services.price_aggregator_service import price_aggregator_service
 from app.tasks.celery_app import celery_app
 
 
 def refresh_market_prices_task(source_name: str | None = None, crop_filter: str | None = None) -> dict:
     db = SessionLocal()
-    log = start_ingestion_log(db, "refresh_market_prices", source_name)
+    log = start_ingestion_log(db, "refresh_market_prices", source_name or "WinMart")
     try:
-        records = market_price_client.fetch_all(source_name=source_name, crop_filter=crop_filter)
-        result = bulk_upsert_market_prices(db, records)
-        for record in records:
+        result = price_aggregator_service.refresh_prices(db, crop_name=crop_filter, source_name=source_name or "WinMart")
+        records_fetched = int(result.get("records_fetched") or 0)
+        for record in result.get("records", []) or []:
             redis_client.delete(
                 f"price:{record.get('crop_name')}:{record.get('region')}:{record.get('quality_grade', 'grade_1')}"
             )
-        status = "success" if not result["errors"] else "partial_success"
+        status = "success" if not result.get("errors") else "partial_success"
         finish_ingestion_log(
             db,
             log,
             status=status,
-            records_fetched=len(records),
-            records_saved=result["records_saved"] + result["records_updated"],
-            error_message="; ".join(result["errors"]) if result["errors"] else None,
+            records_fetched=records_fetched,
+            records_saved=int(result.get("records_saved") or 0) + int(result.get("records_updated") or 0),
+            error_message="; ".join(result.get("errors") or []) if result.get("errors") else None,
         )
         return {
             "status": status,
-            "source_name": source_name,
-            "records_fetched": len(records),
+            "source_name": result.get("source_name") or source_name or "WinMart",
+            "records_fetched": records_fetched,
             **result,
         }
     except Exception as exc:

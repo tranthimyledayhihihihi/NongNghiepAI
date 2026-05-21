@@ -1,7 +1,7 @@
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -10,6 +10,17 @@ from app.repositories.common import ensure_crop, ensure_user, normalize_text, to
 
 
 ALLOWED_MARKET_TYPES = {"Ban le", "Cho dau moi", "Thuong lai", "Xuat khau"}
+WINMART_SOURCE_NAME = "WinMart"
+WINMART_SOURCE_TYPE = "winmart_retail_price"
+
+
+def _winmart_price_filter():
+    return or_(
+        MarketPrice.SourceName == WINMART_SOURCE_NAME,
+        MarketPrice.SourceName == "winmart.vn",
+        MarketPrice.SourceType == WINMART_SOURCE_TYPE,
+        MarketPrice.SourceURL.like("%winmart.vn%"),
+    )
 
 
 def to_db_market_type(value: str | None) -> str:
@@ -126,7 +137,10 @@ def get_latest_price(
     try:
         crop = ensure_crop(db, crop_name)
         target_region = normalize_text(region)
-        query = db.query(MarketPrice).filter(MarketPrice.CropID == crop.CropID)
+        query = db.query(MarketPrice).filter(
+            MarketPrice.CropID == crop.CropID,
+            _winmart_price_filter(),
+        )
         if quality_grade:
             query = query.filter(MarketPrice.QualityGrade == to_db_grade(quality_grade))
         rows = query.order_by(desc(MarketPrice.PriceDate), desc(MarketPrice.UpdatedAt)).all()
@@ -200,7 +214,7 @@ def get_recent_market_prices(db: Session, crop_name: str, region: str, limit: in
         target_region = normalize_text(region)
         rows = (
             db.query(MarketPrice)
-            .filter(MarketPrice.CropID == crop.CropID)
+            .filter(MarketPrice.CropID == crop.CropID, _winmart_price_filter())
             .order_by(desc(MarketPrice.PriceDate), desc(MarketPrice.UpdatedAt))
             .all()
         )
@@ -216,7 +230,7 @@ def get_latest_prices_by_crop(db: Session, crop_name: str, limit: int = 10) -> l
         crop = ensure_crop(db, crop_name)
         return (
             db.query(MarketPrice)
-            .filter(MarketPrice.CropID == crop.CropID)
+            .filter(MarketPrice.CropID == crop.CropID, _winmart_price_filter())
             .order_by(desc(MarketPrice.PriceDate), desc(MarketPrice.UpdatedAt))
             .limit(limit)
             .all()
@@ -322,6 +336,7 @@ def _upsert_price_history(db: Session, crop_id: int, region: str, record_date: d
             MarketPrice.CropID == crop_id,
             MarketPrice.Region == region,
             MarketPrice.PriceDate == record_date,
+            _winmart_price_filter(),
         )
         .one()
     )

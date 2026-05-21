@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     )
 
     DATABASE_URL: str = "sqlite:///./agri_ai.db"
+    SQLITE_FALLBACK_ENABLED: bool = True
     REDIS_URL: str = "redis://localhost:6379/0"
 
     SECRET_KEY: str = "change-this-secret-key"
@@ -69,21 +70,24 @@ class Settings(BaseSettings):
 
     THITRUONG_NONGSAN_PRICE_URL: str = "https://thitruongnongsan.gov.vn/vn/nguonwmy.aspx"
     THITRUONG_NONGSAN_NEWS_URL: str = "https://thitruongnongsan.gov.vn/vn/xc0_tin-tuc.html"
-    ENABLE_THITRUONG_NONGSAN_PRICE: bool = True
+    ENABLE_THITRUONG_NONGSAN_PRICE: bool = False
     ENABLE_THITRUONG_NONGSAN_NEWS: bool = True
+    WINMART_ENABLED: bool = True
+    WINMART_API_BASE_URL: str = "https://api-crownx.winmart.vn"
+    WINMART_ITEM_SEARCH_ENDPOINT: str = "/ss/api/v2/public/winmart/item-search"
+    WINMART_STORE_NO: str = "1535"
+    WINMART_STORE_GROUP_CODE: str = "1998"
+    WINMART_APPLICATION_TYPE: str = "Winmart"
+    WINMART_SOURCE_URL: str = "https://winmart.vn/"
     RETAIL_PRICE_SOURCES_JSON: str = json.dumps(
         [
-            {"name": "BachHoaXanh", "url": "https://www.bachhoaxanh.com/"},
             {"name": "WinMart", "url": "https://winmart.vn/"},
-            {"name": "GO", "url": "https://go-vietnam.vn/"},
-            {"name": "Coopmart", "url": "https://cooponline.vn/"},
-            {"name": "MMMegaMarket", "url": "https://online.mmvietnam.com/"},
         ]
     )
 
     PRICE_SOURCE_URLS_JSON: str = json.dumps(
         [
-            {"name": "thitruongnongsan.gov.vn", "url": "https://thitruongnongsan.gov.vn/vn/nguonwmy.aspx"},
+            {"name": "WinMart", "url": "https://winmart.vn/"},
         ]
     )
     ENABLE_STOOQ_PRICE_SOURCE: bool = False

@@ -186,7 +186,7 @@ def _local_market_reply(context: dict, message: str) -> str:
     if not has_real_price:
         return (
             f"Hiện chưa có dữ liệu thị trường thực tế cho {crop} tại {region}. "
-            "Hệ thống đang lấy giá từ thitruongnongsan.gov.vn — dữ liệu sẽ có sau vài phút khi crawler hoàn tất. "
+            "Hệ thống đang lấy giá từ WinMart — dữ liệu sẽ có sau vài phút khi đồng bộ hoàn tất. "
             "Bạn có thể thử lại sau hoặc xem trang Thị trường để biết giá hiện tại."
         )
 

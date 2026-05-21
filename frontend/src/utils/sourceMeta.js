@@ -5,13 +5,13 @@ const SOURCE_META = {
     tone: 'official',
   },
   realtime: {
-    label: 'Realtime',
+    label: 'Open-Meteo realtime',
     shortLabel: 'Realtime',
     tone: 'realtime',
   },
   cache: {
-    label: 'Cache',
-    shortLabel: 'Cache',
+    label: 'Dữ liệu DB',
+    shortLabel: 'DB',
     tone: 'cache',
   },
   retail: {
@@ -20,6 +20,11 @@ const SOURCE_META = {
     tone: 'retail',
   },
   ai: {
+    label: 'AI phân tích',
+    shortLabel: 'AI',
+    tone: 'ai',
+  },
+  weatherRule: {
     label: 'AI phân tích',
     shortLabel: 'AI',
     tone: 'ai',
@@ -34,9 +39,17 @@ const SOURCE_META = {
 const SOURCE_ALIASES = {
   official: 'official',
   realtime: 'realtime',
+  realtime_api: 'realtime',
   cache: 'cache',
+  cached: 'cache',
+  database: 'cache',
+  db: 'cache',
   retail: 'retail',
   ai: 'ai',
+  ai_generated: 'ai',
+  rule_based_ai: 'ai',
+  weather_rule_ai: 'weatherRule',
+  open_meteo_rule: 'weatherRule',
   openmeteo: 'openMeteo',
   'open-meteo': 'openMeteo',
 };
@@ -76,9 +89,12 @@ export function resolveSourceKey(source) {
       source.sourceType ||
       source.type ||
       source.kind ||
-      source.sourceName ||
-      source.name ||
       source.source ||
+      source.provider ||
+      source.source_name ||
+      source.sourceName ||
+      source.provider_label ||
+      source.name ||
       source.label;
 
     return resolveSourceKey(candidate);
@@ -114,8 +130,8 @@ export function getSourceMeta(source) {
 
   return {
     key,
-    label: source?.label || source?.name || source?.sourceName || source?.sourceType || key,
-    shortLabel: source?.shortLabel || source?.label || key,
+    label: source?.label || source?.name || source?.provider_label || source?.source_name || source?.sourceName || source?.sourceType || key,
+    shortLabel: source?.shortLabel || source?.label || source?.provider_label || source?.source_name || key,
     tone: 'default',
     badgeClassName: TONE_CLASS_MAP.default,
     iconClassName: TONE_ICON_CLASS_MAP.default,

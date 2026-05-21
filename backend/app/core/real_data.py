@@ -8,6 +8,8 @@ from typing import Any
 OFFICIAL_AGRI_SOURCE_NAME = "Th\u00f4ng tin th\u1ecb tr\u01b0\u1eddng n\u00f4ng s\u1ea3n"
 OFFICIAL_PRICE_URL = "https://thitruongnongsan.gov.vn/vn/nguonwmy.aspx"
 OFFICIAL_NEWS_URL = "https://thitruongnongsan.gov.vn/vn/xc0_tin-tuc.html"
+WINMART_PRICE_SOURCE_NAME = "WinMart"
+WINMART_PRICE_URL = "https://winmart.vn/"
 OPEN_METEO_SOURCE_NAME = "Open-Meteo"
 OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 

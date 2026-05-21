@@ -28,52 +28,12 @@ if env_path.exists():
 # ── Danh sách chuỗi cần tra giá ───────────────────────────────────────────────
 STORES = [
     {
-        "id": "bachhoaxanh",
-        "name": "Bách Hóa Xanh",
-        "type": "Bán lẻ",
-        "search_url": "https://www.bachhoaxanh.com/search?q={query}",
-        "price_pattern": r"(\d{1,3}(?:[.,]\d{3})+|\d{4,7})\s*(?:đ|₫|đồng)?",
-        "markup": 0.18,
-    },
-    {
         "id": "winmart",
-        "name": "WinMart / VinMart",
+        "name": "WinMart",
         "type": "Siêu thị",
-        "search_url": "https://winmart.vn/tim-kiem?q={query}",
+        "search_url": "https://winmart.vn/search?keyword={query}",
         "price_pattern": r"(\d{1,3}(?:[.,]\d{3})+|\d{4,7})\s*(?:đ|₫|đồng)?",
-        "markup": 0.22,
-    },
-    {
-        "id": "coopmart",
-        "name": "Co.opmart",
-        "type": "Siêu thị",
-        "search_url": "https://www.coopmart.com.vn/tap-hoa/search/?s={query}",
-        "price_pattern": r"(\d{1,3}(?:[.,]\d{3})+|\d{4,7})\s*(?:đ|₫|đồng)?",
-        "markup": 0.22,
-    },
-    {
-        "id": "bigc",
-        "name": "BigC / GO!",
-        "type": "Đại siêu thị",
-        "search_url": "https://www.go24h.vn/san-pham?q={query}",
-        "price_pattern": r"(\d{1,3}(?:[.,]\d{3})+|\d{4,7})\s*(?:đ|₫|đồng)?",
-        "markup": 0.18,
-    },
-    {
-        "id": "lottemart",
-        "name": "Lotte Mart",
-        "type": "Đại siêu thị",
-        "search_url": "https://lottemart.com.vn/search?q={query}",
-        "price_pattern": r"(\d{1,3}(?:[.,]\d{3})+|\d{4,7})\s*(?:đ|₫|đồng)?",
-        "markup": 0.22,
-    },
-    {
-        "id": "aeon",
-        "name": "AEON",
-        "type": "Đại siêu thị",
-        "search_url": "https://aeoneshop.com/search?q={query}",
-        "price_pattern": r"(\d{1,3}(?:[.,]\d{3})+|\d{4,7})\s*(?:đ|₫|đồng)?",
-        "markup": 0.28,
+        "markup": 0.0,
     },
 ]
 
@@ -231,7 +191,7 @@ async def _fetch_via_gemini(crop_name: str, region: str, timeout: float | None =
     prompt = (
         f"Hôm nay {today}, giá bán lẻ của {crop_name} tại {region} Việt Nam "
         f"ở các chuỗi sau là bao nhiêu đồng/kg: {store_names}?\n"
-        f"Ghi mỗi chuỗi một dòng, ví dụ: Bách Hóa Xanh: 28.000 đ/kg. "
+        f"Ghi mỗi chuỗi một dòng, ví dụ: WinMart: 28.000 đ/kg. "
         f"Nếu không tìm thấy giá tại một chuỗi nào đó thì bỏ qua."
     )
     try:
@@ -314,6 +274,7 @@ def _load_from_db(crop_name: str, region: str) -> dict | None:
                 .filter(
                     StorePrice.CropName == crop_name,
                     StorePrice.Region == region,
+                    StorePrice.StoreID == "winmart",
                     StorePrice.FetchedAt >= cutoff,
                 )
                 .all()
@@ -339,10 +300,11 @@ def _load_from_db(crop_name: str, region: str) -> dict | None:
                 "region": region,
                 "fetched_at": fetched_at,
                 "source": rows[0].Source or "db",
-                "source_name": f"Gemini {source_model} + Google Search (DB cache)" if source_model else "DB cache",
+                "source_name": "WinMart (DB cache)",
                 "confidence": 0.72,
                 "cache_status": "from_db",
                 "from_cache": True,
+                "is_estimated": False,
             }
         finally:
             db.close()
@@ -460,36 +422,60 @@ def _background_fetch(crop_name: str, region: str, base_price: int) -> None:
 
 async def fetch_store_prices(crop_name: str, region: str, base_price: int = 0) -> dict:
     """
-    1. Trả DB cache ngay nếu còn hạn (< 2h)
-    2. Nếu không có DB data → trả markup + trigger background fetch
-    3. Background fetch lưu vào DB → lần sau request sẽ thấy giá thực
+    1. Trả DB cache WinMart nếu còn hạn (< 2h)
+    2. Nếu không có cache → gọi trực tiếp WinMart API
+    3. Không sinh giá ước tính từ chuỗi khác
     """
-    # Bước 1: Đọc DB
     db_data = _load_from_db(crop_name, region)
     if db_data:
         return db_data
 
-    # Bước 2: Trigger background fetch (nếu có API key)
-    if _get_gemini_key():
-        _background_fetch(crop_name, region, base_price)
+    try:
+        from app.integrations.winmart_price_client import winmart_price_client  # noqa: PLC0415
 
-    # Bước 3: Trả markup ngay (không chờ background)
-    if base_price <= 0:
-        try:
-            from app.services.pricing_service import pricing_service  # noqa: PLC0415
-            entry = pricing_service.crop_base_prices.get(crop_name) or {}
-            raw = entry.get("price") or entry.get("base_price") or 0
-            base_price = int(float(raw) * 1000) if raw < 1000 else int(float(raw))
-        except Exception:
-            pass
-    if base_price <= 0:
-        base_price = 25_000
+        record = winmart_price_client.fetch_current_price(crop_name, region)
+    except Exception:
+        record = None
 
-    result = _markup_fallback(crop_name, region, base_price, None)
-    # Thêm thông báo về background fetch
-    if _get_gemini_key():
-        result["warning"] = (
-            "Đang tải giá thực từ chuỗi cửa hàng. "
-            "Vui lòng bấm 'Phân tích thị trường' lại sau 15 giây để xem giá cập nhật."
-        )
-    return result
+    if record:
+        metadata = record.get("metadata") or {}
+        stores_out = [
+            {
+                "id": "winmart",
+                "name": "WinMart",
+                "type": "Siêu thị",
+                "price": record["price"],
+                "unit": record.get("unit") or "VND/kg",
+                "source": "winmart_api",
+                "source_url": record.get("source_url"),
+                "product_name": metadata.get("product_name"),
+            }
+        ]
+        _save_to_db(crop_name, region, stores_out, "winmart_api")
+        return {
+            "stores": stores_out,
+            "crop_name": crop_name,
+            "region": region,
+            "fetched_at": record.get("fetched_at"),
+            "source": "winmart_api",
+            "source_name": "WinMart",
+            "source_url": record.get("source_url"),
+            "confidence": record.get("confidence_score", 0.82),
+            "cache_status": "live",
+            "from_cache": False,
+            "is_estimated": False,
+        }
+
+    return {
+        "stores": [],
+        "crop_name": crop_name,
+        "region": region,
+        "fetched_at": datetime.utcnow().strftime("%d/%m/%Y %H:%M"),
+        "source": "winmart_api",
+        "source_name": "WinMart",
+        "confidence": 0.0,
+        "warning": "Chưa tìm thấy giá WinMart phù hợp cho nông sản này.",
+        "is_estimated": False,
+        "cache_status": "miss",
+        "from_cache": False,
+    }

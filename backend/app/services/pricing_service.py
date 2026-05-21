@@ -26,7 +26,7 @@ from app.repositories.price_repository import (
 )
 from app.schemas.price_schema import PricingSuggestRequest
 from app.services.price_aggregator_service import price_aggregator_service
-from app.core.real_data import OFFICIAL_AGRI_SOURCE_NAME, OFFICIAL_PRICE_URL, cache_status_for
+from app.core.real_data import WINMART_PRICE_SOURCE_NAME, WINMART_PRICE_URL, cache_status_for
 
 
 def _to_public_cache_status(internal_status: str | None) -> str:
@@ -268,8 +268,8 @@ class PricingService:
 
         # --- official_price_source ---
         official_price_source = {
-            "name": current.get("source_name") or OFFICIAL_AGRI_SOURCE_NAME,
-            "url": current.get("source_url") or OFFICIAL_PRICE_URL,
+            "name": current.get("source_name") or WINMART_PRICE_SOURCE_NAME,
+            "url": current.get("source_url") or WINMART_PRICE_URL,
         }
 
         create_pricing_request(
@@ -311,7 +311,7 @@ class PricingService:
             # --- Metadata ---
             "source": current.get("source", "database"),
             "source_name": current.get("source_name"),
-            "source_url": current.get("source_url") or OFFICIAL_PRICE_URL,
+            "source_url": current.get("source_url") or WINMART_PRICE_URL,
             "last_updated": current.get("last_updated"),
             "is_mock": current.get("is_mock", False),
             "cache_status": _to_public_cache_status(current.get("cache_status", "from_db")),
@@ -333,8 +333,8 @@ class PricingService:
             "region": region,
             "forecast_data": [],
             "source": "realtime_api",
-            "source_name": OFFICIAL_AGRI_SOURCE_NAME,
-            "source_url": OFFICIAL_PRICE_URL,
+            "source_name": WINMART_PRICE_SOURCE_NAME,
+            "source_url": WINMART_PRICE_URL,
             "is_realtime": False,
             "is_mock": False,
             "cache_status": "miss",
@@ -372,8 +372,8 @@ class PricingService:
                 "available_days": len(real_history),
                 "forecast_data": [],
                 "source": "database",
-                "source_name": OFFICIAL_AGRI_SOURCE_NAME,
-                "source_url": OFFICIAL_PRICE_URL,
+                "source_name": WINMART_PRICE_SOURCE_NAME,
+                "source_url": WINMART_PRICE_URL,
                 "is_realtime": False,
                 "is_mock": False,
                 "cache_status": "miss",
@@ -445,8 +445,8 @@ class PricingService:
             "forecast_price_7d": forecast_data[min(6, len(forecast_data) - 1)]["estimated_price"] if forecast_data else None,
             "history_points_used": len(recent),
             "source": "database",
-            "source_name": OFFICIAL_AGRI_SOURCE_NAME,
-            "source_url": OFFICIAL_PRICE_URL,
+            "source_name": WINMART_PRICE_SOURCE_NAME,
+            "source_url": WINMART_PRICE_URL,
             "is_realtime": False,
             "is_mock": False,
             "cache_status": "from_db",
@@ -493,6 +493,7 @@ class PricingService:
                 .order_by(MarketPrice.PriceDate)
                 .all()
             )
+            rows = [row for row in rows if self._is_winmart_row(row)]
             # Filter by region (exact match first, then all)
             region_rows = [r for r in rows if normalize_text(r.Region) == target_region]
             if not region_rows:
@@ -617,7 +618,7 @@ class PricingService:
         )
         history = self.get_price_history(db, crop_name, region, 30)
 
-        # ── Yếu tố 1: giá thị trường hiện tại (thitruongnongsan + Tavily) ──
+        # ── Yếu tố 1: giá thị trường hiện tại (WinMart) ──
         market_price = float(current["current_price"])
         source_label = current.get("source_name") or "hệ thống"
         trend = current.get("price_trend") or forecast.get("trend") or "stable"
@@ -634,7 +635,7 @@ class PricingService:
             else f"Tháng {month} ở mức trung bình theo mùa vụ."
         )
 
-        # ── Yếu tố 3: tin tức thị trường (Tavily + thitruongnongsan) ──────
+        # ── Yếu tố 3: tin tức thị trường (Tavily + nguồn tin thị trường) ──────
         try:
             from app.services.market_news_service import market_news_service as _news_svc
             news_bundle = _news_svc.get_market_news(db, crop=self._clean_crop(crop_name), region=region, limit=10)
@@ -643,20 +644,9 @@ class PricingService:
             news_items = []
         news_factor, news_label = self._news_sentiment_factor(news_items)
 
-        # ── Yếu tố 4: giá tốt nhất nhiều sàn (Tavily multi-platform) ──────
+        # ── Yếu tố 4: giá tốt nhất nhiều sàn ──────
         best_platform_price = None
         best_platform_source = None
-        try:
-            from app.integrations.tavily_client import search_prices as _tavily_px
-            from app.services.price_aggregator_service import PriceAggregatorService
-            raw = _tavily_px(max_queries=2)
-            candidates = PriceAggregatorService._tavily_raw_to_results(raw, crop_name, region)
-            if candidates:
-                best = max(candidates, key=lambda r: r.price)
-                best_platform_price = best.price
-                best_platform_source = best.source_name or "sàn nông sản trực tuyến"
-        except Exception:
-            pass
 
         # ── Yếu tố 5: thời tiết ───────────────────────────────────────────
         weather_factor = float(suggestion.get("weather_factor", 1.0))
@@ -728,7 +718,7 @@ class PricingService:
             "forecast": forecast.get("forecast_data", []),
             "nearby_region_prices": suggestion.get("nearby_region_prices", []),
             "source": "ai_generated" if not is_mock else "mock",
-            "source_name": "AI Pricing Engine (thitruongnongsan + Tavily + weather + seasonality)",
+            "source_name": "AI Pricing Engine (WinMart + weather + seasonality)",
             "is_mock": is_mock,
             "cache_status": current.get("cache_status", "computed"),
             "last_updated": datetime.now().isoformat(),
@@ -779,8 +769,8 @@ class PricingService:
                     "price": round(price, 2),
                     "difference_percent": round(difference_percent, 2),
                     "source": current.get("source", "database"),
-                    "source_name": current.get("source_name") or OFFICIAL_AGRI_SOURCE_NAME,
-                    "source_url": current.get("source_url") or OFFICIAL_PRICE_URL,
+                    "source_name": current.get("source_name") or WINMART_PRICE_SOURCE_NAME,
+                    "source_url": current.get("source_url") or WINMART_PRICE_URL,
                     "last_updated": current.get("last_updated"),
                     "is_mock": False,
                     "confidence": current.get("confidence", 0.7),
@@ -1289,6 +1279,7 @@ class PricingService:
             )
             target_region = normalize_text(region)
             rows = [row for row in rows if normalize_text(row.Region) == target_region]
+            rows = [row for row in rows if self._is_winmart_row(row)]
             return [float(r.PricePerKg) for r in reversed(rows)]
         except Exception:
             return []
@@ -1303,6 +1294,17 @@ class PricingService:
     @staticmethod
     def _clean_crop(crop_name: str | None) -> str:
         return normalize_text(crop_name) or "lua"
+
+    @staticmethod
+    def _is_winmart_row(row: MarketPrice) -> bool:
+        source_name = getattr(row, "SourceName", None) or ""
+        source_type = getattr(row, "SourceType", None) or ""
+        source_url = getattr(row, "SourceURL", None) or ""
+        return (
+            normalize_text(source_name) in {"winmart", "winmart vn"}
+            or source_type == "winmart_retail_price"
+            or "winmart.vn" in source_url.lower()
+        )
 
     @staticmethod
     def _clean_grade(quality_grade: str | None) -> str:

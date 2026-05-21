@@ -1,41 +1,53 @@
-# Python
-__pycache__
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-*.egg-info/
-dist/
-build/
-
-# Node
-node_modules/
-npm-debug.log
-yarn-error.log
-
-# Environment
-.env
-.env.local
-
-# IDE
+# Git / editor
+.git/
+.github/
 .vscode/
 .idea/
 *.swp
 
-# Git
-.git/
-.gitignore
+# Environment / secrets
+.env
+.env.local
+.env.*.local
 
-# Documentation
-*.md
-docs/
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+env/
+venv/
+.venv/
+*.egg-info/
 
-# Tests
-tests/
-*.test.js
-*.spec.js
+# Node
+node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# CI/CD
-.github/
+# Build outputs
+dist/
+build/
+**/dist/
+**/build/
+.cache/
+**/.cache/
+.vite/
+**/.vite/
+
+# Runtime / temporary files
+*.log
+*.tmp
+*.temp
+*.sqlite
+*.db
+server_*.txt
+sv*_*.txt

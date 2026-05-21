@@ -1,72 +1,141 @@
-version: '3.8'
+name: ${COMPOSE_PROJECT_NAME:-nongnghiepai}
 
 services:
-  db:
+  database:
     image: mcr.microsoft.com/mssql/server:2022-latest
     environment:
       ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: "YourStrongPassword123!"
-      MSSQL_PID: "Express"
+      MSSQL_PID: ${MSSQL_PID:-Express}
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-YourStrongPassword123!}
     ports:
-      - "1433:1433"
+      - "${MSSQL_PORT:-1433}:1433"
+    volumes:
+      - mssql_data:/var/opt/mssql
     healthcheck:
-      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/1433'"]
+      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/127.0.0.1/1433' || exit 1"]
       interval: 10s
-      timeout: 3s
-      retries: 12
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  db-init:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DB_HOST: database
+      DB_PORT: "1433"
+      DB_USER: sa
+      DB_PASSWORD: ${MSSQL_SA_PASSWORD:-YourStrongPassword123!}
+      DB_NAME: ${MSSQL_DATABASE:-NongNghiepAI}
+      DB_INIT_SQL_FILE: /app/NongNghiepAI_Full.sql
+      FORCE_DB_INIT: ${FORCE_DB_INIT:-false}
+    volumes:
+      - ./NongNghiepAI_Full.sql:/app/NongNghiepAI_Full.sql:ro
+    command: ["python", "scripts/docker_init_mssql.py"]
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: "no"
 
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 3s
-      retries: 5
+      retries: 10
 
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     env_file:
-      - .env.example
+      - path: .env
+        required: false
     environment:
-      DATABASE_URL: "mssql+pymssql://sa:YourStrongPassword123!@db:1433/NongNghiepAI"
-      REDIS_URL: "redis://redis:6379/0"
+      DATABASE_URL: ${DATABASE_URL:-mssql+pymssql://sa:YourStrongPassword123!@database:1433/NongNghiepAI}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      ENVIRONMENT: ${ENVIRONMENT:-docker}
+      SQLITE_FALLBACK_ENABLED: ${SQLITE_FALLBACK_ENABLED:-false}
+      BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://frontend:5173}
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./backend:/app
+      - ./storage/uploads:/app/storage/uploads
     depends_on:
-      db:
-        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
       interval: 15s
       timeout: 5s
-      retries: 8
+      retries: 20
+      start_period: 20s
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     env_file:
-      - .env.example
+      - path: .env
+        required: false
     environment:
-      VITE_API_URL: "http://localhost:8000"
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
+      VITE_BACKEND_PROXY_URL: ${VITE_BACKEND_PROXY_URL:-http://backend:8000}
+      VITE_API_TIMEOUT_MS: ${VITE_API_TIMEOUT_MS:-18000}
+      VITE_AI_TIMEOUT_MS: ${VITE_AI_TIMEOUT_MS:-60000}
+      VITE_UPLOAD_TIMEOUT_MS: ${VITE_UPLOAD_TIMEOUT_MS:-60000}
+      CHOKIDAR_USEPOLLING: "true"
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
     ports:
-      - "5173:5173"
+      - "${FRONTEND_PORT:-5173}:5173"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
     depends_on:
       backend:
         condition: service_healthy
 
   worker:
-    build: ./backend
+    profiles: ["worker"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     env_file:
-      - .env.example
+      - path: .env
+        required: false
     environment:
-      DATABASE_URL: "mssql+pymssql://sa:YourStrongPassword123!@db:1433/NongNghiepAI"
-      REDIS_URL: "redis://redis:6379/0"
+      DATABASE_URL: ${DATABASE_URL:-mssql+pymssql://sa:YourStrongPassword123!@database:1433/NongNghiepAI}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      ENVIRONMENT: ${ENVIRONMENT:-docker}
+      SQLITE_FALLBACK_ENABLED: ${SQLITE_FALLBACK_ENABLED:-false}
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
     command: ["celery", "-A", "app.tasks.celery_app.celery_app", "worker", "--loglevel=INFO"]
+    volumes:
+      - ./backend:/app
+      - ./storage/uploads:/app/storage/uploads
     depends_on:
-      backend:
-        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
+
+volumes:
+  mssql_data:
+  redis_data:
+  frontend_node_modules:

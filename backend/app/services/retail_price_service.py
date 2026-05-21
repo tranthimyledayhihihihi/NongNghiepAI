@@ -46,7 +46,7 @@ class RetailPriceService:
             "status": "success" if saved else "empty",
             "records_fetched": len(records),
             "records_saved": saved,
-            "source_name": "Vietnam retail websites",
+            "source_name": "WinMart",
             "fetched_at": datetime.now(),
         }
 
@@ -94,7 +94,7 @@ class RetailPriceService:
                 break
         return {
             "retail_prices": items,
-            "source_name": "Vietnam retail websites",
+            "source_name": "WinMart",
             "source_url": items[0]["source_url"] if items else None,
             "is_realtime": False,
             "is_mock": False,

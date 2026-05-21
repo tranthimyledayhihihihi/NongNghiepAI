@@ -9,18 +9,18 @@ from app.models.user import User
 
 
 GRADE_API_TO_DB = {
-    "grade_1": "Loại 1",
-    "grade_2": "Loại 2",
-    "grade_3": "Loại 3",
-    "loai_1": "Loại 1",
-    "loai_2": "Loại 2",
-    "loai_3": "Loại 3",
-    "loại 1": "Loại 1",
-    "loại 2": "Loại 2",
-    "loại 3": "Loại 3",
-    "loai 1": "Loại 1",
-    "loai 2": "Loại 2",
-    "loai 3": "Loại 3",
+    "grade_1": "Loai 1",
+    "grade_2": "Loai 2",
+    "grade_3": "Loai 3",
+    "loai_1": "Loai 1",
+    "loai_2": "Loai 2",
+    "loai_3": "Loai 3",
+    "loại 1": "Loai 1",
+    "loại 2": "Loai 2",
+    "loại 3": "Loai 3",
+    "loai 1": "Loai 1",
+    "loai 2": "Loai 2",
+    "loai 3": "Loai 3",
 }
 
 GRADE_DB_TO_API = {

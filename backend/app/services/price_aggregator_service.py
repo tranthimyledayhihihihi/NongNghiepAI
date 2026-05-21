@@ -6,15 +6,15 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.core.real_data import (
-    OFFICIAL_AGRI_SOURCE_NAME,
-    OFFICIAL_PRICE_URL,
+    WINMART_PRICE_SOURCE_NAME,
+    WINMART_PRICE_URL,
     age_minutes,
     cache_status_for,
     external_circuit_breaker,
     is_real_cache_record,
     realtime_error,
 )
-from app.integrations.thitruong_nongsan_price_client import thitruong_nongsan_price_client
+from app.integrations.winmart_price_client import winmart_price_client
 from app.models.crop import Crop
 from app.models.price import MarketPrice
 from app.repositories.common import ensure_crop, normalize_text
@@ -23,10 +23,10 @@ from app.repositories.price_repository import bulk_upsert_market_prices
 
 
 class PriceAggregatorService:
-    """Official agriculture-price gateway.
+    """WinMart retail-price gateway.
 
-    The DB is treated strictly as cache for records fetched from the official
-    source. Rows without source URL/name/fetched_at or rows marked mock are not
+    The DB is treated strictly as cache for records fetched from WinMart.
+    Rows without source URL/name/fetched_at or rows marked mock are not
     considered valid public data.
     """
 
@@ -34,7 +34,7 @@ class PriceAggregatorService:
         selected_crop = self._clean_crop(crop_name)
         selected_region = self._clean_region(region)
         try:
-            records = thitruong_nongsan_price_client.fetch_prices(selected_crop, region=selected_region)
+            records = winmart_price_client.fetch_prices(selected_crop, region=selected_region)
             result = bulk_upsert_market_prices(db, records)
             return {
                 "status": "success" if records else "empty",
@@ -42,9 +42,9 @@ class PriceAggregatorService:
                 "records_saved": result.get("records_saved", 0),
                 "records_updated": result.get("records_updated", 0),
                 "errors": list(result.get("errors") or []),
-                "sources": [OFFICIAL_AGRI_SOURCE_NAME] if records else [],
-                "source_name": OFFICIAL_AGRI_SOURCE_NAME,
-                "source_url": OFFICIAL_PRICE_URL,
+                "sources": [WINMART_PRICE_SOURCE_NAME] if records else [],
+                "source_name": WINMART_PRICE_SOURCE_NAME,
+                "source_url": WINMART_PRICE_URL,
                 "fetched_at": datetime.now(),
                 "is_mock": False,
             }
@@ -55,8 +55,8 @@ class PriceAggregatorService:
                 "records_saved": 0,
                 "records_updated": 0,
                 "errors": [str(exc)],
-                "source_name": OFFICIAL_AGRI_SOURCE_NAME,
-                "source_url": OFFICIAL_PRICE_URL,
+                "source_name": WINMART_PRICE_SOURCE_NAME,
+                "source_url": WINMART_PRICE_URL,
                 "is_mock": False,
             }
 
@@ -150,12 +150,12 @@ class PriceAggregatorService:
         return {
             "sources": [
                 {
-                    "source_name": OFFICIAL_AGRI_SOURCE_NAME,
-                    "source_type": "official_agriculture_price",
+                    "source_name": WINMART_PRICE_SOURCE_NAME,
+                    "source_type": "winmart_retail_price",
                     "enabled": True,
                     "configured": True,
-                    "role": "Nguon chinh cho gia nong san Viet Nam",
-                    "status": external_circuit_breaker.status("thitruongnongsan_price:Cà phê"),
+                    "role": "Nguon chinh cho gia ban le nong san trong du an",
+                    "status": external_circuit_breaker.status("winmart_price:ca phe"),
                 },
                 {
                     "source_name": "MarketPrices DB",
@@ -178,7 +178,7 @@ class PriceAggregatorService:
         source_name: str | None = None,
     ) -> dict:
         selected_crop = self._clean_crop(crop_name or "lua")
-        log = start_ingestion_log(db, "refresh_market_prices", source_name or OFFICIAL_AGRI_SOURCE_NAME)
+        log = start_ingestion_log(db, "refresh_market_prices", source_name or WINMART_PRICE_SOURCE_NAME)
         try:
             result = self.refresh_price_for_crop_region(db, selected_crop, None)
             finish_ingestion_log(
@@ -243,7 +243,15 @@ class PriceAggregatorService:
 
     @staticmethod
     def _is_valid_price_cache(row: MarketPrice) -> bool:
-        return is_real_cache_record(
+        source_name = row.SourceName or ""
+        source_type = row.SourceType or ""
+        source_url = row.SourceURL or ""
+        is_winmart = (
+            normalize_text(source_name) in {"winmart", "winmart vn"}
+            or source_type == "winmart_retail_price"
+            or "winmart.vn" in source_url.lower()
+        )
+        return is_winmart and is_real_cache_record(
             source_url=row.SourceURL,
             source_name=row.SourceName,
             fetched_at=row.FetchedAt,
@@ -321,9 +329,9 @@ class PriceAggregatorService:
     ) -> dict:
         payload = realtime_error(
             code="REALTIME_PRICE_FAILED",
-            message="Không thể tải giá nông sản thực tế từ nguồn thị trường nông sản Việt Nam.",
-            source_name=OFFICIAL_AGRI_SOURCE_NAME,
-            source_url=OFFICIAL_PRICE_URL,
+            message="Không thể tải giá nông sản thực tế từ WinMart.",
+            source_name=WINMART_PRICE_SOURCE_NAME,
+            source_url=WINMART_PRICE_URL,
             detail="; ".join(refresh_result.get("errors") or []) if refresh_result else None,
         )
         payload.update({"crop_name": crop_name.strip(), "region": region, "price": None, "refresh_result": refresh_result})

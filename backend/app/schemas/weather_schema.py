@@ -125,6 +125,8 @@ class WeatherActivityRecommendation(BaseModel):
 
 class WeatherAISummary(BaseModel):
     provider: str = "rule_based_ai"
+    provider_label: str | None = None
+    ai_generated: bool = False
     summary: str
     risk_explanation: str
     action_plan: list[str] = Field(default_factory=list)

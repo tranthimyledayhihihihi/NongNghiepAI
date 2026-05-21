@@ -112,7 +112,7 @@ class QualityService:
         # Nếu người dùng không nhập crop_name, dùng kết quả nhận diện
         effective_crop = crop_name if crop_name and crop_name not in ("unknown", "") else detected_crop
 
-        # 2. Lấy giá thực từ DB/Tavily theo grade
+        # 2. Lấy giá thực từ WinMart theo grade
         price_info = self._fetch_real_price(db, effective_crop, region, grade)
         price_unavailable = False
         if price_info.get("_api_error"):
@@ -293,89 +293,37 @@ class QualityService:
 
     def _fetch_real_price(self, db: Session, crop_name: str, region: str, grade: str) -> dict:
         """
-        Lấy giá thực từ MarketPrices DB cho crop_name.
+        Lấy giá thực từ WinMart qua pricing_service.
         Áp hệ số chất lượng: grade_1=100%, grade_2=78%, grade_3=45%.
-        Fallback về TypicalPrice nếu không có market data.
         """
-        from app.models.crop import Crop
-        from app.models.price import MarketPrice
-
         multiplier = self._GRADE_MULTIPLIER.get(grade, 0.78)
-
-        # Tìm crop trong DB (fuzzy match, không phân biệt hoa thường)
-        crop = (
-            db.query(Crop)
-            .filter(Crop.CropName.ilike(f"%{crop_name}%"))
-            .first()
+        current = pricing_service.get_current_price(
+            db,
+            crop_name=crop_name,
+            region=region,
+            quality_grade=grade,
+            include_weather=False,
         )
-
-        base_price: float | None = None
-
-        if crop:
-            # Ưu tiên lấy giá theo vùng, fallback toàn quốc
-            mp = (
-                db.query(MarketPrice)
-                .filter(MarketPrice.CropID == crop.CropID, MarketPrice.Region == region)
-                .order_by(MarketPrice.PriceDate.desc())
-                .first()
-            )
-            if not mp:
-                mp = (
-                    db.query(MarketPrice)
-                    .filter(MarketPrice.CropID == crop.CropID)
-                    .order_by(MarketPrice.PriceDate.desc())
-                    .first()
-                )
-            if mp:
-                base_price = float(mp.PricePerKg)
-
-            # Fallback về typical price nếu không có market price
-            if base_price is None and crop.TypicalPriceMin and crop.TypicalPriceMax:
-                base_price = (float(crop.TypicalPriceMin) + float(crop.TypicalPriceMax)) / 2
-
-        # Nếu vẫn không tìm được, thử Tavily
-        if base_price is None:
-            try:
-                import asyncio
-                from app.core.config import settings
-                from app.integrations.tavily_client import ask_price_qa
-                result = asyncio.run(asyncio.wait_for(asyncio.to_thread(
-                    ask_price_qa,
-                    f"giá {crop_name} hiện nay tại {region} VNĐ/kg"
-                ), timeout=settings.AI_TIMEOUT_SECONDS))
-                import re
-                nums = re.findall(r'\d[\d\.]{2,8}', result.get("tavily_answer", ""))
-                if nums:
-                    base_price = float(nums[0].replace(".", ""))
-            except Exception:
-                if self._realtime_only():
-                    return {
-                        "_api_error": True,
-                        "error_code": "REALTIME_API_FAILED",
-                        "error_message": "Không thể tải giá realtime cho kiểm định chất lượng.",
-                        "source": "realtime_api",
-                    }
-                base_price = 20_000  # fallback tuyệt đối
-
-        if base_price is None and self._realtime_only():
+        if current.get("_api_error") or current.get("current_price") is None:
             return {
                 "_api_error": True,
                 "error_code": "REALTIME_API_FAILED",
-                "error_message": "Không thể tải giá realtime cho kiểm định chất lượng.",
+                "error_message": "Không thể tải giá WinMart cho kiểm định chất lượng.",
                 "source": "realtime_api",
+                "source_name": "WinMart",
             }
 
-        base_price = base_price or 20_000
-
-        suggested = round(base_price * multiplier)
+        suggested = round(float(current["current_price"]))
         spread = 0.08  # ±8%
         return {
             "suggested": suggested,
             "min":       round(suggested * (1 - spread)),
             "max":       round(suggested * (1 + spread)),
-            "base_price": base_price,
+            "base_price": round(suggested / multiplier) if multiplier else suggested,
             "multiplier": multiplier,
-            "source": "market_db" if crop else "tavily",
+            "source": "winmart",
+            "source_name": current.get("source_name") or "WinMart",
+            "source_url": current.get("source_url"),
         }
 
     @staticmethod
